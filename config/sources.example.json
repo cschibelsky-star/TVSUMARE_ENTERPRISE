@@ -1,0 +1,23 @@
+[
+  {
+    "name": "Agência Brasil",
+    "type": "agency",
+    "url": "https://agenciabrasil.ebc.com.br/",
+    "credit": "Agência Brasil / EBC",
+    "requires_attribution": true
+  },
+  {
+    "name": "TV Brasil",
+    "type": "video_agency",
+    "url": "https://tvbrasil.ebc.com.br/",
+    "credit": "TV Brasil / Agência Brasil",
+    "requires_attribution": true
+  },
+  {
+    "name": "Prefeitura de Sumaré",
+    "type": "official",
+    "url": "",
+    "credit": "Prefeitura de Sumaré",
+    "requires_attribution": true
+  }
+]
