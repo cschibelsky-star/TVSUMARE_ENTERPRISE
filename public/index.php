@@ -6,29 +6,42 @@ require_once __DIR__ . '/../vendor/autoload.php';
 
 use TVSumare\Home\HomeComposer;
 use TVSumare\Media\ImageEngine;
+use TVSumare\Storage\JsonStore;
 
-$news = [
-    [
-        'title' => 'TV Sumaré Enterprise 3.0 entra em desenvolvimento',
-        'city' => 'Sumaré',
-        'category' => 'Cidade',
-        'summary' => 'Nova geração da plataforma editorial será a base oficial da TV Digital Enterprise.',
-        'url' => '#',
-        'quality_score' => 95,
-        'published_at' => date(DATE_ATOM),
-        'category_image' => '/assets/img/tvsumare-default-news.jpg',
-    ],
-];
+$store = new JsonStore(__DIR__ . '/../data');
+$news = $store->read('enterprise_news_imported.json', []);
 
-$videos = [
-    [
-        'title' => 'TV Sumaré Play 2.0',
-        'city' => 'Sumaré',
-        'category' => 'TV Play',
-        'duration' => '02:30',
-        'thumbnail' => '/assets/img/tvsumare-play-default.jpg',
-    ],
-];
+if ($news === []) {
+    $news = [
+        [
+            'title' => 'TV Sumaré Enterprise 3.0 entra em desenvolvimento',
+            'city' => 'Sumaré',
+            'category' => 'Cidade',
+            'summary' => 'Nova geração da plataforma editorial será a base oficial da TV Digital Enterprise.',
+            'url' => '#',
+            'quality_score' => 95,
+            'published_at' => date(DATE_ATOM),
+            'category_image' => '/assets/img/tvsumare-default-news.jpg',
+        ],
+    ];
+}
+
+$videos = $store->read('videos.json', []);
+if (isset($videos['videos']) && is_array($videos['videos'])) {
+    $videos = $videos['videos'];
+}
+
+if ($videos === []) {
+    $videos = [
+        [
+            'title' => 'TV Sumaré Play 2.0',
+            'city' => 'Sumaré',
+            'category' => 'TV Play',
+            'duration' => '02:30',
+            'thumbnail' => '/assets/img/tvsumare-play-default.jpg',
+        ],
+    ];
+}
 
 $home = (new HomeComposer(new ImageEngine()))->compose($news, $videos);
 $hero = $home['hero'];
@@ -49,6 +62,7 @@ $hero = $home['hero'];
     </div>
     <nav>
         <a href="/">Início</a>
+        <a href="#editorias">Editorias</a>
         <a href="#play">TV Play</a>
         <a href="#aovivo">Ao Vivo</a>
         <a href="/admin/">Admin</a>
@@ -61,7 +75,7 @@ $hero = $home['hero'];
         <div class="hero__overlay">
             <span class="badge"><?= htmlspecialchars((string)$hero['category']) ?> • <?= htmlspecialchars((string)$hero['city']) ?></span>
             <h1><?= htmlspecialchars((string)$hero['title']) ?></h1>
-            <p><?= htmlspecialchars((string)$hero['summary']) ?></p>
+            <p><?= htmlspecialchars((string)($hero['summary'] ?? '')) ?></p>
         </div>
     </section>
     <?php endif; ?>
@@ -71,7 +85,7 @@ $hero = $home['hero'];
         <strong>Vitrine IA Pro</strong>
     </section>
 
-    <section class="grid-section">
+    <section id="editorias" class="grid-section">
         <h2>Destaques editoriais</h2>
         <div class="editorial-grid">
             <?php foreach ($home['editorials'] as $category => $items): ?>
@@ -85,6 +99,33 @@ $hero = $home['hero'];
         </div>
     </section>
 
+    <section class="grid-section latest-section">
+        <h2>Notícias por filtro</h2>
+        <div class="filter-row">
+            <button>Todos</button><button>Sumaré</button><button>Hortolândia</button><button>Paulínia</button><button>Americana</button><button>Campinas</button>
+        </div>
+        <div class="latest-grid">
+            <?php foreach (array_slice($home['latest'], 0, 9) as $item): ?>
+                <article class="news-card">
+                    <img src="<?= htmlspecialchars((string)$item['image']) ?>" alt="">
+                    <div>
+                        <span><?= htmlspecialchars((string)$item['category']) ?> • <?= htmlspecialchars((string)$item['city']) ?></span>
+                        <h3><?= htmlspecialchars((string)$item['title']) ?></h3>
+                    </div>
+                </article>
+            <?php endforeach; ?>
+        </div>
+    </section>
+
+    <section id="aovivo" class="live-block">
+        <div>
+            <span class="live-dot">AO VIVO</span>
+            <h2>TV Sumaré Ao Vivo</h2>
+            <p>Acompanhe transmissões, boletins e programação regional.</p>
+        </div>
+        <a href="/aovivo.php">Abrir transmissão</a>
+    </section>
+
     <section id="play" class="grid-section dark">
         <h2>TV Sumaré Play</h2>
         <div class="video-grid">
@@ -92,8 +133,8 @@ $hero = $home['hero'];
                 <article class="video-card">
                     <img src="<?= htmlspecialchars((string)$video['thumbnail']) ?>" alt="">
                     <div>
-                        <span><?= htmlspecialchars((string)$video['category']) ?> • <?= htmlspecialchars((string)$video['duration']) ?></span>
-                        <h3><?= htmlspecialchars((string)$video['title']) ?></h3>
+                        <span><?= htmlspecialchars((string)($video['category'] ?? 'TV Play')) ?> • <?= htmlspecialchars((string)($video['duration'] ?? '')) ?></span>
+                        <h3><?= htmlspecialchars((string)($video['title'] ?? 'Vídeo')) ?></h3>
                     </div>
                 </article>
             <?php endforeach; ?>
