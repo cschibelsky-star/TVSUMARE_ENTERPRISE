@@ -1,0 +1,17 @@
+{
+  "name": "vitrineiapro/tvsumare-enterprise",
+  "description": "TVSUMARE_ENTERPRISE 3.0 — Enterprise News OS Powered by Vitrine IA Pro",
+  "type": "project",
+  "license": "proprietary",
+  "require": {
+    "php": ">=8.1"
+  },
+  "autoload": {
+    "psr-4": {
+      "TVSumare\\": "src/"
+    }
+  },
+  "scripts": {
+    "check": "php -l public/index.php && php -l public/admin/index.php"
+  }
+}
