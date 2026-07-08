@@ -4,12 +4,16 @@ declare(strict_types=1);
 
 namespace TVSumare\Home;
 
+use TVSumare\Editorial\FreshnessFilter;
 use TVSumare\Media\ImageEngine;
 
 final class HomeComposer
 {
-    public function __construct(private ImageEngine $images)
-    {
+    public function __construct(
+        private ImageEngine $images,
+        private ?FreshnessFilter $freshness = null
+    ) {
+        $this->freshness ??= new FreshnessFilter(48);
     }
 
     /**
@@ -19,15 +23,19 @@ final class HomeComposer
      */
     public function compose(array $news, array $videos): array
     {
-        $qualityNews = array_values(array_filter($news, fn (array $item): bool => ($item['quality_score'] ?? 0) >= 80));
+        $freshNews = $this->freshness->onlyFresh($news);
+        $qualityNews = array_values(array_filter($freshNews, fn (array $item): bool => ($item['quality_score'] ?? 0) >= 80));
+        usort($qualityNews, fn (array $a, array $b): int => strtotime((string)($b['published_at'] ?? '')) <=> strtotime((string)($a['published_at'] ?? '')));
 
         foreach ($qualityNews as &$item) {
             $item['image'] = $this->images->resolveForNews($item);
         }
+        unset($item);
 
         foreach ($videos as &$video) {
             $video['thumbnail'] = $this->images->resolveVideoThumbnail($video);
         }
+        unset($video);
 
         return [
             'hero' => $qualityNews[0] ?? null,
@@ -35,6 +43,7 @@ final class HomeComposer
             'videos' => array_slice($videos, 0, 6),
             'latest' => array_slice($qualityNews, 0, 12),
             'powered_by' => 'Vitrine IA Pro',
+            'hidden_old_or_rejected' => max(0, count($news) - count($freshNews)),
         ];
     }
 
