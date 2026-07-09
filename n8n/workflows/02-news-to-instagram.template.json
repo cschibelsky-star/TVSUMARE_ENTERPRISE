@@ -1,0 +1,112 @@
+{
+  "name": "02 - TV Sumaré - News to Instagram",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "tvsumare/news-to-instagram",
+        "responseMode": "responseNode"
+      },
+      "name": "Webhook notícia aprovada",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        100,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const title = $json.titulo || $json.title || '';\nconst resumo = $json.resumo || $json.summary || '';\nconst link = $json.link || $json.url || '';\nconst cidade = $json.cidade || $json.city || 'Sumaré';\nconst categoria = $json.categoria || $json.category || 'Notícias';\nreturn [{ json: { ...$json, caption: `${title}\\n\\n${resumo}\\n\\nLeia mais na TV Sumaré: ${link}\\n\\n#TVSumare #${cidade.replace(/\\s+/g,'')} #${categoria.replace(/\\s+/g,'')} #Noticias` } }];"
+      },
+      "name": "Montar legenda",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        340,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.TVSUMARE_API_URL}}/social/log-instagram-request",
+        "sendHeaders": true,
+        "sendBody": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{$env.TVSUMARE_API_TOKEN}}"
+            }
+          ]
+        },
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "payload",
+              "value": "={{$json}}"
+            }
+          ]
+        }
+      },
+      "name": "Registrar solicitação",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        580,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, message: 'Legenda preparada para Instagram', caption: $json.caption } }}"
+      },
+      "name": "Responder painel",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        820,
+        240
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook notícia aprovada": {
+      "main": [
+        [
+          {
+            "node": "Montar legenda",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar legenda": {
+      "main": [
+        [
+          {
+            "node": "Registrar solicitação",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar solicitação": {
+      "main": [
+        [
+          {
+            "node": "Responder painel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {}
+}
