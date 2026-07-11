@@ -1,0 +1,64 @@
+{
+  "defaults": {
+    "concurrency_strategy": "queue",
+    "lock_ttl_seconds": 900,
+    "lock_heartbeat_seconds": 60,
+    "circuit_breaker": {
+      "failure_threshold": 5,
+      "open_seconds": 300,
+      "half_open_max_calls": 1,
+      "success_threshold": 2
+    }
+  },
+  "providers": {
+    "gemini": {
+      "rate_limit_per_minute": 60,
+      "max_concurrency_global": 10,
+      "max_concurrency_per_tenant": 2
+    },
+    "openai": {
+      "rate_limit_per_minute": 60,
+      "max_concurrency_global": 10,
+      "max_concurrency_per_tenant": 2
+    },
+    "heygen": {
+      "rate_limit_per_minute": 10,
+      "max_concurrency_global": 3,
+      "max_concurrency_per_tenant": 1
+    },
+    "meta": {
+      "rate_limit_per_minute": 30,
+      "max_concurrency_global": 5,
+      "max_concurrency_per_tenant": 1
+    }
+  },
+  "queues": {
+    "Provision Queue": {
+      "max_concurrency_global": 3,
+      "max_concurrency_per_tenant": 1,
+      "resource_locks": ["tenant", "domain", "database"],
+      "strategy": "queue"
+    },
+    "Deployment Queue": {
+      "max_concurrency_global": 3,
+      "max_concurrency_per_project": 1,
+      "resource_locks": ["project", "environment"],
+      "strategy": "queue"
+    },
+    "AI Queue": {
+      "max_concurrency_global": 10,
+      "max_concurrency_per_tenant": 2,
+      "strategy": "queue"
+    },
+    "Social Queue": {
+      "max_concurrency_global": 5,
+      "max_concurrency_per_channel": 1,
+      "resource_locks": ["social_account"],
+      "strategy": "queue"
+    },
+    "Monitoring Queue": {
+      "max_concurrency_global": 5,
+      "strategy": "reject_duplicate"
+    }
+  }
+}
