@@ -1,0 +1,66 @@
+{
+  "name": "14 - Vitrine IA Flow - Rollback Manager",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "vitrine-flow/rollback-manager",
+        "responseMode": "responseNode"
+      },
+      "name": "Webhook Rollback",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [100, 240]
+    },
+    {
+      "parameters": {
+        "jsCode": "const completed = Array.isArray($json.completed_children) ? $json.completed_children : [];\nconst compensationPlan = [...completed].reverse().filter(item => item.compensation);\nreturn [{ json: { ...$json, event: 'ROLLBACK_STARTED', status: 'compensating', compensation_plan: compensationPlan, rollback_started_at: new Date().toISOString() } }];"
+      },
+      "name": "Build Compensation Plan",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [340, 240]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.VITRINE_MASTER_API_URL}}/flow/executions/rollback",
+        "sendHeaders": true,
+        "sendBody": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer {{$env.VITRINE_MASTER_API_TOKEN}}" },
+            { "name": "X-Vitrine-Event", "value": "ROLLBACK_STARTED" }
+          ]
+        },
+        "bodyParameters": {
+          "parameters": [
+            { "name": "event", "value": "ROLLBACK_STARTED" },
+            { "name": "payload", "value": "={{$json}}" }
+          ]
+        }
+      },
+      "name": "Register Rollback Start",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [580, 240]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, status: 'compensating', execution_id: $json.execution_id, compensation_steps: $json.compensation_plan.length } }}"
+      },
+      "name": "Respond Mission Control",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [820, 240]
+    }
+  ],
+  "connections": {
+    "Webhook Rollback": { "main": [[{ "node": "Build Compensation Plan", "type": "main", "index": 0 }]] },
+    "Build Compensation Plan": { "main": [[{ "node": "Register Rollback Start", "type": "main", "index": 0 }]] },
+    "Register Rollback Start": { "main": [[{ "node": "Respond Mission Control", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": {}
+}
