@@ -1,0 +1,72 @@
+{
+  "Provision Queue": {
+    "concurrency": 2,
+    "timeout_seconds": 1800,
+    "retry_attempts": 3,
+    "backoff_seconds": [30, 120, 600],
+    "dead_letter_queue": true
+  },
+  "Deployment Queue": {
+    "concurrency": 2,
+    "timeout_seconds": 1800,
+    "retry_attempts": 3,
+    "backoff_seconds": [60, 300, 900],
+    "dead_letter_queue": true
+  },
+  "Sales Queue": {
+    "concurrency": 10,
+    "timeout_seconds": 300,
+    "retry_attempts": 5,
+    "backoff_seconds": [30, 60, 180, 600, 1800],
+    "dead_letter_queue": true
+  },
+  "Billing Queue": {
+    "concurrency": 5,
+    "timeout_seconds": 600,
+    "retry_attempts": 5,
+    "backoff_seconds": [60, 300, 900, 1800, 3600],
+    "dead_letter_queue": true
+  },
+  "Support Queue": {
+    "concurrency": 10,
+    "timeout_seconds": 300,
+    "retry_attempts": 3,
+    "backoff_seconds": [60, 300, 900],
+    "dead_letter_queue": true
+  },
+  "AI Queue": {
+    "concurrency": 8,
+    "timeout_seconds": 900,
+    "retry_attempts": 4,
+    "backoff_seconds": [30, 120, 600, 1800],
+    "dead_letter_queue": true
+  },
+  "Monitoring Queue": {
+    "concurrency": 20,
+    "timeout_seconds": 120,
+    "retry_attempts": 3,
+    "backoff_seconds": [30, 120, 300],
+    "dead_letter_queue": false
+  },
+  "Infrastructure Queue": {
+    "concurrency": 2,
+    "timeout_seconds": 1800,
+    "retry_attempts": 3,
+    "backoff_seconds": [60, 300, 900],
+    "dead_letter_queue": true
+  },
+  "Notification Queue": {
+    "concurrency": 20,
+    "timeout_seconds": 180,
+    "retry_attempts": 5,
+    "backoff_seconds": [30, 60, 180, 600, 1800],
+    "dead_letter_queue": true
+  },
+  "Workflow Queue": {
+    "concurrency": 20,
+    "timeout_seconds": 300,
+    "retry_attempts": 3,
+    "backoff_seconds": [30, 120, 600],
+    "dead_letter_queue": true
+  }
+}
