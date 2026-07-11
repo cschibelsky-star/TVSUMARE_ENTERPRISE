@@ -1,0 +1,81 @@
+{
+  "name": "21 - Vitrine IA Flow - Runtime Next Layer Dispatcher",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "vitrine-flow/runtime/next-layer",
+        "responseMode": "responseNode"
+      },
+      "name": "Next Layer Request",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [100, 240]
+    },
+    {
+      "parameters": {
+        "jsCode": "const b=$json.body||$json; const graph=Array.isArray(b.graph)?b.graph:[]; const completed=new Set((b.completed_nodes||[])); const failed=new Set((b.failed_nodes||[])); const eligible=graph.filter(n=>!completed.has(n.id)&&!failed.has(n.id)&&(n.depends_on||[]).every(d=>completed.has(d))); const blocked=graph.filter(n=>!completed.has(n.id)&&!failed.has(n.id)&&(n.depends_on||[]).some(d=>failed.has(d))); return [{json:{...b,eligible_nodes:eligible,blocked_nodes:blocked,has_next_layer:eligible.length>0,dispatch_mode:b.dispatch_mode||'parallel'}}];"
+      },
+      "name": "Resolve Next Layer",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [340, 240]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.VITRINE_MASTER_API_URL}}/flow/runtime/children/dispatch",
+        "sendHeaders": true,
+        "sendBody": true,
+        "headerParameters": { "parameters": [{ "name": "Authorization", "value": "Bearer {{$env.VITRINE_MASTER_API_TOKEN}}" }] },
+        "bodyParameters": { "parameters": [
+          { "name": "company_id", "value": "={{$json.company_id}}" },
+          { "name": "execution_uuid", "value": "={{$json.execution_uuid}}" },
+          { "name": "dispatch_mode", "value": "={{$json.dispatch_mode}}" },
+          { "name": "nodes", "value": "={{$json.eligible_nodes}}" }
+        ] }
+      },
+      "name": "Dispatch Next Eligible Layer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [580, 240]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.VITRINE_MASTER_API_URL}}/flow/events/callback",
+        "sendHeaders": true,
+        "sendBody": true,
+        "headerParameters": { "parameters": [{ "name": "Authorization", "value": "Bearer {{$env.VITRINE_MASTER_API_TOKEN}}" }, { "name": "X-Vitrine-Event", "value": "WORKFLOW_LAYER_COMPLETED" }] },
+        "bodyParameters": { "parameters": [
+          { "name": "event", "value": "WORKFLOW_LAYER_COMPLETED" },
+          { "name": "company_id", "value": "={{$node['Resolve Next Layer'].json.company_id}}" },
+          { "name": "execution_uuid", "value": "={{$node['Resolve Next Layer'].json.execution_uuid}}" },
+          { "name": "payload", "value": "={{$node['Resolve Next Layer'].json}}" }
+        ] }
+      },
+      "name": "Emit Layer Completed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [820, 240]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok:true, eligible:$node['Resolve Next Layer'].json.eligible_nodes.length, blocked:$node['Resolve Next Layer'].json.blocked_nodes.length, has_next_layer:$node['Resolve Next Layer'].json.has_next_layer } }}"
+      },
+      "name": "Respond Next Layer",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1060, 240]
+    }
+  ],
+  "connections": {
+    "Next Layer Request": { "main": [[{ "node": "Resolve Next Layer", "type": "main", "index": 0 }]] },
+    "Resolve Next Layer": { "main": [[{ "node": "Dispatch Next Eligible Layer", "type": "main", "index": 0 }]] },
+    "Dispatch Next Eligible Layer": { "main": [[{ "node": "Emit Layer Completed", "type": "main", "index": 0 }]] },
+    "Emit Layer Completed": { "main": [[{ "node": "Respond Next Layer", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": {}
+}
