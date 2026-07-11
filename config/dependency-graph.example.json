@@ -1,0 +1,87 @@
+{
+  "workflow_id": "WF-000006",
+  "version": "1.0.0",
+  "execution_mode": "dependency_graph",
+  "nodes": [
+    {
+      "node_id": "validate_tenant",
+      "child_workflow_id": "WF-CHILD-001",
+      "depends_on": [],
+      "parallel_group": "bootstrap",
+      "checkpoint_required": true,
+      "compensation_workflow_id": null
+    },
+    {
+      "node_id": "create_license",
+      "child_workflow_id": "WF-CHILD-002",
+      "depends_on": ["validate_tenant"],
+      "parallel_group": "bootstrap",
+      "checkpoint_required": true,
+      "compensation_workflow_id": "WF-COMP-002"
+    },
+    {
+      "node_id": "provision_database",
+      "child_workflow_id": "WF-CHILD-003",
+      "depends_on": ["create_license"],
+      "parallel_group": "infrastructure",
+      "checkpoint_required": true,
+      "compensation_workflow_id": "WF-COMP-003"
+    },
+    {
+      "node_id": "provision_storage",
+      "child_workflow_id": "WF-CHILD-004",
+      "depends_on": ["create_license"],
+      "parallel_group": "infrastructure",
+      "checkpoint_required": true,
+      "compensation_workflow_id": "WF-COMP-004"
+    },
+    {
+      "node_id": "configure_domain",
+      "child_workflow_id": "WF-CHILD-005",
+      "depends_on": ["create_license"],
+      "parallel_group": "infrastructure",
+      "checkpoint_required": true,
+      "compensation_workflow_id": "WF-COMP-005"
+    },
+    {
+      "node_id": "provision_docker",
+      "child_workflow_id": "WF-CHILD-006",
+      "depends_on": ["provision_database", "provision_storage", "configure_domain"],
+      "parallel_group": "runtime",
+      "checkpoint_required": true,
+      "compensation_workflow_id": "WF-COMP-006"
+    },
+    {
+      "node_id": "configure_ssl",
+      "child_workflow_id": "WF-CHILD-007",
+      "depends_on": ["configure_domain", "provision_docker"],
+      "parallel_group": "runtime",
+      "checkpoint_required": true,
+      "compensation_workflow_id": "WF-COMP-007"
+    },
+    {
+      "node_id": "deploy_application",
+      "child_workflow_id": "WF-CHILD-008",
+      "depends_on": ["configure_ssl"],
+      "parallel_group": "delivery",
+      "checkpoint_required": true,
+      "compensation_workflow_id": "WF-COMP-008"
+    },
+    {
+      "node_id": "health_check",
+      "child_workflow_id": "WF-CHILD-009",
+      "depends_on": ["deploy_application"],
+      "parallel_group": "delivery",
+      "checkpoint_required": true,
+      "compensation_workflow_id": null
+    },
+    {
+      "node_id": "delivery_notification",
+      "child_workflow_id": "WF-CHILD-010",
+      "depends_on": ["health_check"],
+      "parallel_group": "delivery",
+      "checkpoint_required": true,
+      "compensation_workflow_id": null
+    }
+  ]
+}
