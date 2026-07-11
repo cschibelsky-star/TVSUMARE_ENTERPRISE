@@ -1,0 +1,82 @@
+{
+  "name": "16 - Vitrine IA Flow - Workflow Resume Manager",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "vitrine-flow/workflow-resume",
+        "responseMode": "responseNode"
+      },
+      "name": "Webhook Resume",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [100, 240]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.VITRINE_MASTER_API_URL}}/flow/executions/{{$json.execution_id}}/checkpoints/latest",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer {{$env.VITRINE_MASTER_API_TOKEN}}" }
+          ]
+        }
+      },
+      "name": "Consultar Último Checkpoint",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [340, 240]
+    },
+    {
+      "parameters": {
+        "jsCode": "const checkpoint = $json.checkpoint || $json.data || $json;\nreturn [{ json: { execution_id: checkpoint.execution_id, last_checkpoint: checkpoint.checkpoint_key || null, resume_from: checkpoint.next_child_workflow_id || null, status: 'resuming', checkpoint } }];"
+      },
+      "name": "Calcular Ponto de Retomada",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [580, 240]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.VITRINE_MASTER_API_URL}}/flow/events/callback",
+        "sendHeaders": true,
+        "sendBody": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer {{$env.VITRINE_MASTER_API_TOKEN}}" },
+            { "name": "X-Vitrine-Event", "value": "WORKFLOW_RESUMED" }
+          ]
+        },
+        "bodyParameters": {
+          "parameters": [
+            { "name": "event", "value": "WORKFLOW_RESUMED" },
+            { "name": "payload", "value": "={{$json}}" }
+          ]
+        }
+      },
+      "name": "Registrar Retomada",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [820, 240]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, status: 'resuming', execution_id: $json.execution_id, resume_from: $json.resume_from } }}"
+      },
+      "name": "Responder Mission Control",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1060, 240]
+    }
+  ],
+  "connections": {
+    "Webhook Resume": { "main": [[{ "node": "Consultar Último Checkpoint", "type": "main", "index": 0 }]] },
+    "Consultar Último Checkpoint": { "main": [[{ "node": "Calcular Ponto de Retomada", "type": "main", "index": 0 }]] },
+    "Calcular Ponto de Retomada": { "main": [[{ "node": "Registrar Retomada", "type": "main", "index": 0 }]] },
+    "Registrar Retomada": { "main": [[{ "node": "Responder Mission Control", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": {}
+}
