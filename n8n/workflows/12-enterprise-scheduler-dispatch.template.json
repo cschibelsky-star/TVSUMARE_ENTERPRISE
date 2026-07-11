@@ -1,0 +1,90 @@
+{
+  "name": "12 - Vitrine IA Flow - Enterprise Scheduler Dispatch",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "vitrine-flow/scheduler-dispatch",
+        "responseMode": "responseNode"
+      },
+      "name": "Webhook Scheduler",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [100, 240]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body || $json;\nconst required = ['schedule_id','tenant_id','workflow_id','request_id','timezone','scheduled_for'];\nconst missing = required.filter((field) => !body[field]);\nif (missing.length) throw new Error(`INVALID_SCHEDULE_CONTRACT:${missing.join(',')}`);\nreturn [{ json: { ...body, event: 'SCHEDULE_TRIGGERED', queue: 'Workflow Queue', received_at: new Date().toISOString() } }];"
+      },
+      "name": "Validar Contrato",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [340, 240]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.VITRINE_MASTER_API_URL}}/flow/locks/acquire",
+        "sendHeaders": true,
+        "sendBody": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer {{$env.VITRINE_MASTER_API_TOKEN}}" }
+          ]
+        },
+        "bodyParameters": {
+          "parameters": [
+            { "name": "resource", "value": "={{`schedule:${$json.schedule_id}:${$json.scheduled_for}`}}" },
+            { "name": "owner", "value": "={{$json.request_id}}" },
+            { "name": "ttl_seconds", "value": "1800" }
+          ]
+        }
+      },
+      "name": "Adquirir Lock",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [580, 240]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.VITRINE_MASTER_API_URL}}/flow/workflows/dispatch",
+        "sendHeaders": true,
+        "sendBody": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer {{$env.VITRINE_MASTER_API_TOKEN}}" },
+            { "name": "X-Vitrine-Event", "value": "SCHEDULE_TRIGGERED" }
+          ]
+        },
+        "bodyParameters": {
+          "parameters": [
+            { "name": "payload", "value": "={{$node['Validar Contrato'].json}}" }
+          ]
+        }
+      },
+      "name": "Despachar Workflow",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [820, 240]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, status: 'accepted', event: 'SCHEDULE_TRIGGERED', schedule_id: $node['Validar Contrato'].json.schedule_id, workflow_id: $node['Validar Contrato'].json.workflow_id } }}"
+      },
+      "name": "Responder Mission Control",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1060, 240]
+    }
+  ],
+  "connections": {
+    "Webhook Scheduler": { "main": [[{ "node": "Validar Contrato", "type": "main", "index": 0 }]] },
+    "Validar Contrato": { "main": [[{ "node": "Adquirir Lock", "type": "main", "index": 0 }]] },
+    "Adquirir Lock": { "main": [[{ "node": "Despachar Workflow", "type": "main", "index": 0 }]] },
+    "Despachar Workflow": { "main": [[{ "node": "Responder Mission Control", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": {}
+}
