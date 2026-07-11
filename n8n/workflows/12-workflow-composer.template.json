@@ -1,0 +1,83 @@
+{
+  "name": "12 - Vitrine IA Flow - Workflow Composer",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "vitrine-flow/workflow-composer",
+        "responseMode": "responseNode"
+      },
+      "name": "Webhook Workflow Composto",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [100, 260]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.VITRINE_MASTER_API_URL}}/flow/tenants/{{$json.tenant_id}}/context",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer {{$env.VITRINE_MASTER_API_TOKEN}}" }
+          ]
+        }
+      },
+      "name": "Carregar Contexto Tenant",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [340, 260]
+    },
+    {
+      "parameters": {
+        "jsCode": "const source = $('Webhook Workflow Composto').first().json;\nconst tenant = $json;\nconst steps = source.steps || [];\nreturn [{ json: { execution_id: source.execution_id || `EXEC-${Date.now()}`, request_id: source.request_id, tenant_id: source.tenant_id, workflow_id: source.workflow_id, workflow_version: source.workflow_version || '1.0.0', status: 'running', tenant_context: tenant, steps, started_at: new Date().toISOString() } }];"
+      },
+      "name": "Montar Execução",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [580, 260]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.VITRINE_MASTER_API_URL}}/flow/events/callback",
+        "sendHeaders": true,
+        "sendBody": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer {{$env.VITRINE_MASTER_API_TOKEN}}" },
+            { "name": "X-Vitrine-Event", "value": "WORKFLOW_COMPOSED_STARTED" },
+            { "name": "X-Vitrine-Request-Id", "value": "={{$json.request_id}}" }
+          ]
+        },
+        "bodyParameters": {
+          "parameters": [
+            { "name": "event", "value": "WORKFLOW_COMPOSED_STARTED" },
+            { "name": "payload", "value": "={{$json}}" }
+          ]
+        }
+      },
+      "name": "Registrar Início",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [820, 260]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, execution_id: $('Montar Execução').first().json.execution_id, status: 'accepted', message: 'Workflow composto aceito para execução.' } }}"
+      },
+      "name": "Responder Mission Control",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1060, 260]
+    }
+  ],
+  "connections": {
+    "Webhook Workflow Composto": { "main": [[{ "node": "Carregar Contexto Tenant", "type": "main", "index": 0 }]] },
+    "Carregar Contexto Tenant": { "main": [[{ "node": "Montar Execução", "type": "main", "index": 0 }]] },
+    "Montar Execução": { "main": [[{ "node": "Registrar Início", "type": "main", "index": 0 }]] },
+    "Registrar Início": { "main": [[{ "node": "Responder Mission Control", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": {}
+}
