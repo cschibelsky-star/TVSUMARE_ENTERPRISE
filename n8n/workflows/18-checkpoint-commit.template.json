@@ -1,0 +1,74 @@
+{
+  "name": "18 - Vitrine IA Flow - Checkpoint Commit",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "vitrine-flow/checkpoint-commit",
+        "responseMode": "responseNode"
+      },
+      "name": "Webhook Checkpoint",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [100, 240]
+    },
+    {
+      "parameters": {
+        "jsCode": "const p = $json;\nconst required = ['workflow_id','execution_id','node_id','tenant_id','request_id','status'];\nconst missing = required.filter(k => !p[k]);\nif (missing.length) throw new Error(`Campos obrigatórios ausentes: ${missing.join(', ')}`);\nreturn [{ json: { ...p, committed_at: p.committed_at || new Date().toISOString() } }];"
+      },
+      "name": "Validar Checkpoint",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [340, 240]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.VITRINE_MASTER_API_URL}}/flow/checkpoints/commit",
+        "sendHeaders": true,
+        "sendBody": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer {{$env.VITRINE_MASTER_API_TOKEN}}" },
+            { "name": "X-Vitrine-Event", "value": "CHECKPOINT_COMMITTED" },
+            { "name": "X-Vitrine-Request-Id", "value": "={{$json.request_id}}" }
+          ]
+        },
+        "bodyParameters": {
+          "parameters": [
+            { "name": "workflow_id", "value": "={{$json.workflow_id}}" },
+            { "name": "execution_id", "value": "={{$json.execution_id}}" },
+            { "name": "child_workflow_id", "value": "={{$json.child_workflow_id}}" },
+            { "name": "node_id", "value": "={{$json.node_id}}" },
+            { "name": "tenant_id", "value": "={{$json.tenant_id}}" },
+            { "name": "request_id", "value": "={{$json.request_id}}" },
+            { "name": "status", "value": "={{$json.status}}" },
+            { "name": "output", "value": "={{$json.output || {}}}" },
+            { "name": "committed_at", "value": "={{$json.committed_at}}" }
+          ]
+        }
+      },
+      "name": "Persistir Checkpoint",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [600, 240]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, status: 'committed', checkpoint_id: $json.checkpoint_id || null } }}"
+      },
+      "name": "Responder",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [840, 240]
+    }
+  ],
+  "connections": {
+    "Webhook Checkpoint": { "main": [[{ "node": "Validar Checkpoint", "type": "main", "index": 0 }]] },
+    "Validar Checkpoint": { "main": [[{ "node": "Persistir Checkpoint", "type": "main", "index": 0 }]] },
+    "Persistir Checkpoint": { "main": [[{ "node": "Responder", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": {}
+}
