@@ -1,0 +1,68 @@
+{
+  "name": "10 - Vitrine IA Flow - AI Router",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "vitrine-flow/ai-router",
+        "responseMode": "responseNode"
+      },
+      "name": "Webhook AI Job",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [100, 240]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $json;\nconst capability = input.capability || 'text';\nconst providers = input.providers || ['gemini','openai'];\nreturn [{ json: { ...input, capability, providers, selected_provider: providers[0], fallback_providers: providers.slice(1), status: 'routing' } }];"
+      },
+      "name": "Selecionar Provider",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [340, 240]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.VITRINE_MASTER_API_URL}}/flow/quota/check",
+        "sendHeaders": true,
+        "sendBody": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer {{$env.VITRINE_MASTER_API_TOKEN}}" },
+            { "name": "X-Vitrine-Event", "value": "QUOTA_CHECK_REQUESTED" }
+          ]
+        },
+        "bodyParameters": {
+          "parameters": [
+            { "name": "tenant_id", "value": "={{$json.tenant_id}}" },
+            { "name": "resource", "value": "ai_requests" },
+            { "name": "amount", "value": "1" },
+            { "name": "request_id", "value": "={{$json.request_id}}" }
+          ]
+        }
+      },
+      "name": "Validar Cota",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [580, 240]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, status: 'accepted', selected_provider: $('Selecionar Provider').item.json.selected_provider, fallback_providers: $('Selecionar Provider').item.json.fallback_providers, message: 'AI job roteado e aguardando execução do provider adapter.' } }}"
+      },
+      "name": "Responder",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [820, 240]
+    }
+  ],
+  "connections": {
+    "Webhook AI Job": { "main": [[{ "node": "Selecionar Provider", "type": "main", "index": 0 }]] },
+    "Selecionar Provider": { "main": [[{ "node": "Validar Cota", "type": "main", "index": 0 }]] },
+    "Validar Cota": { "main": [[{ "node": "Responder", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": {}
+}
