@@ -1,0 +1,39 @@
+{
+  "version": "1.0.0",
+  "tenant_key": "company_id",
+  "initial_state": "pending",
+  "terminal_states": ["completed", "failed", "compensated", "rolled_back", "cancelled", "finished"],
+  "states": {
+    "pending": ["validating", "cancelled"],
+    "validating": ["waiting", "running", "failed", "cancelled"],
+    "waiting": ["running", "failed", "cancelled"],
+    "running": ["checkpoint", "partially_completed", "completed", "failed", "cancelled"],
+    "checkpoint": ["running", "partially_completed", "completed", "failed"],
+    "partially_completed": ["running", "completed", "failed", "compensating", "rollback"],
+    "failed": ["waiting", "compensating", "rollback", "finished"],
+    "compensating": ["compensated", "failed"],
+    "compensated": ["finished"],
+    "rollback": ["rolled_back", "failed"],
+    "rolled_back": ["finished"],
+    "completed": ["finished"],
+    "cancelled": ["finished"],
+    "finished": []
+  },
+  "guards": {
+    "require_company_id": true,
+    "require_request_id": true,
+    "require_workflow_uuid": true,
+    "idempotency_check": true,
+    "feature_flag_check": true,
+    "quota_check_when_billable": true,
+    "distributed_lock_when_exclusive": true
+  },
+  "telemetry": {
+    "emit_on_transition": true,
+    "emit_duration_ms": true,
+    "emit_attempt": true,
+    "emit_queue": true,
+    "emit_provider": true,
+    "emit_cost": true
+  }
+}
