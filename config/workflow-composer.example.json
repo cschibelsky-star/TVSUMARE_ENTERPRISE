@@ -1,0 +1,83 @@
+{
+  "id": "WF-000006",
+  "slug": "factory-provisioning",
+  "version": "1.1.0",
+  "execution_mode": "sequential_with_parallel_groups",
+  "children": [
+    {
+      "id": "WF-CHILD-0001",
+      "slug": "validate-tenant",
+      "depends_on": [],
+      "checkpoint": "tenant_validated",
+      "compensation": null
+    },
+    {
+      "id": "WF-CHILD-0002",
+      "slug": "create-license",
+      "depends_on": ["WF-CHILD-0001"],
+      "checkpoint": "license_created",
+      "compensation": "revoke-license"
+    },
+    {
+      "id": "WF-CHILD-0003",
+      "slug": "provision-database",
+      "depends_on": ["WF-CHILD-0002"],
+      "checkpoint": "database_ready",
+      "compensation": "drop-database"
+    },
+    {
+      "id": "WF-CHILD-0004",
+      "slug": "provision-storage",
+      "depends_on": ["WF-CHILD-0002"],
+      "checkpoint": "storage_ready",
+      "compensation": "remove-storage"
+    },
+    {
+      "id": "WF-CHILD-0005",
+      "slug": "provision-docker",
+      "depends_on": ["WF-CHILD-0003", "WF-CHILD-0004"],
+      "checkpoint": "docker_ready",
+      "compensation": "remove-docker"
+    },
+    {
+      "id": "WF-CHILD-0006",
+      "slug": "configure-domain",
+      "depends_on": ["WF-CHILD-0005"],
+      "checkpoint": "domain_ready",
+      "compensation": "remove-domain"
+    },
+    {
+      "id": "WF-CHILD-0007",
+      "slug": "configure-ssl",
+      "depends_on": ["WF-CHILD-0006"],
+      "checkpoint": "ssl_ready",
+      "compensation": "revoke-ssl"
+    },
+    {
+      "id": "WF-CHILD-0008",
+      "slug": "deploy-application",
+      "depends_on": ["WF-CHILD-0007"],
+      "checkpoint": "application_deployed",
+      "compensation": "rollback-deploy"
+    },
+    {
+      "id": "WF-CHILD-0009",
+      "slug": "health-check",
+      "depends_on": ["WF-CHILD-0008"],
+      "checkpoint": "health_verified",
+      "compensation": null
+    },
+    {
+      "id": "WF-CHILD-0010",
+      "slug": "delivery-notification",
+      "depends_on": ["WF-CHILD-0009"],
+      "checkpoint": "delivery_notified",
+      "compensation": null
+    }
+  ],
+  "rollback_policy": {
+    "strategy": "reverse_completed_children",
+    "stop_on_compensation_failure": false,
+    "emit_partial_state": true
+  }
+}
