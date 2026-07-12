@@ -1,0 +1,40 @@
+{
+  "name": "34 - Vitrine IA Flow - Auto Healing Manager",
+  "nodes": [
+    {
+      "parameters": {"httpMethod": "POST", "path": "vitrine-flow/auto-healing", "responseMode": "responseNode"},
+      "name": "Webhook Healing Request",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [100, 240]
+    },
+    {
+      "parameters": {"jsCode": "const p=$json; const allowed=['restart_service','retry_job','clear_safe_cache','renew_ssl','reprocess_queue','provider_failover']; const action=p.action||''; return [{json:{...p, allowed:allowed.includes(action), status:allowed.includes(action)?'approved':'waiting_human', event:allowed.includes(action)?'AUTO_HEALING_STARTED':'APPROVAL_REQUESTED'}}];"},
+      "name": "Validate Healing Action",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [340, 240]
+    },
+    {
+      "parameters": {"method": "POST", "url": "={{$env.VITRINE_MASTER_API_URL}}/flow/events/callback", "sendHeaders": true, "sendBody": true, "headerParameters": {"parameters": [{"name": "Authorization", "value": "Bearer {{$env.VITRINE_MASTER_API_TOKEN}}"}]}, "bodyParameters": {"parameters": [{"name": "event", "value": "={{$json.event}}"}, {"name": "payload", "value": "={{$json}}"}]}},
+      "name": "Emit Healing Event",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [600, 240]
+    },
+    {
+      "parameters": {"respondWith": "json", "responseBody": "={{ {ok:true,status:$json.status,action:$json.action} }}"},
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [840, 240]
+    }
+  ],
+  "connections": {
+    "Webhook Healing Request": {"main": [[{"node": "Validate Healing Action", "type": "main", "index": 0}]]},
+    "Validate Healing Action": {"main": [[{"node": "Emit Healing Event", "type": "main", "index": 0}]]},
+    "Emit Healing Event": {"main": [[{"node": "Respond", "type": "main", "index": 0}]]}
+  },
+  "active": false,
+  "settings": {}
+}
