@@ -1,0 +1,37 @@
+name: Vitrine IA Flow Validation
+
+on:
+  push:
+    branches:
+      - main
+      - feature/tvsumare-enterprise-3-foundation
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+
+      - name: Validate Composer
+        run: composer validate --strict
+
+      - name: Install dependencies
+        run: composer install --no-interaction --no-progress --prefer-dist
+
+      - name: Validate Flow package
+        run: php scripts/validate-flow-package.php
+
+      - name: Validate Docker Compose
+        run: docker compose -f infra/n8n/docker-compose.n8n.yml config >/dev/null
+
+      - name: Validate production Docker Compose
+        run: docker compose --env-file infra/n8n/.env.ci -f infra/n8n/docker-compose.production.yml config >/dev/null
