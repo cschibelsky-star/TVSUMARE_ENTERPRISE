@@ -1,0 +1,23 @@
+{
+  "version": "1.0.0",
+  "tenant_key": "company_id",
+  "installation": {
+    "states": ["pending", "validating", "installing", "configuring", "testing", "completed", "failed", "rolling_back", "rolled_back"],
+    "idempotency_key": "request_id",
+    "checkpoint_each_step": true,
+    "rollback_on_critical_failure": true,
+    "lock_template": "factory:install:{company_id}:{blueprint_uuid}"
+  },
+  "upgrade": {
+    "states": ["pending", "validating", "backing_up", "upgrading", "migrating", "testing", "completed", "failed", "rolling_back", "rolled_back"],
+    "backup_required": true,
+    "health_check_required": true,
+    "canary_supported": true,
+    "lock_template": "factory:upgrade:{company_id}:{installation_uuid}"
+  },
+  "timeouts_seconds": {
+    "installation": 3600,
+    "upgrade": 3600,
+    "step": 900
+  }
+}
