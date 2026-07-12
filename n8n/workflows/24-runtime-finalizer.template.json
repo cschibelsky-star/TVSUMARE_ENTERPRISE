@@ -1,0 +1,79 @@
+{
+  "name": "24 - Vitrine IA Flow - Runtime Finalizer",
+  "nodes": [
+    {
+      "parameters": {"httpMethod": "POST", "path": "vitrine-flow/runtime/finalize", "responseMode": "responseNode"},
+      "name": "Webhook Finalize",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [100, 240]
+    },
+    {
+      "parameters": {
+        "jsCode": "const b=$json.body||$json; const children=b.children||[]; const completed=children.filter(x=>x.status==='completed').length; const failed=children.filter(x=>x.status==='failed').length; const cancelled=children.filter(x=>x.status==='cancelled').length; const started=new Date(b.started_at||Date.now()).getTime(); const finished=Date.now(); let status='completed'; if(cancelled>0) status='cancelled'; else if(failed>0) status=b.compensated?'compensated':'failed'; return [{json:{...b,event:'WORKFLOW_FINALIZING',status,summary:{children:children.length,completed,failed,cancelled,retries:b.retries||0,cost:b.cost||0,duration_ms:Math.max(0,finished-started)},finished_at:new Date(finished).toISOString(),execution_lock_key:b.execution_lock_key||`runtime:${b.company_id}:${b.execution_id}`}}];"
+      },
+      "name": "Aggregate Final Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [340, 240]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.VITRINE_MASTER_API_URL}}/flow/telemetry",
+        "sendHeaders": true,
+        "sendBody": true,
+        "headerParameters": {"parameters": [{"name": "Authorization", "value": "Bearer {{$env.VITRINE_MASTER_API_TOKEN}}"}]},
+        "jsonBody": "={{ { company_id:$json.company_id, workflow_uuid:$json.workflow_uuid, execution_id:$json.execution_id, trace_id:$json.trace_id, correlation_id:$json.correlation_id, status:$json.status, duration_ms:$json.summary.duration_ms, retries:$json.summary.retries, cost:$json.summary.cost, payload:$json.summary } }}"
+      },
+      "name": "Commit Final Telemetry",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [570, 240]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.VITRINE_MASTER_API_URL}}/flow/locks/release",
+        "sendHeaders": true,
+        "sendBody": true,
+        "headerParameters": {"parameters": [{"name": "Authorization", "value": "Bearer {{$env.VITRINE_MASTER_API_TOKEN}}"}]},
+        "jsonBody": "={{ { company_id:$('Aggregate Final Result').item.json.company_id, key:$('Aggregate Final Result').item.json.execution_lock_key, owner:$('Aggregate Final Result').item.json.request_id } }}"
+      },
+      "name": "Release Execution Lock",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [800, 240]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.VITRINE_MASTER_API_URL}}/flow/events/callback",
+        "sendHeaders": true,
+        "sendBody": true,
+        "headerParameters": {"parameters": [{"name": "Authorization", "value": "Bearer {{$env.VITRINE_MASTER_API_TOKEN}}"}, {"name": "X-Vitrine-Event", "value": "WORKFLOW_FINALIZED"}]},
+        "jsonBody": "={{ { event:'WORKFLOW_FINALIZED', company_id:$('Aggregate Final Result').item.json.company_id, workflow_uuid:$('Aggregate Final Result').item.json.workflow_uuid, execution_id:$('Aggregate Final Result').item.json.execution_id, request_id:$('Aggregate Final Result').item.json.request_id, status:$('Aggregate Final Result').item.json.status, finished_at:$('Aggregate Final Result').item.json.finished_at, summary:$('Aggregate Final Result').item.json.summary } }}"
+      },
+      "name": "Final Callback",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1030, 240]
+    },
+    {
+      "parameters": {"respondWith": "json", "responseBody": "={{ { ok:true, execution_id:$('Aggregate Final Result').item.json.execution_id, status:$('Aggregate Final Result').item.json.status, summary:$('Aggregate Final Result').item.json.summary } }}"},
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1260, 240]
+    }
+  ],
+  "connections": {
+    "Webhook Finalize": {"main": [[{"node": "Aggregate Final Result", "type": "main", "index": 0}]]},
+    "Aggregate Final Result": {"main": [[{"node": "Commit Final Telemetry", "type": "main", "index": 0}]]},
+    "Commit Final Telemetry": {"main": [[{"node": "Release Execution Lock", "type": "main", "index": 0}]]},
+    "Release Execution Lock": {"main": [[{"node": "Final Callback", "type": "main", "index": 0}]]},
+    "Final Callback": {"main": [[{"node": "Respond", "type": "main", "index": 0}]]}
+  },
+  "active": false,
+  "settings": {}
+}
