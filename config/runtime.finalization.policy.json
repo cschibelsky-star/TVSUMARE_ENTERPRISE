@@ -1,0 +1,28 @@
+{
+  "version": "1.0.0",
+  "terminal_states": ["completed", "failed", "cancelled", "compensated", "rolled_back", "finished"],
+  "cancel": {
+    "lock_ttl_seconds": 600,
+    "wait_for_non_interruptible_step": true,
+    "start_new_children": false,
+    "compensate_completed_nodes": true,
+    "compensation_order": "reverse_topological"
+  },
+  "finalize": {
+    "idempotent": true,
+    "release_execution_lock": true,
+    "release_unused_reservations": true,
+    "emit_final_telemetry": true,
+    "emit_callback": true,
+    "send_compensation_failures_to_dlq": true
+  },
+  "sla": {
+    "mark_breached": true,
+    "emit_event": "WORKFLOW_SLA_BREACHED"
+  },
+  "retention": {
+    "execution_days": 365,
+    "checkpoint_days": 180,
+    "compensation_history_days": 365
+  }
+}
