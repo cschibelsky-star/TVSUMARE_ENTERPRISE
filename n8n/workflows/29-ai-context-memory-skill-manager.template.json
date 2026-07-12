@@ -1,0 +1,84 @@
+{
+  "name": "29 - Vitrine IA Flow - AI Context Memory Skill Manager",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "vitrine-flow/ai/context-memory-skills",
+        "responseMode": "responseNode"
+      },
+      "name": "Webhook AI Context",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [100, 260]
+    },
+    {
+      "parameters": {
+        "jsCode": "const required=['company_id','execution_id','workflow_uuid']; for (const key of required){ if(!$json[key]) throw new Error(`Missing ${key}`); } return [{json:{...$json, event:'AI_CONTEXT_RESOLVE_REQUESTED'}}];"
+      },
+      "name": "Validar Contexto",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [320, 260]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.VITRINE_MASTER_API_URL}}/flow/ai/context/resolve",
+        "sendHeaders": true,
+        "sendBody": true,
+        "headerParameters": {"parameters":[{"name":"Authorization","value":"Bearer {{$env.VITRINE_MASTER_API_TOKEN}}"}]},
+        "bodyParameters": {"parameters":[{"name":"payload","value":"={{$json}}"}]}
+      },
+      "name": "Resolver Contexto",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [540, 180]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.VITRINE_MASTER_API_URL}}/flow/ai/memory/query",
+        "sendHeaders": true,
+        "sendBody": true,
+        "headerParameters": {"parameters":[{"name":"Authorization","value":"Bearer {{$env.VITRINE_MASTER_API_TOKEN}}"}]},
+        "bodyParameters": {"parameters":[{"name":"payload","value":"={{$json}}"}]}
+      },
+      "name": "Consultar Memória",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [540, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.VITRINE_MASTER_API_URL}}/flow/ai/skills/resolve",
+        "sendHeaders": true,
+        "sendBody": true,
+        "headerParameters": {"parameters":[{"name":"Authorization","value":"Bearer {{$env.VITRINE_MASTER_API_TOKEN}}"}]},
+        "bodyParameters": {"parameters":[{"name":"payload","value":"={{$json}}"}]}
+      },
+      "name": "Resolver Skills",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [540, 420]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok:true, event:'AI_CONTEXT_RESOLVED', company_id:$json.company_id, execution_id:$json.execution_id } }}"
+      },
+      "name": "Responder",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [800, 260]
+    }
+  ],
+  "connections": {
+    "Webhook AI Context":{"main":[[{"node":"Validar Contexto","type":"main","index":0}]]},
+    "Validar Contexto":{"main":[[{"node":"Resolver Contexto","type":"main","index":0},{"node":"Consultar Memória","type":"main","index":0},{"node":"Resolver Skills","type":"main","index":0}]]},
+    "Resolver Contexto":{"main":[[{"node":"Responder","type":"main","index":0}]]}
+  },
+  "active": false,
+  "settings": {}
+}
