@@ -1,0 +1,46 @@
+[
+  {
+    "id": "AGENT-000001",
+    "slug": "ai-supervisor",
+    "name": "AI Supervisor",
+    "category": "orchestration",
+    "queue": "AI Queue",
+    "reusable": true,
+    "requires_human_approval": false,
+    "skills": ["task-routing", "cost-control", "provider-selection", "priority-control"],
+    "status": "draft"
+  },
+  {
+    "id": "AGENT-000002",
+    "slug": "editorial-agent",
+    "name": "Editorial IA",
+    "category": "editorial",
+    "queue": "Editorial Queue",
+    "reusable": true,
+    "requires_human_approval": true,
+    "skills": ["rewrite", "summary", "seo", "classification", "score"],
+    "status": "draft"
+  },
+  {
+    "id": "AGENT-000003",
+    "slug": "marketing-agent",
+    "name": "Marketing IA",
+    "category": "marketing",
+    "queue": "Social Queue",
+    "reusable": true,
+    "requires_human_approval": true,
+    "skills": ["copy", "hashtags", "calendar", "cta", "campaign"],
+    "status": "draft"
+  },
+  {
+    "id": "AGENT-000004",
+    "slug": "deploy-agent",
+    "name": "Deploy IA",
+    "category": "infrastructure",
+    "queue": "Deployment Queue",
+    "reusable": true,
+    "requires_human_approval": false,
+    "skills": ["deploy", "health-check", "rollback", "auto-healing"],
+    "status": "draft"
+  }
+]
