@@ -1,0 +1,40 @@
+{
+  "name": "35 - Vitrine IA Flow - Predictive Monitoring Engine",
+  "nodes": [
+    {
+      "parameters": {"rule": {"interval": [{"field": "minutes", "minutesInterval": 15}]}},
+      "name": "A cada 15 minutos",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [100, 240]
+    },
+    {
+      "parameters": {"url": "={{$env.VITRINE_MASTER_API_URL}}/flow/telemetry/trends", "sendHeaders": true, "headerParameters": {"parameters": [{"name": "Authorization", "value": "Bearer {{$env.VITRINE_MASTER_API_TOKEN}}"}]}},
+      "name": "Consultar Tendências",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [340, 240]
+    },
+    {
+      "parameters": {"jsCode": "const rows=Array.isArray($json)?$json:($json.items||[]); return rows.map(r=>({json:{...r,risk:(r.failure_probability||0)>=0.8?'high':((r.failure_probability||0)>=0.5?'medium':'low'),event:(r.failure_probability||0)>=0.8?'FAILURE_PROBABILITY_HIGH':'PREDICTIVE_RISK_DETECTED'}}));"},
+      "name": "Classificar Risco",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [580, 240]
+    },
+    {
+      "parameters": {"method": "POST", "url": "={{$env.VITRINE_MASTER_API_URL}}/flow/events/callback", "sendHeaders": true, "sendBody": true, "headerParameters": {"parameters": [{"name": "Authorization", "value": "Bearer {{$env.VITRINE_MASTER_API_TOKEN}}"}]}, "bodyParameters": {"parameters": [{"name": "event", "value": "={{$json.event}}"}, {"name": "payload", "value": "={{$json}}"}]}},
+      "name": "Emitir Risco Preditivo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [820, 240]
+    }
+  ],
+  "connections": {
+    "A cada 15 minutos": {"main": [[{"node": "Consultar Tendências", "type": "main", "index": 0}]]},
+    "Consultar Tendências": {"main": [[{"node": "Classificar Risco", "type": "main", "index": 0}]]},
+    "Classificar Risco": {"main": [[{"node": "Emitir Risco Preditivo", "type": "main", "index": 0}]]}
+  },
+  "active": false,
+  "settings": {}
+}
