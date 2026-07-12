@@ -1,0 +1,56 @@
+{
+  "name": "28 - Vitrine IA Flow - Observability Event Router",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "vitrine-flow/observability",
+        "responseMode": "responseNode"
+      },
+      "name": "Webhook Observability",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [100, 240]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body || $json;\nfor (const field of ['company_id','execution_id','workflow_id','status']) if (!body[field]) throw new Error(`Missing ${field}`);\nconst severity = body.status === 'failed' ? 'critical' : body.status === 'degraded' ? 'warning' : 'info';\nreturn [{ json: { ...body, event: body.event || 'METRIC_RECORDED', severity, recorded_at: new Date().toISOString() } }];"
+      },
+      "name": "Normalize Telemetry",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [340, 240]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.VITRINE_MASTER_API_URL}}/flow/telemetry",
+        "sendHeaders": true,
+        "sendBody": true,
+        "headerParameters": {"parameters":[{"name":"Authorization","value":"Bearer {{$env.VITRINE_MASTER_API_TOKEN}}"}]},
+        "bodyParameters": {"parameters":[{"name":"payload","value":"={{$json}}"}]}
+      },
+      "name": "Send Telemetry",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [580, 240]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, status: 'recorded', severity: $json.severity } }}"
+      },
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [820, 240]
+    }
+  ],
+  "connections": {
+    "Webhook Observability": {"main":[[{"node":"Normalize Telemetry","type":"main","index":0}]]},
+    "Normalize Telemetry": {"main":[[{"node":"Send Telemetry","type":"main","index":0}]]},
+    "Send Telemetry": {"main":[[{"node":"Respond","type":"main","index":0}]]}
+  },
+  "active": false,
+  "settings": {}
+}
