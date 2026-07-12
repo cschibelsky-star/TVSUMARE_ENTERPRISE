@@ -1,0 +1,22 @@
+{
+  "version": "1.0.0",
+  "tenant_key": "company_id",
+  "context": {
+    "required": ["company_id", "execution_id", "workflow_uuid", "correlation_id", "locale", "timezone"],
+    "cache_ttl_seconds": 300,
+    "deny_unknown_company": true
+  },
+  "memory": {
+    "scopes": ["execution", "workflow", "company", "global_policy"],
+    "default_retention_days": 90,
+    "sensitive_data": "reference_only",
+    "write_requires_audit": true,
+    "max_items_per_query": 20
+  },
+  "skills": {
+    "resolution_order": ["feature_flags", "plan", "company", "workflow", "agent"],
+    "require_version": true,
+    "allow_fallback": true,
+    "human_approval_for": ["publish_external", "financial_commit", "infrastructure_destroy", "compliance_delete"]
+  }
+}
