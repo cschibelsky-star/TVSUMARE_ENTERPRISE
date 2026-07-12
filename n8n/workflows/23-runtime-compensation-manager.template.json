@@ -1,0 +1,62 @@
+{
+  "name": "23 - Vitrine IA Flow - Runtime Compensation Manager",
+  "nodes": [
+    {
+      "parameters": {"httpMethod": "POST", "path": "vitrine-flow/runtime/compensate", "responseMode": "responseNode"},
+      "name": "Webhook Compensate",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [100, 240]
+    },
+    {
+      "parameters": {
+        "jsCode": "const b=$json.body||$json; const nodes=(b.completed_nodes||[]).filter(n=>n.compensation_workflow).reverse(); return nodes.map((n,i)=>({json:{...b,event:'WORKFLOW_COMPENSATION_STARTED',compensation_index:i,source_node:n.id,compensation_workflow:n.compensation_workflow,payload:n.compensation_payload||{}}}));"
+      },
+      "name": "Build Reverse Compensation Plan",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [340, 240]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.N8N_WEBHOOK_URL}}webhook/vitrine-flow/child-runtime",
+        "sendBody": true,
+        "jsonBody": "={{ { company_id:$json.company_id, parent_execution_id:$json.execution_id, workflow_uuid:$json.compensation_workflow, request_id:$json.request_id+'-comp-'+$json.compensation_index, correlation_id:$json.correlation_id, payload:$json.payload, compensation:true } }}"
+      },
+      "name": "Execute Compensation Child",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [580, 240]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.VITRINE_MASTER_API_URL}}/flow/events/callback",
+        "sendHeaders": true,
+        "sendBody": true,
+        "headerParameters": {"parameters": [{"name": "Authorization", "value": "Bearer {{$env.VITRINE_MASTER_API_TOKEN}}"}, {"name": "X-Vitrine-Event", "value": "WORKFLOW_COMPENSATION_COMPLETED"}]},
+        "jsonBody": "={{ { event:'WORKFLOW_COMPENSATION_COMPLETED', company_id:$('Build Reverse Compensation Plan').item.json.company_id, execution_id:$('Build Reverse Compensation Plan').item.json.execution_id, source_node:$('Build Reverse Compensation Plan').item.json.source_node, compensation_workflow:$('Build Reverse Compensation Plan').item.json.compensation_workflow } }}"
+      },
+      "name": "Report Compensation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [820, 240]
+    },
+    {
+      "parameters": {"respondWith": "json", "responseBody": "={{ { ok:true, status:'compensated' } }}"},
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1040, 240]
+    }
+  ],
+  "connections": {
+    "Webhook Compensate": {"main": [[{"node": "Build Reverse Compensation Plan", "type": "main", "index": 0}]]},
+    "Build Reverse Compensation Plan": {"main": [[{"node": "Execute Compensation Child", "type": "main", "index": 0}]]},
+    "Execute Compensation Child": {"main": [[{"node": "Report Compensation", "type": "main", "index": 0}]]},
+    "Report Compensation": {"main": [[{"node": "Respond", "type": "main", "index": 0}]]}
+  },
+  "active": false,
+  "settings": {}
+}
