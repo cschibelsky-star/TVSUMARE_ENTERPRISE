@@ -1,0 +1,56 @@
+{
+  "name": "27 - Vitrine IA Flow - Factory Blueprint Orchestrator",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "vitrine-flow/factory-blueprint",
+        "responseMode": "responseNode"
+      },
+      "name": "Webhook Factory Order",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [100, 240]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body || $json;\nfor (const field of ['company_id','request_id','blueprint_code']) if (!body[field]) throw new Error(`Missing ${field}`);\nreturn [{ json: { ...body, event: 'FACTORY_PROVISION_STARTED', queue: 'Provision Queue', status: 'accepted' } }];"
+      },
+      "name": "Validate Order",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [340, 240]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.VITRINE_MASTER_API_URL}}/flow/events/callback",
+        "sendHeaders": true,
+        "sendBody": true,
+        "headerParameters": {"parameters":[{"name":"Authorization","value":"Bearer {{$env.VITRINE_MASTER_API_TOKEN}}"}]},
+        "bodyParameters": {"parameters":[{"name":"event","value":"FACTORY_PROVISION_STARTED"},{"name":"payload","value":"={{$json}}"}]}
+      },
+      "name": "Emit Provision Started",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [580, 240]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, status: 'accepted', queue: 'Provision Queue', blueprint_code: $json.blueprint_code } }}"
+      },
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [820, 240]
+    }
+  ],
+  "connections": {
+    "Webhook Factory Order": {"main":[[{"node":"Validate Order","type":"main","index":0}]]},
+    "Validate Order": {"main":[[{"node":"Emit Provision Started","type":"main","index":0}]]},
+    "Emit Provision Started": {"main":[[{"node":"Respond","type":"main","index":0}]]}
+  },
+  "active": false,
+  "settings": {}
+}
