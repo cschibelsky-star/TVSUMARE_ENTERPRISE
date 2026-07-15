@@ -1,0 +1,36 @@
+{
+  "key": "tv-sumare-enterprise",
+  "name": "TV Sumaré Enterprise",
+  "version": "3.0.0",
+  "status": "scaffold",
+  "runtime": {
+    "type": "not-implemented",
+    "database": "none",
+    "containerized": false
+  },
+  "health": {
+    "path": null,
+    "expected_status": null
+  },
+  "core": {
+    "authentication": "core-future",
+    "licensing": "core",
+    "commercial_leads": "core-future"
+  },
+  "dependencies": [
+    "Vitrine AI Pro CORE para autenticação, licenciamento e comercial",
+    "Definição do runtime oficial antes da primeira build funcional"
+  ],
+  "capabilities_planned": [
+    "Motor Editorial 3.0",
+    "Image Engine",
+    "TV Sumaré Play 2.0",
+    "Dashboard Enterprise",
+    "Content Hub"
+  ],
+  "notes": [
+    "O repositório contém atualmente apenas o README inicial.",
+    "Não há aplicação, banco, Docker, painel ou health check versionados.",
+    "O produto não deve ser classificado como MVP funcional ou produção."
+  ]
+}
