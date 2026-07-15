@@ -4,6 +4,10 @@ Enterprise News OS — Powered by Vitrine IA Pro.
 
 Este repositório será a base oficial da TV Sumaré Enterprise 3.0, produto referência para venda, homologação e replicação da TV Digital Enterprise.
 
+## Estado técnico atual
+
+**Classificação: scaffold.** O repositório ainda não contém uma aplicação funcional, runtime, banco, Docker, painel ou health check versionados. Consulte `AUDIT_STATUS.md` e `product.json`.
+
 ## Foco da Build 3.0
 
 - Motor Editorial 3.0
