@@ -1,0 +1,34 @@
+{
+  "version": "1.0.0",
+  "blueprints": [
+    {
+      "code": "generic_laravel_saas",
+      "name": "Generic Laravel SaaS",
+      "runtime": "docker-compose",
+      "database": "mysql",
+      "steps": [
+        "validate-company",
+        "create-license",
+        "provision-database",
+        "provision-storage",
+        "provision-docker",
+        "configure-domain",
+        "configure-ssl",
+        "deploy-application",
+        "run-migrations",
+        "create-admin-user",
+        "health-check",
+        "delivery-notification"
+      ],
+      "compensation": [
+        "revoke-temporary-license",
+        "remove-container",
+        "remove-storage",
+        "remove-database",
+        "remove-dns",
+        "release-usage",
+        "release-locks"
+      ]
+    }
+  ]
+}

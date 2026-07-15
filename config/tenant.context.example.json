@@ -1,0 +1,34 @@
+{
+  "tenant_id": "tenant_123",
+  "product_code": "tv_digital_enterprise",
+  "plan_code": "enterprise",
+  "status": "active",
+  "region": "br-sudeste",
+  "timezone": "America/Sao_Paulo",
+  "locale": "pt-BR",
+  "features": {
+    "rss_editorial": true,
+    "instagram": true,
+    "heygen": true,
+    "youtube": true,
+    "factory_provisioning": true
+  },
+  "quotas": {
+    "ai_tokens_month": 1000000,
+    "video_minutes_month": 60,
+    "social_posts_month": 300,
+    "workflow_executions_month": 5000
+  },
+  "limits": {
+    "max_parallel_workflows": 5,
+    "max_parallel_ai_jobs": 2,
+    "max_parallel_video_jobs": 1
+  },
+  "storage": {
+    "provider": "cloudflare_r2",
+    "bucket_ref": "secret://tenant_123/storage_bucket"
+  },
+  "metadata": {
+    "brand": "TV Sumaré Enterprise"
+  }
+}

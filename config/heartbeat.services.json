@@ -1,0 +1,47 @@
+[
+  {
+    "service": "n8n",
+    "type": "orchestrator",
+    "url_env": "N8N_HEALTH_URL",
+    "interval_seconds": 60,
+    "timeout_seconds": 10,
+    "failure_threshold": 3,
+    "recovery_threshold": 2
+  },
+  {
+    "service": "mission_control_api",
+    "type": "api",
+    "url_env": "VITRINE_MASTER_HEALTH_URL",
+    "interval_seconds": 60,
+    "timeout_seconds": 10,
+    "failure_threshold": 3,
+    "recovery_threshold": 2
+  },
+  {
+    "service": "docker_engine",
+    "type": "infrastructure",
+    "url_env": "DOCKER_HEALTH_URL",
+    "interval_seconds": 120,
+    "timeout_seconds": 15,
+    "failure_threshold": 2,
+    "recovery_threshold": 1
+  },
+  {
+    "service": "gemini",
+    "type": "ai_provider",
+    "url_env": "GEMINI_HEALTH_URL",
+    "interval_seconds": 300,
+    "timeout_seconds": 20,
+    "failure_threshold": 2,
+    "recovery_threshold": 1
+  },
+  {
+    "service": "heygen",
+    "type": "video_provider",
+    "url_env": "HEYGEN_HEALTH_URL",
+    "interval_seconds": 300,
+    "timeout_seconds": 20,
+    "failure_threshold": 2,
+    "recovery_threshold": 1
+  }
+]

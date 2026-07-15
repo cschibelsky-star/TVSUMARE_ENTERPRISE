@@ -1,0 +1,64 @@
+{
+  "name": "22 - Vitrine IA Flow - Runtime Cancel Manager",
+  "nodes": [
+    {
+      "parameters": {"httpMethod": "POST", "path": "vitrine-flow/runtime/cancel", "responseMode": "responseNode"},
+      "name": "Webhook Cancel",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [100, 240]
+    },
+    {
+      "parameters": {
+        "jsCode": "const b=$json.body||$json; const required=['company_id','execution_id','workflow_uuid','request_id']; const missing=required.filter(k=>!b[k]); if(missing.length) throw new Error('Missing: '+missing.join(',')); return [{json:{...b,event:'WORKFLOW_CANCEL_REQUESTED',lock_key:`runtime:cancel:${b.company_id}:${b.execution_id}`,cancel_requested_at:new Date().toISOString()}}];"
+      },
+      "name": "Validate Cancel",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [320, 240]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.VITRINE_MASTER_API_URL}}/flow/locks/acquire",
+        "sendHeaders": true,
+        "sendBody": true,
+        "headerParameters": {"parameters": [{"name": "Authorization", "value": "Bearer {{$env.VITRINE_MASTER_API_TOKEN}}"}]},
+        "jsonBody": "={{ { company_id:$json.company_id, key:$json.lock_key, owner:$json.request_id, ttl_seconds:600 } }}"
+      },
+      "name": "Acquire Cancel Lock",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [540, 240]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.VITRINE_MASTER_API_URL}}/flow/events/callback",
+        "sendHeaders": true,
+        "sendBody": true,
+        "headerParameters": {"parameters": [{"name": "Authorization", "value": "Bearer {{$env.VITRINE_MASTER_API_TOKEN}}"}, {"name": "X-Vitrine-Event", "value": "WORKFLOW_CANCELLING"}]},
+        "jsonBody": "={{ { event:'WORKFLOW_CANCELLING', company_id:$('Validate Cancel').item.json.company_id, execution_id:$('Validate Cancel').item.json.execution_id, workflow_uuid:$('Validate Cancel').item.json.workflow_uuid, request_id:$('Validate Cancel').item.json.request_id } }}"
+      },
+      "name": "Mark Cancelling",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [760, 240]
+    },
+    {
+      "parameters": {"respondWith": "json", "responseBody": "={{ { ok:true, status:'cancelling', execution_id:$('Validate Cancel').item.json.execution_id } }}"},
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [980, 240]
+    }
+  ],
+  "connections": {
+    "Webhook Cancel": {"main": [[{"node": "Validate Cancel", "type": "main", "index": 0}]]},
+    "Validate Cancel": {"main": [[{"node": "Acquire Cancel Lock", "type": "main", "index": 0}]]},
+    "Acquire Cancel Lock": {"main": [[{"node": "Mark Cancelling", "type": "main", "index": 0}]]},
+    "Mark Cancelling": {"main": [[{"node": "Respond", "type": "main", "index": 0}]]}
+  },
+  "active": false,
+  "settings": {}
+}

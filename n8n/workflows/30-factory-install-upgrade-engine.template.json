@@ -1,0 +1,71 @@
+{
+  "name": "30 - Vitrine IA Flow - Factory Install Upgrade Engine",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "vitrine-flow/factory/lifecycle",
+        "responseMode": "responseNode"
+      },
+      "name": "Webhook Factory Lifecycle",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [100, 240]
+    },
+    {
+      "parameters": {
+        "jsCode": "const mode=$json.mode; if(!['install','upgrade'].includes(mode)) throw new Error('Invalid mode'); if(!$json.company_id||!$json.request_id) throw new Error('Missing company_id/request_id'); return [{json:{...$json,event:mode==='install'?'INSTALLATION_STARTED':'UPGRADE_STARTED'}}];"
+      },
+      "name": "Validar Lifecycle",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [330, 240]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.VITRINE_MASTER_API_URL}}/flow/locks/acquire",
+        "sendHeaders": true,
+        "sendBody": true,
+        "headerParameters": {"parameters":[{"name":"Authorization","value":"Bearer {{$env.VITRINE_MASTER_API_TOKEN}}"}]},
+        "bodyParameters": {"parameters":[{"name":"payload","value":"={{$json}}"}]}
+      },
+      "name": "Adquirir Lock",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [550, 240]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.VITRINE_MASTER_API_URL}}/flow/factory/{{$json.mode === 'install' ? 'installations/start' : 'upgrades/start'}}",
+        "sendHeaders": true,
+        "sendBody": true,
+        "headerParameters": {"parameters":[{"name":"Authorization","value":"Bearer {{$env.VITRINE_MASTER_API_TOKEN}}"}]},
+        "bodyParameters": {"parameters":[{"name":"payload","value":"={{$json}}"}]}
+      },
+      "name": "Iniciar Lifecycle",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [780, 240]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {ok:true,status:'accepted',mode:$json.mode,company_id:$json.company_id,request_id:$json.request_id} }}"
+      },
+      "name": "Responder",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1010, 240]
+    }
+  ],
+  "connections": {
+    "Webhook Factory Lifecycle":{"main":[[{"node":"Validar Lifecycle","type":"main","index":0}]]},
+    "Validar Lifecycle":{"main":[[{"node":"Adquirir Lock","type":"main","index":0}]]},
+    "Adquirir Lock":{"main":[[{"node":"Iniciar Lifecycle","type":"main","index":0}]]},
+    "Iniciar Lifecycle":{"main":[[{"node":"Responder","type":"main","index":0}]]}
+  },
+  "active": false,
+  "settings": {}
+}

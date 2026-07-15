@@ -1,0 +1,42 @@
+{
+  "version": "1.0.0",
+  "storage": {
+    "source_of_truth": "mission_control_api",
+    "direct_database_access": false
+  },
+  "resume": {
+    "enabled": true,
+    "max_resume_attempts": 3,
+    "require_idempotency_key": true,
+    "skip_completed_children": true,
+    "emit_resume_events": true
+  },
+  "checkpoint": {
+    "required_for_child_workflows": true,
+    "commit_after_success": true,
+    "include_output": true,
+    "include_provider_usage": true,
+    "include_cost": true,
+    "retention_days": 365
+  },
+  "irreversible_steps": {
+    "require_manual_confirmation_on_conflict": true,
+    "examples": [
+      "billing_charge_committed",
+      "domain_registered",
+      "external_message_published",
+      "license_activated"
+    ]
+  },
+  "events": [
+    "CHILD_WORKFLOW_STARTED",
+    "CHILD_WORKFLOW_COMPLETED",
+    "CHILD_WORKFLOW_FAILED",
+    "CHECKPOINT_CREATED",
+    "CHECKPOINT_COMMITTED",
+    "CHECKPOINT_FAILED",
+    "WORKFLOW_RESUME_REQUESTED",
+    "WORKFLOW_RESUMED",
+    "WORKFLOW_RESUME_FAILED"
+  ]
+}

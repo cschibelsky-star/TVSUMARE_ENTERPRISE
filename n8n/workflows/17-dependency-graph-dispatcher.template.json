@@ -1,0 +1,88 @@
+{
+  "name": "17 - Vitrine IA Flow - Dependency Graph Dispatcher",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "vitrine-flow/dependency-dispatch",
+        "responseMode": "responseNode"
+      },
+      "name": "Webhook Dispatch",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [100, 240]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.VITRINE_MASTER_API_URL}}/flow/checkpoints/query",
+        "sendHeaders": true,
+        "sendBody": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer {{$env.VITRINE_MASTER_API_TOKEN}}" }
+          ]
+        },
+        "bodyParameters": {
+          "parameters": [
+            { "name": "workflow_id", "value": "={{$json.workflow_id}}" },
+            { "name": "execution_id", "value": "={{$json.execution_id}}" }
+          ]
+        }
+      },
+      "name": "Consultar Checkpoints",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [340, 240]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $('Webhook Dispatch').first().json;\nconst checkpoints = $json.checkpoints || [];\nconst completed = new Set(checkpoints.filter(c => c.status === 'completed').map(c => c.node_id));\nconst nodes = input.graph?.nodes || input.nodes || [];\nconst ready = nodes.filter(node => {\n  if (completed.has(node.node_id)) return false;\n  const deps = node.depends_on || [];\n  return deps.every(dep => completed.has(dep));\n});\nreturn ready.map(node => ({ json: { ...input, node, dispatch_status: 'ready' } }));"
+      },
+      "name": "Calcular Nós Elegíveis",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [580, 240]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.N8N_WEBHOOK_URL}}webhook/vitrine-flow/child-workflow-runtime",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "workflow_id", "value": "={{$json.workflow_id}}" },
+            { "name": "execution_id", "value": "={{$json.execution_id}}" },
+            { "name": "tenant_id", "value": "={{$json.tenant_id}}" },
+            { "name": "product_code", "value": "={{$json.product_code}}" },
+            { "name": "request_id", "value": "={{$json.request_id}}" },
+            { "name": "node", "value": "={{$json.node}}" },
+            { "name": "payload", "value": "={{$json.payload}}" }
+          ]
+        }
+      },
+      "name": "Disparar Child Workflow",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [840, 240]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, status: 'dispatched', message: 'Nós elegíveis enviados ao runtime.' } }}"
+      },
+      "name": "Responder",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1080, 240]
+    }
+  ],
+  "connections": {
+    "Webhook Dispatch": { "main": [[{ "node": "Consultar Checkpoints", "type": "main", "index": 0 }]] },
+    "Consultar Checkpoints": { "main": [[{ "node": "Calcular Nós Elegíveis", "type": "main", "index": 0 }]] },
+    "Calcular Nós Elegíveis": { "main": [[{ "node": "Disparar Child Workflow", "type": "main", "index": 0 }]] },
+    "Disparar Child Workflow": { "main": [[{ "node": "Responder", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": {}
+}

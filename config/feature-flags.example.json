@@ -1,0 +1,15 @@
+{
+  "tenant_id": "tenant_123",
+  "product_code": "portal_news_enterprise",
+  "plan_code": "enterprise",
+  "features": {
+    "rss_editorial": { "enabled": true },
+    "instagram": { "enabled": true },
+    "facebook": { "enabled": true },
+    "threads": { "enabled": false, "beta": true },
+    "heygen_video": { "enabled": true, "monthly_limit": 12 },
+    "ai_failover": { "enabled": true },
+    "automatic_publish": { "enabled": false, "requires_approval": true },
+    "factory_provisioning": { "enabled": true }
+  }
+}

@@ -1,0 +1,61 @@
+{
+  "name": "09 - Vitrine IA Flow - Concurrency Guard",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "vitrine-flow/concurrency-guard",
+        "responseMode": "responseNode"
+      },
+      "name": "Webhook Guard",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [100, 240]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.VITRINE_MASTER_API_URL}}/flow/locks/acquire",
+        "sendHeaders": true,
+        "sendBody": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer {{$env.VITRINE_MASTER_API_TOKEN}}" },
+            { "name": "X-Vitrine-Event", "value": "LOCK_ACQUIRE_REQUESTED" }
+          ]
+        },
+        "bodyParameters": {
+          "parameters": [
+            { "name": "request_id", "value": "={{$json.request_id}}" },
+            { "name": "tenant_id", "value": "={{$json.tenant_id}}" },
+            { "name": "workflow_id", "value": "={{$json.workflow_id}}" },
+            { "name": "resource_type", "value": "={{$json.resource_type}}" },
+            { "name": "resource_key", "value": "={{$json.resource_key}}" },
+            { "name": "owner_execution_id", "value": "={{$execution.id}}" },
+            { "name": "ttl_seconds", "value": "={{$json.ttl_seconds || 900}}" }
+          ]
+        }
+      },
+      "name": "Adquirir Lock",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [360, 240]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{$json}}"
+      },
+      "name": "Responder Guard",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [620, 240]
+    }
+  ],
+  "connections": {
+    "Webhook Guard": { "main": [[{ "node": "Adquirir Lock", "type": "main", "index": 0 }]] },
+    "Adquirir Lock": { "main": [[{ "node": "Responder Guard", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": {}
+}

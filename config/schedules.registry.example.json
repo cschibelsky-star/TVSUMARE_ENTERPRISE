@@ -1,0 +1,34 @@
+[
+  {
+    "schedule_id": "SCH-000001",
+    "tenant_id": "tenant_123",
+    "workflow_id": "WF-000001",
+    "workflow_slug": "rss-editorial-pipeline",
+    "timezone": "America/Sao_Paulo",
+    "rrule": "FREQ=MINUTELY;INTERVAL=15",
+    "window": {
+      "start": "00:00",
+      "end": "23:59"
+    },
+    "skip_holidays": false,
+    "priority": 50,
+    "enabled": true,
+    "next_run_at": null
+  },
+  {
+    "schedule_id": "SCH-000002",
+    "tenant_id": "tenant_123",
+    "workflow_id": "WF-000005",
+    "workflow_slug": "daily-monitoring",
+    "timezone": "America/Sao_Paulo",
+    "rrule": "FREQ=HOURLY;INTERVAL=1",
+    "window": {
+      "start": "00:00",
+      "end": "23:59"
+    },
+    "skip_holidays": false,
+    "priority": 90,
+    "enabled": true,
+    "next_run_at": null
+  }
+]

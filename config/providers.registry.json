@@ -1,0 +1,55 @@
+{
+  "ai": [
+    {
+      "code": "gemini",
+      "enabled": true,
+      "priority": 10,
+      "capabilities": ["text", "classification", "summarization", "seo"],
+      "circuit_breaker": "gemini",
+      "secret_ref": "GEMINI_API_KEY"
+    },
+    {
+      "code": "openai",
+      "enabled": true,
+      "priority": 20,
+      "capabilities": ["text", "classification", "summarization", "seo"],
+      "circuit_breaker": "openai",
+      "secret_ref": "OPENAI_API_KEY"
+    }
+  ],
+  "video": [
+    {
+      "code": "heygen",
+      "enabled": true,
+      "priority": 10,
+      "capabilities": ["avatar_video"],
+      "circuit_breaker": "heygen",
+      "secret_ref": "HEYGEN_API_KEY"
+    }
+  ],
+  "social": [
+    {
+      "code": "meta",
+      "enabled": true,
+      "priority": 10,
+      "capabilities": ["instagram", "facebook", "threads"],
+      "circuit_breaker": "meta",
+      "secret_ref": "META_ACCESS_TOKEN"
+    }
+  ],
+  "storage": [
+    {
+      "code": "local",
+      "enabled": true,
+      "priority": 100,
+      "capabilities": ["file_store"]
+    },
+    {
+      "code": "s3",
+      "enabled": false,
+      "priority": 10,
+      "capabilities": ["file_store", "public_url"],
+      "secret_ref": "S3_CREDENTIALS"
+    }
+  ]
+}

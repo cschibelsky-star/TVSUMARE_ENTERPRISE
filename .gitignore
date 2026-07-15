@@ -1,0 +1,35 @@
+# Sistema
+.DS_Store
+Thumbs.db
+
+# Dependências
+vendor/
+node_modules/
+
+# Ambiente e segredos
+.env
+.env.*
+!.env.example
+
+# Dados locais / produção
+/data/*.json
+!/data/.gitkeep
+/uploads/
+/assets/uploads/
+
+# Logs e caches
+*.log
+error_log
+cache/
+tmp/
+
+# Backups e pacotes
+*.zip
+*.tar
+*.tar.gz
+*.bak
+backup*/
+
+# IDE
+.vscode/
+.idea/

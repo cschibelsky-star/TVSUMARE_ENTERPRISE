@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Vitrine IA Flow Runtime Execution Context",
+  "type": "object",
+  "required": [
+    "company_id",
+    "workflow_uuid",
+    "execution_uuid",
+    "request_id",
+    "correlation_id",
+    "event",
+    "timestamp"
+  ],
+  "properties": {
+    "company_id": { "type": "string", "minLength": 1 },
+    "workflow_uuid": { "type": "string", "minLength": 1 },
+    "execution_uuid": { "type": "string", "minLength": 1 },
+    "parent_execution_uuid": { "type": ["string", "null"] },
+    "request_id": { "type": "string", "minLength": 1 },
+    "correlation_id": { "type": "string", "minLength": 1 },
+    "event": { "type": "string", "minLength": 1 },
+    "product_code": { "type": ["string", "null"] },
+    "plan_code": { "type": ["string", "null"] },
+    "locale": { "type": "string", "default": "pt-BR" },
+    "timezone": { "type": "string", "default": "America/Sao_Paulo" },
+    "priority": { "type": "integer", "minimum": 0, "maximum": 100, "default": 50 },
+    "queue": { "type": "string" },
+    "attempt": { "type": "integer", "minimum": 1, "default": 1 },
+    "feature_flags": { "type": "object", "additionalProperties": true },
+    "quota": { "type": "object", "additionalProperties": true },
+    "providers": { "type": "array", "items": { "type": "string" } },
+    "payload": { "type": "object", "additionalProperties": true },
+    "timestamp": { "type": "string", "format": "date-time" }
+  },
+  "additionalProperties": true
+}

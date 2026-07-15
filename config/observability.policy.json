@@ -1,0 +1,29 @@
+{
+  "version": "1.0.0",
+  "trace": {
+    "required_fields": ["trace_id", "correlation_id", "execution_id", "workflow_id", "company_id"],
+    "retention_days": 90
+  },
+  "metrics": {
+    "workflow_duration_ms": true,
+    "queue_wait_ms": true,
+    "provider_latency_ms": true,
+    "retry_count": true,
+    "cost": true,
+    "usage": true,
+    "sla_status": true
+  },
+  "alerts": {
+    "workflow_failed": "critical",
+    "provider_offline": "critical",
+    "queue_congested": "warning",
+    "sla_breached": "warning",
+    "budget_exceeded": "critical",
+    "service_recovered": "info"
+  },
+  "callbacks": {
+    "telemetry": "/api/flow/telemetry",
+    "dlq": "/api/flow/dlq",
+    "events": "/api/flow/events/callback"
+  }
+}

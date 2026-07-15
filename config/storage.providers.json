@@ -1,0 +1,40 @@
+{
+  "default": "local",
+  "providers": [
+    {
+      "id": "local",
+      "driver": "filesystem",
+      "enabled": true,
+      "capabilities": ["upload", "download", "copy", "move", "delete", "metadata"],
+      "credential_key": null
+    },
+    {
+      "id": "s3",
+      "driver": "s3",
+      "enabled": false,
+      "capabilities": ["upload", "download", "copy", "move", "delete", "sign_url", "metadata"],
+      "credential_key": "storage_s3_primary"
+    },
+    {
+      "id": "cloudflare_r2",
+      "driver": "s3_compatible",
+      "enabled": false,
+      "capabilities": ["upload", "download", "copy", "move", "delete", "sign_url", "metadata"],
+      "credential_key": "storage_r2_primary"
+    },
+    {
+      "id": "google_drive",
+      "driver": "google_drive",
+      "enabled": false,
+      "capabilities": ["upload", "download", "copy", "move", "delete", "metadata"],
+      "credential_key": "storage_google_drive_primary"
+    },
+    {
+      "id": "azure_blob",
+      "driver": "azure_blob",
+      "enabled": false,
+      "capabilities": ["upload", "download", "copy", "move", "delete", "sign_url", "metadata"],
+      "credential_key": "storage_azure_primary"
+    }
+  ]
+}

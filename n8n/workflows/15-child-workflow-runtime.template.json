@@ -1,0 +1,66 @@
+{
+  "name": "15 - Vitrine IA Flow - Child Workflow Runtime",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "vitrine-flow/child-runtime",
+        "responseMode": "responseNode"
+      },
+      "name": "Webhook Child Workflow",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [100, 240]
+    },
+    {
+      "parameters": {
+        "jsCode": "const required = ['workflow_id','execution_id','child_workflow_id','tenant_id','request_id'];\nfor (const key of required) { if (!$json[key]) throw new Error(`Missing ${key}`); }\nreturn [{ json: { ...$json, status: 'running', started_at: new Date().toISOString() } }];"
+      },
+      "name": "Validar Contexto",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [340, 240]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.VITRINE_MASTER_API_URL}}/flow/events/callback",
+        "sendHeaders": true,
+        "sendBody": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer {{$env.VITRINE_MASTER_API_TOKEN}}" },
+            { "name": "X-Vitrine-Event", "value": "CHILD_WORKFLOW_STARTED" }
+          ]
+        },
+        "bodyParameters": {
+          "parameters": [
+            { "name": "event", "value": "CHILD_WORKFLOW_STARTED" },
+            { "name": "payload", "value": "={{$json}}" }
+          ]
+        }
+      },
+      "name": "Registrar Início",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [580, 240]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, status: 'accepted', execution_id: $json.execution_id, child_workflow_id: $json.child_workflow_id } }}"
+      },
+      "name": "Responder Composer",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [820, 240]
+    }
+  ],
+  "connections": {
+    "Webhook Child Workflow": { "main": [[{ "node": "Validar Contexto", "type": "main", "index": 0 }]] },
+    "Validar Contexto": { "main": [[{ "node": "Registrar Início", "type": "main", "index": 0 }]] },
+    "Registrar Início": { "main": [[{ "node": "Responder Composer", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": {}
+}

@@ -1,0 +1,66 @@
+{
+  "name": "13 - Vitrine IA Flow - Workflow Composer",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "vitrine-flow/workflow-composer",
+        "responseMode": "responseNode"
+      },
+      "name": "Webhook Composite Workflow",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [100, 240]
+    },
+    {
+      "parameters": {
+        "jsCode": "const required = ['tenant_id','workflow_id','execution_id','request_id','correlation_id'];\nfor (const field of required) { if (!$json[field]) throw new Error(`Missing ${field}`); }\nconst children = Array.isArray($json.children) ? $json.children : [];\nreturn [{ json: { ...$json, status: 'running', children, completed_children: [], failed_children: [], started_at: new Date().toISOString() } }];"
+      },
+      "name": "Validate Execution Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [340, 240]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.VITRINE_MASTER_API_URL}}/flow/executions/child-event",
+        "sendHeaders": true,
+        "sendBody": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer {{$env.VITRINE_MASTER_API_TOKEN}}" },
+            { "name": "X-Vitrine-Event", "value": "COMPOSITE_WORKFLOW_STARTED" }
+          ]
+        },
+        "bodyParameters": {
+          "parameters": [
+            { "name": "event", "value": "COMPOSITE_WORKFLOW_STARTED" },
+            { "name": "payload", "value": "={{$json}}" }
+          ]
+        }
+      },
+      "name": "Register Composite Start",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [580, 240]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, status: 'accepted', execution_id: $json.execution_id, message: 'Workflow composto aceito para execução.' } }}"
+      },
+      "name": "Respond Mission Control",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [820, 240]
+    }
+  ],
+  "connections": {
+    "Webhook Composite Workflow": { "main": [[{ "node": "Validate Execution Context", "type": "main", "index": 0 }]] },
+    "Validate Execution Context": { "main": [[{ "node": "Register Composite Start", "type": "main", "index": 0 }]] },
+    "Register Composite Start": { "main": [[{ "node": "Respond Mission Control", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": {}
+}

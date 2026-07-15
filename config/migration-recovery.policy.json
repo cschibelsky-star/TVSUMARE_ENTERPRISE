@@ -1,0 +1,34 @@
+{
+  "version": "1.0.0",
+  "tenant_key": "company_id",
+  "migration": {
+    "require_preflight": true,
+    "require_snapshot": true,
+    "require_health_check": true,
+    "rollback_on_failure": true,
+    "lock_scope": "company_workflow_resource",
+    "max_parallel_per_company": 1
+  },
+  "backup": {
+    "checksum": "sha256",
+    "encrypt": true,
+    "retention_days": {
+      "daily": 14,
+      "weekly": 60,
+      "monthly": 365
+    },
+    "required_metadata": ["company_id", "execution_id", "scope", "created_at", "checksum", "storage_ref"]
+  },
+  "restore": {
+    "production_requires_human_approval": true,
+    "verify_checksum": true,
+    "post_restore_health_check": true,
+    "rollback_restore_on_failure": true
+  },
+  "auto_healing": {
+    "max_actions_per_hour": 5,
+    "cooldown_seconds": 300,
+    "allowed_actions": ["restart_service", "retry_job", "clear_safe_cache", "renew_ssl", "reprocess_queue", "provider_failover"],
+    "blocked_without_approval": ["delete_volume", "drop_database", "replace_production_data"]
+  }
+}

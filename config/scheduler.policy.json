@@ -1,0 +1,41 @@
+{
+  "defaults": {
+    "timezone": "America/Sao_Paulo",
+    "misfire_policy": "run_once_immediately",
+    "max_lateness_seconds": 900,
+    "lock_ttl_seconds": 1800,
+    "max_concurrent_per_tenant": 3,
+    "max_concurrent_per_workflow": 10
+  },
+  "priorities": {
+    "critical": 100,
+    "high": 75,
+    "normal": 50,
+    "low": 25
+  },
+  "windows": {
+    "business_hours": {
+      "days": [1, 2, 3, 4, 5],
+      "start": "08:00",
+      "end": "18:00"
+    },
+    "overnight_maintenance": {
+      "days": [1, 2, 3, 4, 5, 6, 7],
+      "start": "01:00",
+      "end": "05:00"
+    }
+  },
+  "holiday_policy": {
+    "default": "skip",
+    "allow_critical": true,
+    "calendar_source": "mission_control_api"
+  },
+  "required_fields": [
+    "schedule_id",
+    "tenant_id",
+    "workflow_id",
+    "request_id",
+    "timezone",
+    "scheduled_for"
+  ]
+}

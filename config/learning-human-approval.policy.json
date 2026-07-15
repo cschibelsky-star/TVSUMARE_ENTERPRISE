@@ -1,0 +1,33 @@
+{
+  "version": "1.0.0",
+  "tenant_key": "company_id",
+  "learning": {
+    "enabled": true,
+    "auto_apply": false,
+    "minimum_samples": 5,
+    "minimum_confidence": 0.85,
+    "require_feature_flag": true,
+    "retention_days": 365
+  },
+  "human_approval": {
+    "default_timeout_seconds": 86400,
+    "on_timeout": "expire",
+    "critical_actions": [
+      "editorial_sensitive_publish",
+      "commercial_proposal_send",
+      "production_restore",
+      "destructive_infrastructure_change",
+      "lgpd_delete_or_anonymize",
+      "budget_override"
+    ],
+    "states": ["requested", "waiting_human", "approved", "rejected", "expired", "cancelled"]
+  },
+  "events": [
+    "APPROVAL_REQUESTED",
+    "APPROVAL_GRANTED",
+    "APPROVAL_REJECTED",
+    "APPROVAL_EXPIRED",
+    "LEARNING_SIGNAL_RECORDED",
+    "LEARNING_RULE_PROPOSED"
+  ]
+}

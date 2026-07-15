@@ -1,0 +1,73 @@
+{
+  "name": "05 - TV Sumaré - Daily Monitoring",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 1
+            }
+          ]
+        }
+      },
+      "name": "A cada hora",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [100, 240]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.TVSUMARE_API_URL}}/health/status",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{$env.TVSUMARE_API_TOKEN}}"
+            }
+          ]
+        }
+      },
+      "name": "Consultar saúde do portal",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [360, 240]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.TVSUMARE_API_URL}}/automation/monitoring-log",
+        "sendHeaders": true,
+        "sendBody": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{$env.TVSUMARE_API_TOKEN}}"
+            }
+          ]
+        },
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "payload",
+              "value": "={{$json}}"
+            }
+          ]
+        }
+      },
+      "name": "Registrar monitoramento",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [620, 240]
+    }
+  ],
+  "connections": {
+    "A cada hora": { "main": [[{ "node": "Consultar saúde do portal", "type": "main", "index": 0 }]] },
+    "Consultar saúde do portal": { "main": [[{ "node": "Registrar monitoramento", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": {}
+}

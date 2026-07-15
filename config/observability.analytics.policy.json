@@ -1,0 +1,21 @@
+{
+  "version": "1.0.0",
+  "tenant_key": "company_id",
+  "sla": {
+    "evaluation_windows_minutes": [5, 15, 60, 1440],
+    "metrics": ["availability", "success_rate", "latency_p95_ms", "queue_wait_p95_ms", "retry_rate", "error_rate"],
+    "breach_requires_consecutive_windows": 2
+  },
+  "alerts": {
+    "deduplicate_by": ["company_id", "service", "event", "fingerprint"],
+    "cooldown_seconds": 900,
+    "severities": ["info", "warning", "critical"],
+    "auto_resolve": true
+  },
+  "costs": {
+    "dimensions": ["company_id", "provider", "workflow_uuid", "operation", "day", "month"],
+    "warning_thresholds_percent": [70, 90],
+    "block_threshold_percent": 100,
+    "currency": "BRL"
+  }
+}

@@ -1,0 +1,95 @@
+{
+  "name": "19 - Vitrine IA Flow - Runtime Orchestrator",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "vitrine-flow/runtime/start",
+        "responseMode": "responseNode"
+      },
+      "name": "Runtime Start",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [100, 240]
+    },
+    {
+      "parameters": {
+        "jsCode": "const b = $json.body || $json; const required=['company_id','workflow_uuid','request_id','event']; const missing=required.filter(k=>!b[k]); if(missing.length) throw new Error('RUNTIME_INVALID_CONTEXT:'+missing.join(',')); const execution_uuid=b.execution_uuid || `EXEC-${Date.now()}-${Math.random().toString(16).slice(2)}`; return [{json:{...b,execution_uuid,correlation_id:b.correlation_id||execution_uuid,timestamp:b.timestamp||new Date().toISOString(),runtime_state:'validating',attempt:b.attempt||1}}];"
+      },
+      "name": "Validate and Normalize Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [340, 240]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.VITRINE_MASTER_API_URL}}/flow/locks/acquire",
+        "sendHeaders": true,
+        "sendBody": true,
+        "headerParameters": { "parameters": [{ "name": "Authorization", "value": "Bearer {{$env.VITRINE_MASTER_API_TOKEN}}" }] },
+        "bodyParameters": { "parameters": [
+          { "name": "company_id", "value": "={{$json.company_id}}" },
+          { "name": "key", "value": "={{'runtime:'+$json.company_id+':'+$json.workflow_uuid+':'+$json.request_id}}" },
+          { "name": "ttl", "value": "3600" }
+        ] }
+      },
+      "name": "Acquire Runtime Lock",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [580, 240]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.VITRINE_MASTER_API_URL}}/flow/events/callback",
+        "sendHeaders": true,
+        "sendBody": true,
+        "headerParameters": { "parameters": [{ "name": "Authorization", "value": "Bearer {{$env.VITRINE_MASTER_API_TOKEN}}" }, { "name": "X-Vitrine-Event", "value": "WORKFLOW_STARTED" }] },
+        "bodyParameters": { "parameters": [
+          { "name": "event", "value": "WORKFLOW_STARTED" },
+          { "name": "company_id", "value": "={{$node['Validate and Normalize Context'].json.company_id}}" },
+          { "name": "execution_uuid", "value": "={{$node['Validate and Normalize Context'].json.execution_uuid}}" },
+          { "name": "payload", "value": "={{$node['Validate and Normalize Context'].json}}" }
+        ] }
+      },
+      "name": "Emit Workflow Started",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [820, 240]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.VITRINE_MASTER_API_URL}}/flow/runtime/children/dispatch",
+        "sendHeaders": true,
+        "sendBody": true,
+        "headerParameters": { "parameters": [{ "name": "Authorization", "value": "Bearer {{$env.VITRINE_MASTER_API_TOKEN}}" }] },
+        "bodyParameters": { "parameters": [{ "name": "payload", "value": "={{$node['Validate and Normalize Context'].json}}" }] }
+      },
+      "name": "Dispatch Eligible Children",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1060, 240]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok:true, status:'running', execution_uuid:$node['Validate and Normalize Context'].json.execution_uuid, correlation_id:$node['Validate and Normalize Context'].json.correlation_id } }}"
+      },
+      "name": "Respond Runtime Accepted",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1300, 240]
+    }
+  ],
+  "connections": {
+    "Runtime Start": { "main": [[{ "node": "Validate and Normalize Context", "type": "main", "index": 0 }]] },
+    "Validate and Normalize Context": { "main": [[{ "node": "Acquire Runtime Lock", "type": "main", "index": 0 }]] },
+    "Acquire Runtime Lock": { "main": [[{ "node": "Emit Workflow Started", "type": "main", "index": 0 }]] },
+    "Emit Workflow Started": { "main": [[{ "node": "Dispatch Eligible Children", "type": "main", "index": 0 }]] },
+    "Dispatch Eligible Children": { "main": [[{ "node": "Respond Runtime Accepted", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": {}
+}

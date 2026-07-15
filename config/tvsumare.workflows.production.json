@@ -1,0 +1,30 @@
+{
+  "product": "tv_sumare_enterprise",
+  "company_id_required": true,
+  "workflows": [
+    {"file":"01-rss-editorial-pipeline.template.json","activate_after_homologation":true,"priority":100},
+    {"file":"02-news-to-instagram.template.json","activate_after_homologation":false,"priority":70},
+    {"file":"03-news-to-heygen.template.json","activate_after_homologation":false,"priority":80},
+    {"file":"04-video-distribution.template.json","activate_after_homologation":false,"priority":70},
+    {"file":"05-daily-monitoring.template.json","activate_after_homologation":true,"priority":90},
+    {"file":"07-global-error-handler.template.json","activate_after_homologation":true,"priority":100},
+    {"file":"08-infrastructure-heartbeat.template.json","activate_after_homologation":true,"priority":100},
+    {"file":"10-ai-router.template.json","activate_after_homologation":true,"priority":90},
+    {"file":"11-provider-adapter.template.json","activate_after_homologation":true,"priority":90},
+    {"file":"28-observability-event-router.template.json","activate_after_homologation":true,"priority":90},
+    {"file":"31-sla-alert-cost-analytics.template.json","activate_after_homologation":true,"priority":60}
+  ],
+  "required_credentials": [
+    "TVSUMARE_API_TOKEN",
+    "VITRINE_MASTER_API_TOKEN",
+    "GEMINI_API_KEY_OR_OPENAI_API_KEY"
+  ],
+  "optional_until_channel_homologation": [
+    "HEYGEN_API_KEY",
+    "META_ACCESS_TOKEN",
+    "INSTAGRAM_BUSINESS_ACCOUNT_ID",
+    "FACEBOOK_PAGE_ID",
+    "YOUTUBE_CLIENT_ID",
+    "YOUTUBE_CLIENT_SECRET"
+  ]
+}

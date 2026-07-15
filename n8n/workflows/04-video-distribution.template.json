@@ -1,0 +1,89 @@
+{
+  "name": "04 - TV Sumaré - Video Distribution",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "tvsumare/video-ready",
+        "responseMode": "responseNode"
+      },
+      "name": "Webhook vídeo pronto",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [100, 240]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.TVSUMARE_API_URL}}/tvplay/publish-video",
+        "sendHeaders": true,
+        "sendBody": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{$env.TVSUMARE_API_TOKEN}}"
+            }
+          ]
+        },
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "payload",
+              "value": "={{$json}}"
+            }
+          ]
+        }
+      },
+      "name": "Publicar TV Play",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [360, 240]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.TVSUMARE_API_URL}}/social/video-distribution-log",
+        "sendHeaders": true,
+        "sendBody": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{$env.TVSUMARE_API_TOKEN}}"
+            }
+          ]
+        },
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "payload",
+              "value": "={{$json}}"
+            }
+          ]
+        }
+      },
+      "name": "Registrar distribuição",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [600, 240]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, message: 'Vídeo registrado para distribuição.' } }}"
+      },
+      "name": "Responder",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [840, 240]
+    }
+  ],
+  "connections": {
+    "Webhook vídeo pronto": { "main": [[{ "node": "Publicar TV Play", "type": "main", "index": 0 }]] },
+    "Publicar TV Play": { "main": [[{ "node": "Registrar distribuição", "type": "main", "index": 0 }]] },
+    "Registrar distribuição": { "main": [[{ "node": "Responder", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": {}
+}

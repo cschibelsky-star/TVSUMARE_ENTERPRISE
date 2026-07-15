@@ -1,0 +1,48 @@
+{
+  "name": "32 - Vitrine IA Flow - Learning and Human Approval Manager",
+  "nodes": [
+    {
+      "parameters": {"httpMethod": "POST", "path": "vitrine-flow/learning-approval", "responseMode": "responseNode"},
+      "name": "Webhook Learning or Approval",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [100, 240]
+    },
+    {
+      "parameters": {"jsCode": "const input=$json; const critical=Boolean(input.critical); const action=input.action||'unknown'; return [{json:{...input, company_id:input.company_id, route:critical?'approval':'learning', status:critical?'waiting_human':'recording', action}}];"},
+      "name": "Classify Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [340, 240]
+    },
+    {
+      "parameters": {"method": "POST", "url": "={{$env.VITRINE_MASTER_API_URL}}/flow/approvals/request", "sendHeaders": true, "sendBody": true, "headerParameters": {"parameters": [{"name": "Authorization", "value": "Bearer {{$env.VITRINE_MASTER_API_TOKEN}}"}]}, "bodyParameters": {"parameters": [{"name": "payload", "value": "={{$json}}"}]}},
+      "name": "Request Human Approval",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [600, 160]
+    },
+    {
+      "parameters": {"method": "POST", "url": "={{$env.VITRINE_MASTER_API_URL}}/flow/audit", "sendHeaders": true, "sendBody": true, "headerParameters": {"parameters": [{"name": "Authorization", "value": "Bearer {{$env.VITRINE_MASTER_API_TOKEN}}"}]}, "bodyParameters": {"parameters": [{"name": "payload", "value": "={{$json}}"}]}},
+      "name": "Record Learning Signal",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [600, 320]
+    },
+    {
+      "parameters": {"respondWith": "json", "responseBody": "={{ {ok:true,status:$json.status,route:$json.route} }}"},
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [860, 240]
+    }
+  ],
+  "connections": {
+    "Webhook Learning or Approval": {"main": [[{"node": "Classify Request", "type": "main", "index": 0}]]},
+    "Classify Request": {"main": [[{"node": "Request Human Approval", "type": "main", "index": 0}], [{"node": "Record Learning Signal", "type": "main", "index": 0}]]},
+    "Request Human Approval": {"main": [[{"node": "Respond", "type": "main", "index": 0}]]},
+    "Record Learning Signal": {"main": [[{"node": "Respond", "type": "main", "index": 0}]]}
+  },
+  "active": false,
+  "settings": {}
+}

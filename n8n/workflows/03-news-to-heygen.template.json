@@ -1,0 +1,70 @@
+{
+  "name": "03 - TV Sumaré - News to HeyGen",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "tvsumare/news-to-heygen",
+        "responseMode": "responseNode"
+      },
+      "name": "Webhook produzir vídeo",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [100, 240]
+    },
+    {
+      "parameters": {
+        "jsCode": "const title = $json.titulo || $json.title || '';\nconst summary = $json.resumo || $json.summary || '';\nconst city = $json.cidade || $json.city || 'Sumaré';\nconst scriptA = `Olá, eu sou da TV Sumaré. ${title}. ${summary}. Acompanhe mais detalhes em tvsumare.com.br.`;\nconst scriptB = `Atenção ${city}: ${title}. ${summary}. Continue acompanhando a TV Sumaré para novas atualizações.`;\nreturn [{ json: { ...$json, scripts: [{ version: 'A', tone: 'jornalístico', text: scriptA }, { version: 'B', tone: 'dinâmico', text: scriptB }], status: 'awaiting_editor_choice' } }];"
+      },
+      "name": "Gerar roteiros A e B",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [340, 240]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.TVSUMARE_API_URL}}/video/scripts/save-options",
+        "sendHeaders": true,
+        "sendBody": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{$env.TVSUMARE_API_TOKEN}}"
+            }
+          ]
+        },
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "payload",
+              "value": "={{$json}}"
+            }
+          ]
+        }
+      },
+      "name": "Salvar opções no painel",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [600, 240]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, message: 'Roteiros gerados. Escolha uma versão no painel antes de enviar ao HeyGen.' } }}"
+      },
+      "name": "Responder painel",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [840, 240]
+    }
+  ],
+  "connections": {
+    "Webhook produzir vídeo": { "main": [[{ "node": "Gerar roteiros A e B", "type": "main", "index": 0 }]] },
+    "Gerar roteiros A e B": { "main": [[{ "node": "Salvar opções no painel", "type": "main", "index": 0 }]] },
+    "Salvar opções no painel": { "main": [[{ "node": "Responder painel", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": {}
+}

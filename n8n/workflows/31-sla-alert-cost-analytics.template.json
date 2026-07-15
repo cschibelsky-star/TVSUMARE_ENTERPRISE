@@ -1,0 +1,77 @@
+{
+  "name": "31 - Vitrine IA Flow - SLA Alert Cost Analytics",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {"field":"minutes","minutesInterval":15}
+          ]
+        }
+      },
+      "name": "A cada 15 minutos",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [100, 260]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.VITRINE_MASTER_API_URL}}/flow/observability/sla/evaluate",
+        "sendHeaders": true,
+        "sendBody": true,
+        "headerParameters": {"parameters":[{"name":"Authorization","value":"Bearer {{$env.VITRINE_MASTER_API_TOKEN}}"}]},
+        "bodyParameters": {"parameters":[{"name":"window_minutes","value":"15"}]}
+      },
+      "name": "Avaliar SLA",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [340, 160]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.VITRINE_MASTER_API_URL}}/flow/observability/costs/aggregate",
+        "sendHeaders": true,
+        "sendBody": true,
+        "headerParameters": {"parameters":[{"name":"Authorization","value":"Bearer {{$env.VITRINE_MASTER_API_TOKEN}}"}]},
+        "bodyParameters": {"parameters":[{"name":"window_minutes","value":"15"}]}
+      },
+      "name": "Agregar Custos",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [340, 360]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items=$input.all(); const alerts=[]; for(const item of items){ const j=item.json||{}; if(j.breached||j.budget_warning||j.budget_exceeded){alerts.push({company_id:j.company_id||null,event:j.budget_exceeded?'BUDGET_EXCEEDED':j.budget_warning?'BUDGET_WARNING':'SLA_BREACHED',severity:j.budget_exceeded?'critical':'warning',payload:j,fingerprint:`${j.company_id||'global'}:${j.service||j.provider||'unknown'}:${j.metric||j.event||'status'}`});}} return alerts.map(a=>({json:a}));"
+      },
+      "name": "Gerar Alertas",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [590, 260]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.VITRINE_MASTER_API_URL}}/flow/observability/alerts",
+        "sendHeaders": true,
+        "sendBody": true,
+        "headerParameters": {"parameters":[{"name":"Authorization","value":"Bearer {{$env.VITRINE_MASTER_API_TOKEN}}"}]},
+        "bodyParameters": {"parameters":[{"name":"payload","value":"={{$json}}"}]}
+      },
+      "name": "Registrar Alerta",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [830, 260]
+    }
+  ],
+  "connections": {
+    "A cada 15 minutos":{"main":[[{"node":"Avaliar SLA","type":"main","index":0},{"node":"Agregar Custos","type":"main","index":0}]]},
+    "Avaliar SLA":{"main":[[{"node":"Gerar Alertas","type":"main","index":0}]]},
+    "Agregar Custos":{"main":[[{"node":"Gerar Alertas","type":"main","index":0}]]},
+    "Gerar Alertas":{"main":[[{"node":"Registrar Alerta","type":"main","index":0}]]}
+  },
+  "active": false,
+  "settings": {}
+}

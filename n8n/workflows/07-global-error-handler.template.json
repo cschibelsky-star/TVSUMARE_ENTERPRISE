@@ -1,0 +1,74 @@
+{
+  "name": "07 - Vitrine IA Flow - Global Error Handler",
+  "nodes": [
+    {
+      "parameters": {},
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [100, 240]
+    },
+    {
+      "parameters": {
+        "jsCode": "const execution = $json.execution || {};\nconst workflow = $json.workflow || {};\nconst error = $json.error || {};\nconst attempts = Number(execution.retryOf ? 2 : 1);\nreturn [{ json: { workflow_id: workflow.id || 'unknown', workflow_name: workflow.name || 'unknown', execution_id: execution.id || 'unknown', request_id: execution.data?.request_id || '', queue: execution.data?.queue || 'Workflow Queue', event: 'WORKFLOW_FAILED', status: 'failed', attempts, error_code: error.name || 'WORKFLOW_ERROR', error_message: error.message || 'Erro não identificado', failed_at: new Date().toISOString(), payload: execution.data || {} } }];"
+      },
+      "name": "Normalizar Falha",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [340, 240]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.VITRINE_MASTER_API_URL}}/flow/executions/events",
+        "sendHeaders": true,
+        "sendBody": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer {{$env.VITRINE_MASTER_API_TOKEN}}" },
+            { "name": "X-Vitrine-Event", "value": "WORKFLOW_FAILED" }
+          ]
+        },
+        "bodyParameters": {
+          "parameters": [
+            { "name": "payload", "value": "={{$json}}" }
+          ]
+        }
+      },
+      "name": "Enviar Falha ao Mission Control",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [600, 240]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.VITRINE_MASTER_API_URL}}/flow/dlq/events",
+        "sendHeaders": true,
+        "sendBody": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer {{$env.VITRINE_MASTER_API_TOKEN}}" },
+            { "name": "X-Vitrine-Event", "value": "WORKFLOW_SENT_TO_DLQ" }
+          ]
+        },
+        "bodyParameters": {
+          "parameters": [
+            { "name": "payload", "value": "={{$json}}" }
+          ]
+        }
+      },
+      "name": "Registrar na DLQ",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [860, 240]
+    }
+  ],
+  "connections": {
+    "Error Trigger": { "main": [[{ "node": "Normalizar Falha", "type": "main", "index": 0 }]] },
+    "Normalizar Falha": { "main": [[{ "node": "Enviar Falha ao Mission Control", "type": "main", "index": 0 }]] },
+    "Enviar Falha ao Mission Control": { "main": [[{ "node": "Registrar na DLQ", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": {}
+}

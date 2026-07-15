@@ -1,0 +1,76 @@
+{
+  "name": "20 - Vitrine IA Flow - Runtime Result Aggregator",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "vitrine-flow/runtime/result-aggregate",
+        "responseMode": "responseNode"
+      },
+      "name": "Aggregate Request",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [100, 240]
+    },
+    {
+      "parameters": {
+        "jsCode": "const b=$json.body||$json; const children=Array.isArray(b.children)?b.children:[]; const completed=children.filter(x=>x.status==='completed').length; const failed=children.filter(x=>x.status==='failed').length; const waiting=children.filter(x=>['pending','waiting','running'].includes(x.status)).length; const status=failed>0?'failed':waiting>0?'running':'completed'; return [{json:{...b,summary:{children:children.length,completed,failed,waiting,status},runtime_state:status,finished_at:status==='running'?null:new Date().toISOString()}}];"
+      },
+      "name": "Build Consolidated Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [340, 240]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.VITRINE_MASTER_API_URL}}/flow/runtime/result/commit",
+        "sendHeaders": true,
+        "sendBody": true,
+        "headerParameters": { "parameters": [{ "name": "Authorization", "value": "Bearer {{$env.VITRINE_MASTER_API_TOKEN}}" }] },
+        "bodyParameters": { "parameters": [{ "name": "payload", "value": "={{$json}}" }] }
+      },
+      "name": "Commit Consolidated Result",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [580, 240]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.VITRINE_MASTER_API_URL}}/flow/events/callback",
+        "sendHeaders": true,
+        "sendBody": true,
+        "headerParameters": { "parameters": [{ "name": "Authorization", "value": "Bearer {{$env.VITRINE_MASTER_API_TOKEN}}" }, { "name": "X-Vitrine-Event", "value": "={{$node['Build Consolidated Result'].json.summary.status === 'completed' ? 'WORKFLOW_COMPLETED' : ($node['Build Consolidated Result'].json.summary.status === 'failed' ? 'WORKFLOW_FAILED' : 'WORKFLOW_RUNNING')}}" }] },
+        "bodyParameters": { "parameters": [
+          { "name": "event", "value": "={{$node['Build Consolidated Result'].json.summary.status === 'completed' ? 'WORKFLOW_COMPLETED' : ($node['Build Consolidated Result'].json.summary.status === 'failed' ? 'WORKFLOW_FAILED' : 'WORKFLOW_RUNNING')}}" },
+          { "name": "company_id", "value": "={{$node['Build Consolidated Result'].json.company_id}}" },
+          { "name": "execution_uuid", "value": "={{$node['Build Consolidated Result'].json.execution_uuid}}" },
+          { "name": "payload", "value": "={{$node['Build Consolidated Result'].json}}" }
+        ] }
+      },
+      "name": "Emit Runtime Result Event",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [820, 240]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok:true, result:$node['Build Consolidated Result'].json.summary } }}"
+      },
+      "name": "Respond Result",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1060, 240]
+    }
+  ],
+  "connections": {
+    "Aggregate Request": { "main": [[{ "node": "Build Consolidated Result", "type": "main", "index": 0 }]] },
+    "Build Consolidated Result": { "main": [[{ "node": "Commit Consolidated Result", "type": "main", "index": 0 }]] },
+    "Commit Consolidated Result": { "main": [[{ "node": "Emit Runtime Result Event", "type": "main", "index": 0 }]] },
+    "Emit Runtime Result Event": { "main": [[{ "node": "Respond Result", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": {}
+}

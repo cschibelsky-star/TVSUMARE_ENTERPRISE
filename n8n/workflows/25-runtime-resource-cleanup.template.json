@@ -1,0 +1,79 @@
+{
+  "name": "25 - Vitrine IA Flow - Runtime Resource Cleanup",
+  "nodes": [
+    {
+      "parameters": {"httpMethod": "POST", "path": "vitrine-flow/runtime/cleanup", "responseMode": "responseNode"},
+      "name": "Webhook Cleanup",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [100, 240]
+    },
+    {
+      "parameters": {
+        "jsCode": "const b=$json.body||$json; return [{json:{...b,locks:b.locks||[],usage_reservations:b.usage_reservations||[],event:'WORKFLOW_RESOURCE_CLEANUP_STARTED'}}];"
+      },
+      "name": "Normalize Cleanup",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [320, 240]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.VITRINE_MASTER_API_URL}}/flow/locks/release",
+        "sendHeaders": true,
+        "sendBody": true,
+        "headerParameters": {"parameters": [{"name": "Authorization", "value": "Bearer {{$env.VITRINE_MASTER_API_TOKEN}}"}]},
+        "jsonBody": "={{ { company_id:$json.company_id, execution_id:$json.execution_id, keys:$json.locks, owner:$json.request_id } }}"
+      },
+      "name": "Release Locks",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [550, 180]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.VITRINE_MASTER_API_URL}}/flow/usage/release",
+        "sendHeaders": true,
+        "sendBody": true,
+        "headerParameters": {"parameters": [{"name": "Authorization", "value": "Bearer {{$env.VITRINE_MASTER_API_TOKEN}}"}]},
+        "jsonBody": "={{ { company_id:$json.company_id, execution_id:$json.execution_id, reservations:$json.usage_reservations, request_id:$json.request_id } }}"
+      },
+      "name": "Release Usage Reservations",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [550, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.VITRINE_MASTER_API_URL}}/flow/events/callback",
+        "sendHeaders": true,
+        "sendBody": true,
+        "headerParameters": {"parameters": [{"name": "Authorization", "value": "Bearer {{$env.VITRINE_MASTER_API_TOKEN}}"}, {"name": "X-Vitrine-Event", "value": "WORKFLOW_RESOURCES_RELEASED"}]},
+        "jsonBody": "={{ { event:'WORKFLOW_RESOURCES_RELEASED', company_id:$('Normalize Cleanup').item.json.company_id, execution_id:$('Normalize Cleanup').item.json.execution_id, request_id:$('Normalize Cleanup').item.json.request_id } }}"
+      },
+      "name": "Report Cleanup",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [800, 240]
+    },
+    {
+      "parameters": {"respondWith": "json", "responseBody": "={{ { ok:true, status:'resources_released', execution_id:$('Normalize Cleanup').item.json.execution_id } }}"},
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1030, 240]
+    }
+  ],
+  "connections": {
+    "Webhook Cleanup": {"main": [[{"node": "Normalize Cleanup", "type": "main", "index": 0}]]},
+    "Normalize Cleanup": {"main": [[{"node": "Release Locks", "type": "main", "index": 0}, {"node": "Release Usage Reservations", "type": "main", "index": 0}]]},
+    "Release Locks": {"main": [[{"node": "Report Cleanup", "type": "main", "index": 0}]]},
+    "Release Usage Reservations": {"main": [[{"node": "Report Cleanup", "type": "main", "index": 0}]]},
+    "Report Cleanup": {"main": [[{"node": "Respond", "type": "main", "index": 0}]]}
+  },
+  "active": false,
+  "settings": {}
+}

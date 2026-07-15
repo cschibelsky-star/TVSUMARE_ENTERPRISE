@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Vitrine IA Flow Tenant Context",
+  "type": "object",
+  "required": [
+    "tenant_id",
+    "product_code",
+    "plan_code",
+    "locale",
+    "timezone",
+    "region",
+    "feature_flags",
+    "quota_profile",
+    "storage_profile",
+    "provider_policy"
+  ],
+  "properties": {
+    "tenant_id": { "type": "string", "minLength": 1 },
+    "product_code": { "type": "string", "minLength": 1 },
+    "plan_code": { "type": "string", "minLength": 1 },
+    "locale": { "type": "string", "default": "pt-BR" },
+    "timezone": { "type": "string", "default": "America/Sao_Paulo" },
+    "region": { "type": "string" },
+    "feature_flags": { "type": "array", "items": { "type": "string" } },
+    "quota_profile": { "type": "string" },
+    "storage_profile": { "type": "string" },
+    "provider_policy": { "type": "string" },
+    "metadata": { "type": "object", "additionalProperties": true }
+  },
+  "additionalProperties": false
+}

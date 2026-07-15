@@ -1,0 +1,56 @@
+{
+  "name": "26 - Vitrine IA Flow - AI Supervisor",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "vitrine-flow/ai-supervisor",
+        "responseMode": "responseNode"
+      },
+      "name": "Webhook AI Task",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [100, 240]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body || $json;\nconst required = ['company_id','request_id','task_type'];\nfor (const field of required) if (!body[field]) throw new Error(`Missing ${field}`);\nconst routing = { editorial: 'editorial-agent', marketing: 'marketing-agent', deploy: 'deploy-agent' };\nreturn [{ json: { ...body, event: 'AI_TASK_ASSIGNED', agent_slug: routing[body.task_type] || 'ai-supervisor', status: 'assigned' } }];"
+      },
+      "name": "Route Task",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [340, 240]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.VITRINE_MASTER_API_URL}}/flow/events/callback",
+        "sendHeaders": true,
+        "sendBody": true,
+        "headerParameters": {"parameters":[{"name":"Authorization","value":"Bearer {{$env.VITRINE_MASTER_API_TOKEN}}"}]},
+        "bodyParameters": {"parameters":[{"name":"event","value":"AI_TASK_ASSIGNED"},{"name":"payload","value":"={{$json}}"}]}
+      },
+      "name": "Emit Assignment",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [580, 240]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, status: 'assigned', agent_slug: $json.agent_slug } }}"
+      },
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [820, 240]
+    }
+  ],
+  "connections": {
+    "Webhook AI Task": {"main":[[{"node":"Route Task","type":"main","index":0}]]},
+    "Route Task": {"main":[[{"node":"Emit Assignment","type":"main","index":0}]]},
+    "Emit Assignment": {"main":[[{"node":"Respond","type":"main","index":0}]]}
+  },
+  "active": false,
+  "settings": {}
+}

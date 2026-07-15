@@ -1,0 +1,94 @@
+{
+  "name": "11 - Vitrine IA Flow - Provider Adapter",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "vitrine-flow/provider-adapter",
+        "responseMode": "responseNode"
+      },
+      "name": "Webhook Provider Request",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [100, 260]
+    },
+    {
+      "parameters": {
+        "jsCode": "const required = ['tenant_id','request_id','provider','operation'];\nfor (const key of required) { if (!$json[key]) throw new Error(`Missing field: ${key}`); }\nreturn [{ json: { ...$json, adapter_status: 'validated' } }];"
+      },
+      "name": "Validate Contract",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [330, 260]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.VITRINE_MASTER_API_URL}}/flow/secrets/resolve",
+        "sendHeaders": true,
+        "sendBody": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer {{$env.VITRINE_MASTER_API_TOKEN}}" },
+            { "name": "X-Vitrine-Request-Id", "value": "={{$json.request_id}}" }
+          ]
+        },
+        "bodyParameters": {
+          "parameters": [
+            { "name": "tenant_id", "value": "={{$json.tenant_id}}" },
+            { "name": "provider", "value": "={{$json.provider}}" },
+            { "name": "credential_key", "value": "={{$json.credential_key}}" },
+            { "name": "request_id", "value": "={{$json.request_id}}" }
+          ]
+        }
+      },
+      "name": "Resolve Secret Reference",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [570, 260]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.VITRINE_MASTER_API_URL}}/flow/usage/reserve",
+        "sendHeaders": true,
+        "sendBody": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer {{$env.VITRINE_MASTER_API_TOKEN}}" }
+          ]
+        },
+        "bodyParameters": {
+          "parameters": [
+            { "name": "tenant_id", "value": "={{$('Validate Contract').item.json.tenant_id}}" },
+            { "name": "provider", "value": "={{$('Validate Contract').item.json.provider}}" },
+            { "name": "operation", "value": "={{$('Validate Contract').item.json.operation}}" },
+            { "name": "request_id", "value": "={{$('Validate Contract').item.json.request_id}}" }
+          ]
+        }
+      },
+      "name": "Reserve Usage",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [810, 260]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, status: 'ready', provider: $('Validate Contract').item.json.provider, operation: $('Validate Contract').item.json.operation, request_id: $('Validate Contract').item.json.request_id, secret_ref: $('Resolve Secret Reference').item.json.secret_ref } }}"
+      },
+      "name": "Respond Adapter Ready",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1050, 260]
+    }
+  ],
+  "connections": {
+    "Webhook Provider Request": { "main": [[{ "node": "Validate Contract", "type": "main", "index": 0 }]] },
+    "Validate Contract": { "main": [[{ "node": "Resolve Secret Reference", "type": "main", "index": 0 }]] },
+    "Resolve Secret Reference": { "main": [[{ "node": "Reserve Usage", "type": "main", "index": 0 }]] },
+    "Reserve Usage": { "main": [[{ "node": "Respond Adapter Ready", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": {}
+}

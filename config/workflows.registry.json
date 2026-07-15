@@ -1,0 +1,62 @@
+[
+  {
+    "id": "WF-000001",
+    "slug": "rss-editorial-pipeline",
+    "name": "RSS Editorial Pipeline",
+    "version": "1.0.0",
+    "queue": "Editorial Queue",
+    "owner": "Editorial Automation",
+    "reusable": true,
+    "products": ["tv_sumare_enterprise", "portal_news_enterprise"],
+    "triggers": ["RSS_CAPTURE_REQUESTED"],
+    "emits": ["NEWS_IMPORTED", "NEWS_REJECTED", "NEWS_READY_FOR_REVIEW"],
+    "retry_policy": { "attempts": 3, "backoff_seconds": [30, 120, 600] },
+    "dead_letter_queue": true,
+    "status": "draft"
+  },
+  {
+    "id": "WF-000002",
+    "slug": "news-to-instagram",
+    "name": "News to Instagram",
+    "version": "1.0.0",
+    "queue": "Social Queue",
+    "owner": "Marketing Automation",
+    "reusable": true,
+    "products": ["tv_sumare_enterprise", "portal_news_enterprise", "social_media_ia"],
+    "triggers": ["NEWS_APPROVED_FOR_SOCIAL"],
+    "emits": ["INSTAGRAM_POST_PREPARED", "INSTAGRAM_POST_PUBLISHED", "INSTAGRAM_POST_FAILED"],
+    "retry_policy": { "attempts": 5, "backoff_seconds": [60, 180, 600, 1800, 3600] },
+    "dead_letter_queue": true,
+    "status": "draft"
+  },
+  {
+    "id": "WF-000003",
+    "slug": "news-to-heygen",
+    "name": "News to HeyGen",
+    "version": "1.0.0",
+    "queue": "Video Queue",
+    "owner": "Video Automation",
+    "reusable": true,
+    "products": ["tv_sumare_enterprise", "portal_news_enterprise"],
+    "triggers": ["NEWS_APPROVED_FOR_VIDEO"],
+    "emits": ["VIDEO_SCRIPTS_READY", "VIDEO_SENT_TO_HEYGEN", "VIDEO_FAILED"],
+    "retry_policy": { "attempts": 3, "backoff_seconds": [60, 300, 900] },
+    "dead_letter_queue": true,
+    "status": "draft"
+  },
+  {
+    "id": "WF-000006",
+    "slug": "factory-provisioning",
+    "name": "Factory Provisioning",
+    "version": "1.0.0",
+    "queue": "Provision Queue",
+    "owner": "Factory Automation",
+    "reusable": true,
+    "products": ["tv_sumare_enterprise", "portal_news_enterprise", "guia_digital_cidade", "social_media_ia", "sismed", "gov360"],
+    "triggers": ["ORDER_PAID", "PROVISION_REQUESTED"],
+    "emits": ["PROVISION_STARTED", "PROVISION_DOCKER_READY", "PROVISION_DATABASE_READY", "PROVISION_DOMAIN_READY", "PROVISION_SSL_READY", "PROVISION_COMPLETED", "PROVISION_FAILED"],
+    "retry_policy": { "attempts": 3, "backoff_seconds": [30, 120, 600] },
+    "dead_letter_queue": true,
+    "status": "draft"
+  }
+]
