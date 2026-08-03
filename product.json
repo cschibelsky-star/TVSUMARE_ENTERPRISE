@@ -1,8 +1,8 @@
 {
   "key": "tv-sumare-enterprise",
   "name": "TV Sumare Enterprise",
-  "version": "3.0.0-hml.1",
-  "status": "homologation-local",
+  "version": "3.0.0-hml.2",
+  "status": "homologation-prepared",
   "runtime": {
     "type": "php-8.3-apache",
     "database": "json-files",
@@ -32,7 +32,8 @@
   "notes": [
     "Legacy PHP baseline imported from immutable HostGator snapshot.",
     "Secrets, data, uploads, logs and ZIP archives are excluded from Git.",
-    "Homologation container runs on an internal Docker network only.",
+    "Homologation uses an internal network plus a separate bridge network for controlled egress.",
+    "Current persistence is JSON-file based; MariaDB and Redis are not runtime requirements for this baseline.",
     "DNS and production remain unchanged."
   ]
 }
