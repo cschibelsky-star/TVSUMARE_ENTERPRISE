@@ -16,4 +16,5 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Validate JSON
-        run: php -r '$data=json_decode(file_get_contents("product.json"), true, 512, JSON_THROW_ON_ERROR); foreach (["key","name","version","status","runtime","health","core","dependencies"] as $field) { if (!array_key_exists($field, $data)) { fwrite(STDERR, "Campo ausente: $field\n"); exit(1); } } echo "Manifesto válido\n";'
+        run: >-
+          php -r '$data=json_decode(file_get_contents("product.json"), true, 512, JSON_THROW_ON_ERROR); foreach (["key","name","version","status","runtime","health","core","dependencies"] as $field) { if (!array_key_exists($field, $data)) { fwrite(STDERR, "Campo ausente: $field\n"); exit(1); } } echo "Manifesto válido\n";'
