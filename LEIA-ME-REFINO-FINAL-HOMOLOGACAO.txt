@@ -1,0 +1,42 @@
+TV SUMARÉ ENTERPRISE — REFINO FINAL DE HOMOLOGAÇÃO
+
+Tipo: UPDATE SEGURO
+Não inclui nem sobrescreve data/, uploads/ ou assets/uploads/.
+
+Correções incluídas:
+1. Links e botões públicos revisados em Home, Notícias, Vídeos e Matéria.
+2. /admin/login.php criado como redirecionamento seguro para /login.php, evitando erro 404 em links antigos.
+3. Ticker corrigido para não cortar manchetes e rodar mais suave.
+4. Banner comercial refinado com melhor altura, centralização e texto completo.
+5. TV Play com deduplicação reforçada por URL, título e news_id.
+6. Notícias com deduplicação por ID e título normalizado.
+7. Destaques por Cidade com inferência automática da cidade pelo texto quando o campo city estiver vazio.
+8. Imagem padrão por categoria removida do ambiente público: se não houver imagem real, a imagem genérica não é exibida.
+9. Página de notícias revisada para usar imagem real e cards mais limpos.
+10. Matérias curtas expandidas no front para mínimo aproximado de 400 palavras.
+11. SEO mantido com Open Graph, canonical e Schema NewsArticle.
+12. CSS de refinamento final incluído em assets/tvsumare-final-fixes.css.
+
+Arquivos principais atualizados:
+- index.php
+- noticias.php
+- noticia.php
+- videos.php
+- header.php
+- includes/tvs_public_helpers.php
+- assets/tvsumare-final-fixes.css
+- admin/login.php
+
+Após subir:
+1. Limpar cache do navegador.
+2. Testar:
+   - /index.php
+   - /noticias.php
+   - /videos.php
+   - /noticia.php?id=<id_real>
+   - /admin/login.php
+3. Validar visualmente:
+   - sem cards duplicados no TV Play
+   - sem imagem padrão Cultura/Saúde/Empregos aparecendo como imagem principal
+   - ticker sem corte brusco
+   - botões de navegação funcionando

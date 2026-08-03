@@ -1,0 +1,15 @@
+FROM php:8.3-apache
+
+COPY docker/apache-security.conf /etc/apache2/conf-available/tvsumare-security.conf
+
+RUN a2enmod rewrite headers \
+    && a2enconf tvsumare-security \
+    && sed -ri -e 's!AllowOverride None!AllowOverride All!g' /etc/apache2/apache2.conf
+
+COPY . /var/www/html/
+
+RUN chown -R root:root /var/www/html \
+    && find /var/www/html -type d -exec chmod 0755 {} + \
+    && find /var/www/html -type f -exec chmod 0644 {} +
+
+EXPOSE 80

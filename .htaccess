@@ -1,0 +1,35 @@
+Options -Indexes
+DirectoryIndex index.php
+ServerSignature Off
+
+<IfModule mod_headers.c>
+Header always set X-Content-Type-Options "nosniff"
+Header always set X-Frame-Options "SAMEORIGIN"
+Header always set Referrer-Policy "strict-origin-when-cross-origin"
+Header always set Permissions-Policy "camera=(), microphone=(), geolocation=()"
+</IfModule>
+
+<IfModule mod_rewrite.c>
+RewriteEngine On
+RewriteRule ^rss\.xml$ rss.php [L]
+RewriteRule ^sitemap\.xml$ sitemap.xml.php [L]
+RewriteRule ^sitemap-news\.xml$ news-sitemap.php [L]
+RewriteRule ^(?:admin|api|app|routes|config)(?:/|$) - [F,L,NC]
+RewriteRule ^(?:admin\.php|auth\.php|dashboard\.php|login\.php|logout\.php|area-comercial\.php|defesa-civil\.php|drafts\.php|editor-ia\.php|fontes(?:-status)?\.php|gemini\.php|guia-comercial\.php|heygen-diagnostico\.php|instagram\.php|lixeira\.php|log-editorial\.php|monetizacao\.php|monitor(?:_lib)?\.php|nova-noticia\.php|radar-regional\.php|redes\.php|reporter-ia\.php|rss-central\.php|status\.php|tvplay\.php|ultimahora\.php)$ - [F,L,NC]
+RewriteRule ^(?:data|vendor|logs)(?:/|$) - [F,L,NC]
+</IfModule>
+
+<FilesMatch "^(?:config\.php|composer\.(?:json|lock)|package(?:-lock)?\.json|.*\.env|LEIA-ME.*\.txt|Dockerfile|docker-compose.*|product\.json)$">
+  Require all denied
+</FilesMatch>
+
+<FilesMatch "\.(?:md|ya?ml|py|zip|log)$">
+  Require all denied
+</FilesMatch>
+
+<IfModule !mod_authz_core.c>
+  <FilesMatch "^(?:config\.php|composer\.(?:json|lock)|package(?:-lock)?\.json|.*\.env|LEIA-ME.*\.txt|Dockerfile|docker-compose.*|product\.json)$">
+    Order allow,deny
+    Deny from all
+  </FilesMatch>
+</IfModule>

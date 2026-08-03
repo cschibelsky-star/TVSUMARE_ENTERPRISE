@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675">
+<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#071f49"/><stop offset="0.55" stop-color="#0f2f68"/><stop offset="1" stop-color="#ef4444"/></linearGradient></defs>
+<rect width="1200" height="675" fill="url(#g)"/>
+<circle cx="1050" cy="95" r="110" fill="rgba(255,255,255,.08)"/>
+<circle cx="125" cy="590" r="160" fill="rgba(255,255,255,.07)"/>
+<text x="80" y="280" font-family="Arial, Helvetica, sans-serif" font-weight="900" font-size="78" fill="#ffffff">TV SUMARÉ</text>
+<text x="84" y="350" font-family="Arial, Helvetica, sans-serif" font-weight="700" font-size="34" fill="#e5eefc">Notícia regional com credibilidade</text>
+<rect x="84" y="392" width="360" height="8" rx="4" fill="#f97316"/>
+</svg>

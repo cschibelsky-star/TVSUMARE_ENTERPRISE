@@ -1,0 +1,15 @@
+CORREÇÃO ADMIN TV SUMARÉ — 403/500
+
+1) Envie/extrai este ZIP na raiz do site (public_html ou pasta do domínio tvsumare.com.br).
+2) Ele restaura a pasta /admin completa e cria admin/config.php como wrapper seguro para o config.php da raiz.
+3) Não sobrescreve data/, uploads/ nem vídeos.
+4) Teste nesta ordem:
+   https://tvsumare.com.br/admin/diagnostico-acesso.php
+   https://tvsumare.com.br/admin/login.php
+   https://tvsumare.com.br/admin/
+5) Se houver erro de permissão, execute uma única vez:
+   https://tvsumare.com.br/corrigir-permissoes-tvsumare.php
+   Depois apague o arquivo corrigir-permissoes-tvsumare.php.
+
+Observação:
+O arquivo admin/config.php deste pacote NÃO duplica chaves. Ele apenas carrega o config.php da raiz.

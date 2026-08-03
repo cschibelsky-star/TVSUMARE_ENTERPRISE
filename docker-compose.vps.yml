@@ -1,0 +1,60 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tvsumare_web
+    restart: unless-stopped
+    init: true
+    read_only: true
+    environment:
+      TVSUMARE_ENV: homologation
+      TVSUMARE_SITE_NAME: TV Sumare
+      TVSUMARE_SITE_URL: ${TVSUMARE_SITE_URL:-http://tvsumare.local}
+      TVSUMARE_ADMIN_USER: ${TVSUMARE_ADMIN_USER:-}
+      TVSUMARE_ADMIN_PASS_HASH: ${TVSUMARE_ADMIN_PASS_HASH:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.0-flash}
+      GEMINI_FALLBACK_MODELS: ${GEMINI_FALLBACK_MODELS:-}
+      HEYGEN_API_KEY: ${HEYGEN_API_KEY:-}
+      SITE_FACTORY_TOKEN: ${SITE_FACTORY_TOKEN:-}
+      TVSUMARE_OUTBOUND_HOSTS: ${TVSUMARE_OUTBOUND_HOSTS:-}
+    volumes:
+      - /srv/tvsumare/shared/data:/var/www/html/data:rw
+      - /srv/tvsumare/shared/uploads:/var/www/html/uploads:rw
+      - /srv/tvsumare/shared/videos:/var/www/html/videos:rw
+      - /srv/tvsumare/shared/logs:/var/www/html/logs:rw
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777
+      - /var/run/apache2:rw,nosuid,nodev,size=8m,mode=0755
+      - /var/lock/apache2:rw,nosuid,nodev,size=8m,mode=0755
+      - /var/lib/php/sessions:rw,noexec,nosuid,nodev,size=16m,mode=1733,uid=33,gid=33
+    networks:
+      - tvsumare_internal
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1/health.php"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - SETGID
+      - SETUID
+      - NET_BIND_SERVICE
+    pids_limit: 128
+    mem_limit: 512m
+    cpus: 1.0
+    ulimits:
+      nofile:
+        soft: 1024
+        hard: 4096
+    stop_grace_period: 20s
+
+networks:
+  tvsumare_internal:
+    name: tvsumare_internal
+    internal: true

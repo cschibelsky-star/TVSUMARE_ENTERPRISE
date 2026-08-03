@@ -1,0 +1,34 @@
+TV SUMARÉ ENTERPRISE — UPDATE FINAL DE HOMOLOGAÇÃO
+
+Tipo de pacote: UPDATE SEGURO.
+
+Este pacote atualiza apenas arquivos de sistema e NÃO contém data/, uploads/ ou assets/uploads/.
+
+Arquivos alterados:
+- index.php
+- noticia.php
+- videos.php
+- includes/tvs_public_helpers.php
+- includes/video_ai_helper.php
+
+Correções aplicadas:
+1. Home com anti-repetição de notícias.
+2. TV Play da Home sem vídeos duplicados.
+3. TV Play público exibindo apenas vídeos reais de data/videos.json e data/videos_ia.json.
+4. Cards fictícios removidos do ambiente público.
+5. Blocos vazios ocultados.
+6. Destaques por Cidade exibem somente cidades com notícia real.
+7. Imagem editorial padrão por categoria removida do público sempre que possível.
+8. Matérias curtas recebem expansão mínima de leitura no front.
+9. Vídeo relacionado é exibido dentro da matéria quando houver vínculo por news_id ou similaridade de título.
+10. Bloco comercial “Anuncie na TV Sumaré” dentro da matéria.
+11. SEO reforçado com canonical, Open Graph e Schema NewsArticle.
+12. Prompt do Repórter IA ajustado para não falar tvsumare.com.br.
+13. Prompt do Repórter IA com safe zone para não cobrir rosto, olhos, nariz e boca.
+14. Redação virtual ajustada para Cristian Schibelsky, Repórter 1 e Repórter 2.
+
+Após subir:
+1. Limpar cache do navegador.
+2. Acessar /index.php.
+3. Conferir Home, TV Play, uma matéria com vídeo e uma matéria de empregos.
+4. Não apagar data/, uploads/ nem assets/uploads/.
