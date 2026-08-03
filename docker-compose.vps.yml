@@ -31,6 +31,7 @@ services:
       - /var/lib/php/sessions:rw,noexec,nosuid,nodev,size=16m,mode=1733,uid=33,gid=33
     networks:
       - tvsumare_internal
+      - tvsumare_egress
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1/health.php"]
       interval: 30s
@@ -58,3 +59,7 @@ networks:
   tvsumare_internal:
     name: tvsumare_internal
     internal: true
+  tvsumare_egress:
+    name: tvsumare_egress
+    driver: bridge
+    internal: false
