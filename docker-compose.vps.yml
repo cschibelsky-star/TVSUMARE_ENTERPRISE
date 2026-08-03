@@ -32,6 +32,7 @@ services:
     networks:
       - tvsumare_internal
       - tvsumare_egress
+      - vitrine_net
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1/health.php"]
       interval: 30s
@@ -63,3 +64,6 @@ networks:
     name: tvsumare_egress
     driver: bridge
     internal: false
+  vitrine_net:
+    external: true
+    name: vitrine_net
