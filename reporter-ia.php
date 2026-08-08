@@ -1,0 +1,225 @@
+<?php
+require_once (is_file(__DIR__.'/includes/outbound_guard.php') ? __DIR__.'/includes/outbound_guard.php' : dirname(__DIR__).'/includes/outbound_guard.php');
+require_once __DIR__.'/auth.php';
+require_login();
+require_once dirname(__DIR__).'/config.php';
+require_once __DIR__.'/gemini.php';
+require_once __DIR__.'/monitor_lib.php';
+require_once dirname(__DIR__).'/includes/heygen_helper.php';
+$activeAdmin='reporter_ia';
+
+function rpia_h($s){ return htmlspecialchars((string)$s,ENT_QUOTES,'UTF-8'); }
+function rpia_path($name){ return dirname(__DIR__).'/data/'.$name; }
+function rpia_read($name){ $p=rpia_path($name); if(!file_exists($p)) return []; $d=json_decode(file_get_contents($p),true); return is_array($d)?$d:[]; }
+function rpia_write($name,$data){ $p=rpia_path($name); if(!is_dir(dirname($p))) @mkdir(dirname($p),0775,true); file_put_contents($p,json_encode(array_values($data),JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES),LOCK_EX); }
+function rpia_config_read(){ $p=rpia_path('reporter_ia_config.json'); if(!file_exists($p)) return []; $d=json_decode(file_get_contents($p),true); return is_array($d)?$d:[]; }
+function rpia_config_save($cfg){ $p=rpia_path('reporter_ia_config.json'); if(!is_dir(dirname($p))) @mkdir(dirname($p),0775,true); file_put_contents($p,json_encode($cfg,JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES),LOCK_EX); }
+function rpia_find_news($id){ foreach(rpia_read('noticias.json') as $n){ if(($n['id']??'')===$id) return $n; } return null; }
+function rpia_find_videojob($id,&$idx=null){ $jobs=rpia_read('videos_ia.json'); foreach($jobs as $k=>$j){ if(($j['id']??'')===$id){ $idx=$k; return [$j,$jobs]; } } return [null,$jobs]; }
+function rpia_clean_script($text){ $text=tvs_clean_text($text); $text=preg_replace('/\s+/u',' ',trim($text)); return $text; }
+function rpia_bool($v){ return in_array((string)$v,['1','true','on','yes','sim'],true); }
+function rpia_site_url(){ global $site_url; $url=trim((string)($site_url??'')); if($url==='') $url='https://tvsumare.com.br'; return rtrim($url,'/'); }
+function rpia_abs_url($path){ if(preg_match('~^https?://~i',(string)$path)) return (string)$path; return rpia_site_url().'/'.ltrim((string)$path,'/'); }
+function rpia_new_token(){ return bin2hex(random_bytes(20)); }
+function rpia_public_asset_url($maybeUrl){
+  $u=trim((string)$maybeUrl);
+  if($u==='') return '';
+  if(preg_match('~^https://~i',$u)) return $u;
+  if(preg_match('~^http://~i',$u)) return '';
+  return rpia_abs_url($u);
+}
+function rpia_heygen_key($cfg){ $cfg=tvs_heygen_load_config(is_array($cfg)?$cfg:[]); return trim((string)($cfg['heygen_api_key']??'')); }
+function rpia_heygen_request($method,$endpoint,$key,$payload=null,$timeout=35){
+  if(trim((string)$key)==='') return ['ok'=>false,'http'=>0,'error'=>'Chave HeyGen não configurada.'];
+  if(!function_exists('curl_init')) return ['ok'=>false,'http'=>0,'error'=>'cURL não está habilitado no servidor.'];
+  $url='https://api.heygen.com'.$endpoint;
+  $headers=['x-api-key: '.$key,'Accept: application/json'];
+  $outboundOptions=tvs_outbound_curl_options($url,(int)$timeout);
+  if($outboundOptions===null) return ['ok'=>false,'http'=>0,'error'=>'URL HeyGen bloqueada pela politica de saida.'];
+  $ch=curl_init($url);
+  $opts=$outboundOptions+[CURLOPT_RETURNTRANSFER=>true,CURLOPT_CUSTOMREQUEST=>$method,CURLOPT_HTTPHEADER=>$headers];
+  if($payload!==null){ $body=json_encode($payload,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES); $headers[]='Content-Type: application/json'; $opts[CURLOPT_HTTPHEADER]=$headers; $opts[CURLOPT_POSTFIELDS]=$body; }
+  curl_setopt_array($ch,$opts);
+  $res=curl_exec($ch); $err=curl_error($ch); $http=(int)curl_getinfo($ch,CURLINFO_HTTP_CODE); curl_close($ch);
+  if(is_string($res) && strlen($res)>2097152) return ['ok'=>false,'http'=>$http,'error'=>'Resposta HeyGen excedeu o limite seguro.'];
+  if($res===false || $res==='') return ['ok'=>false,'http'=>$http,'error'=>'HeyGen sem resposta: '.$err];
+  $json=json_decode($res,true);
+  if($http>=400) return ['ok'=>false,'http'=>$http,'error'=>'HeyGen HTTP '.$http.': '.substr($res,0,700),'raw'=>$json?:$res];
+  return ['ok'=>true,'http'=>$http,'data'=>$json?:[],'raw'=>$res];
+}
+function rpia_local_script($news){
+  $title=tvs_clean_text($news['title']??'Atualização regional');
+  $city=tvs_clean_text($news['city']??'região');
+  $cat=tvs_clean_text($news['category']??'notícias');
+  $body=tvs_clean_text($news['body']??($news['summary']??''));
+  $summary=tvs_first_sentence($body,$news['subtitle']??$title);
+  $source=tvs_clean_text($news['source']??'fonte consultada');
+  $script="Olá. Esta é uma atualização da TV Sumaré.\n\n";
+  $script.=$title.".\n\n";
+  $script.=$summary."\n\n";
+  if($cat==='Empregos') $script.="A informação pode interessar trabalhadores e moradores que buscam novas oportunidades na região.\n\n";
+  elseif($cat==='Segurança') $script.="O caso mobiliza a atenção da população e segue com acompanhamento das autoridades competentes.\n\n";
+  elseif($cat==='Saúde') $script.="A informação é relevante para usuários dos serviços públicos e moradores que dependem do atendimento local.\n\n";
+  else $script.="O assunto tem impacto regional e será acompanhado conforme novas informações oficiais forem divulgadas.\n\n";
+  $script.="Fonte: {$source}. Para acompanhar outras notícias da região, acesse a TV Sumaré.";
+  return $script;
+}
+function rpia_generate_script($news){
+  global $gemini_api_key, $anthropic_api_key, $anthropic_model;
+  $base="Título: ".($news['title']??'')."\nCidade: ".($news['city']??'')."\nCategoria: ".($news['category']??'')."\nSubtítulo: ".($news['subtitle']??'')."\nResumo: ".($news['summary']??'')."\nCorpo: ".tvs_substr(tvs_clean_text($news['body']??''),0,2500)."\nFonte: ".($news['source']??'Fonte consultada')."\nURL: ".($news['source_url']??($news['url']??''));
+  $prompt="Você é apresentador de telejornal regional da TV Sumaré. Gere um roteiro de vídeo com 45 a 60 segundos para avatar HeyGen.\n\nRegras: texto falado natural, profissional, jornalístico, sem markdown, sem vinhetas técnicas, sem dizer que é IA, sem inventar dados, sem acusar pessoas ou instituições sem fonte, sem usar frases genéricas como 'pauta em revisão' ou 'acompanhamento regional'. Comece com saudação curta. Termine com chamada para acompanhar a TV Sumaré.\n\nMatéria:\n".$base;
+  $script='';
+  $anthropic=trim((string)($anthropic_api_key??''));
+  if($anthropic!=='' && function_exists('curl_init')){
+    $payload=json_encode(['model'=>($anthropic_model?:'claude-sonnet-4-20250514'),'max_tokens'=>900,'messages'=>[['role'=>'user','content'=>$prompt]]],JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+    $url='https://api.anthropic.com/v1/messages';
+    $outboundOptions=tvs_outbound_curl_options($url,25);
+    if($outboundOptions!==null){
+      $ch=curl_init($url);
+      curl_setopt_array($ch,$outboundOptions+[CURLOPT_POST=>true,CURLOPT_POSTFIELDS=>$payload,CURLOPT_RETURNTRANSFER=>true,CURLOPT_HTTPHEADER=>['Content-Type: application/json','x-api-key: '.$anthropic,'anthropic-version: 2023-06-01']]);
+      $res=curl_exec($ch); $http=(int)curl_getinfo($ch,CURLINFO_HTTP_CODE); curl_close($ch);
+      if(is_string($res) && strlen($res)<=2097152 && $http<400){ $j=json_decode($res,true); $script=$j['content'][0]['text']??''; }
+    }
+  }
+  if(trim($script)==='' && trim((string)($gemini_api_key??''))!==''){
+    if(function_exists('tvs_gemini_generate_text')){ $r=tvs_gemini_generate_text($gemini_api_key, $prompt, ['temperature'=>0.25,'maxOutputTokens'=>900], 24); if(!empty($r['ok'])) $script=$r['text']??''; }
+  }
+  $script=rpia_clean_script($script);
+  if($script==='' || tvs_strlen($script)<120) $script=rpia_local_script($news);
+  return $script;
+}
+function rpia_video_agent_prompt($job,$cfg){
+  $orientation=($cfg['heygen_orientation']??'landscape')==='portrait'?'vertical/portrait 9:16':'landscape 16:9';
+  $script=trim((string)($job['script']??''));
+  $title=tvs_clean_text($job['title']??'Giro regional TV Sumaré');
+  $city=tvs_clean_text($job['city']??'Região');
+  $source=tvs_clean_text($job['source']??'fonte consultada');
+  $brand="TV Sumaré, portal regional de notícias de Sumaré e Região Metropolitana de Campinas.";
+  return "Crie um vídeo jornalístico regional para a {$brand}\n\n".
+    "Formato: {$orientation}. Duração alvo: 45 a 60 segundos. Tom: apresentador de telejornal regional, claro, confiável, objetivo e sem sensacionalismo.\n\n".
+    "Use o avatar e a voz configurados. Use identidade visual limpa, moderna, com cores institucionais azul escuro, branco e laranja quando possível. Inclua legendas e cards discretos de apoio.\n\n".
+    "Título da pauta: {$title}\nCidade/região: {$city}\nFonte: {$source}\n\n".
+    "Texto falado obrigatório, sem inventar dados além deste roteiro:\n{$script}\n\n".
+    "Regras editoriais: não cite que o conteúdo foi gerado por IA; não acrescente números, datas, nomes ou acusações que não estejam no roteiro; preserve o tom jornalístico; finalize reforçando que o público acompanhe a TV Sumaré.";
+}
+function rpia_heygen_create($job,$cfg){
+  $key=rpia_heygen_key($cfg); if($key==='') return ['ok'=>false,'error'=>'Configure a chave da HeyGen.'];
+  $payload=['prompt'=>rpia_video_agent_prompt($job,$cfg),'mode'=>'generate','incognito_mode'=>rpia_bool($cfg['heygen_incognito_mode']??'0')];
+  foreach(['avatar_id'=>'heygen_avatar_id','voice_id'=>'heygen_voice_id','style_id'=>'heygen_style_id','brand_kit_id'=>'heygen_brand_kit_id'] as $api=>$local){ $v=trim((string)($cfg[$local]??'')); if($v!=='') $payload[$api]=$v; }
+  $orientation=trim((string)($cfg['heygen_orientation']??'landscape')); if(in_array($orientation,['landscape','portrait'],true)) $payload['orientation']=$orientation;
+  // Correção CTO: não enviar files[] para HeyGen Video Agent.
+  // Imagens externas de notícias podem bloquear hotlink/download e derrubar a geração com Invalid URL in files[0].
+  // Mantemos nesta fase apenas prompt + avatar + voz para validar o primeiro vídeo operacional.
+  $callbackToken=trim((string)($cfg['heygen_callback_token']??''));
+  if($callbackToken!==''){
+    $payload['callback_url']=rpia_abs_url('api/heygen-callback.php?token='.rawurlencode($callbackToken));
+    $payload['callback_id']=$job['id']??('job_'.time());
+  }
+  $r=rpia_heygen_request('POST','/v3/video-agents',$key,$payload,45);
+  if(!$r['ok']) return ['ok'=>false,'error'=>$r['error']??'Falha ao criar sessão HeyGen.','raw'=>$r];
+  $data=$r['data']['data']??($r['data']??[]);
+  $session=$data['session_id']??''; $video=$data['video_id']??''; $status=$data['status']??'generating';
+  if($session==='' && $video==='') return ['ok'=>false,'error'=>'HeyGen não retornou session_id nem video_id: '.substr($r['raw']??'',0,700),'raw'=>$r];
+  return ['ok'=>true,'session_id'=>$session,'video_id'=>$video,'status'=>$status,'payload'=>$payload,'raw'=>$r['data']];
+}
+function rpia_heygen_get_session($sessionId,$cfg){
+  $key=rpia_heygen_key($cfg); if($key==='' || trim((string)$sessionId)==='') return ['ok'=>false,'error'=>'Chave HeyGen ou session_id ausente.'];
+  $r=rpia_heygen_request('GET','/v3/video-agents/'.rawurlencode($sessionId),$key,null,25);
+  if(!$r['ok']) return ['ok'=>false,'error'=>$r['error']??'Falha ao consultar sessão.','raw'=>$r];
+  $data=$r['data']['data']??($r['data']??[]);
+  return ['ok'=>true,'session_status'=>$data['status']??'','progress'=>$data['progress']??null,'video_id'=>$data['video_id']??'','title'=>$data['title']??'','raw'=>$r['data']];
+}
+function rpia_heygen_get_video($videoId,$cfg){
+  $key=rpia_heygen_key($cfg); if($key==='' || trim((string)$videoId)==='') return ['ok'=>false,'error'=>'Chave HeyGen ou video_id ausente.'];
+  $r=rpia_heygen_request('GET','/v3/videos/'.rawurlencode($videoId),$key,null,25);
+  if(!$r['ok']) return ['ok'=>false,'error'=>$r['error']??'Falha ao consultar vídeo.','raw'=>$r];
+  $data=$r['data']['data']??($r['data']??[]);
+  return ['ok'=>true,'video_status'=>$data['status']??'','video_url'=>$data['video_url']??'','captioned_video_url'=>$data['captioned_video_url']??'','thumb'=>$data['thumbnail_url']??'','gif_url'=>$data['gif_url']??'','subtitle_url'=>$data['subtitle_url']??'','duration'=>$data['duration']??null,'failure_code'=>$data['failure_code']??'','failure_message'=>$data['failure_message']??'','video_page_url'=>$data['video_page_url']??'','raw'=>$r['data']];
+}
+function rpia_heygen_status($job,$cfg){
+  $out=['ok'=>true,'messages'=>[]];
+  $videoId=trim((string)($job['heygen_video_id']??''));
+  $sessionId=trim((string)($job['heygen_session_id']??''));
+  if($sessionId!==''){
+    $s=rpia_heygen_get_session($sessionId,$cfg); if(!$s['ok']) return $s;
+    $out['session']=$s; $out['session_status']=$s['session_status']??''; $out['progress']=$s['progress']??null; if($videoId==='' && !empty($s['video_id'])) $videoId=$s['video_id'];
+  }
+  if($videoId!==''){
+    $v=rpia_heygen_get_video($videoId,$cfg); if(!$v['ok']) return $v;
+    $out['video']=$v; $out['video_id']=$videoId; $out['video_status']=$v['video_status']??''; $out['video_url']=$v['video_url']??''; $out['captioned_video_url']=$v['captioned_video_url']??''; $out['thumb']=$v['thumb']??''; $out['duration']=$v['duration']??null; $out['failure_code']=$v['failure_code']??''; $out['failure_message']=$v['failure_message']??''; $out['video_page_url']=$v['video_page_url']??'';
+  }
+  if($sessionId==='' && $videoId==='') return ['ok'=>false,'error'=>'Este job ainda não tem session_id ou video_id.'];
+  return $out;
+}
+function rpia_heygen_list_styles($cfg){
+  $key=rpia_heygen_key($cfg); if($key==='') return ['ok'=>false,'error'=>'Configure a chave da HeyGen.'];
+  $r=rpia_heygen_request('GET','/v3/video-agents/styles?limit=20',$key,null,25);
+  if(!$r['ok']) return ['ok'=>false,'error'=>$r['error']??'Falha ao listar estilos.','raw'=>$r];
+  return ['ok'=>true,'data'=>$r['data']['data']??[],'raw'=>$r['data']];
+}
+function rpia_publish_video($job){
+  $videos=rpia_read('videos.json'); foreach($videos as $v){ if(($v['ia_job_id']??'')===($job['id']??'')) return false; }
+  $url=$job['captioned_video_url']??($job['video_url']??'');
+  array_unshift($videos,['id'=>'vid_ia_'.date('YmdHis'),'title'=>$job['title']??'TV Sumaré News','category'=>$job['category']??'Giro da Região','description'=>tvs_substr(tvs_clean_text($job['script']??''),0,180),'url'=>$url,'thumb'=>$job['thumb']??($job['image']??'assets/cat-cidade.svg'),'status'=>'active','featured'=>1,'ia_job_id'=>$job['id']??'','created_at'=>date('c')]);
+  rpia_write('videos.json',$videos); return true;
+}
+
+$msg=''; $err=''; $cfg=tvs_heygen_load_config(rpia_config_read());
+$defaults=['heygen_api_key','heygen_avatar_id','heygen_voice_id','heygen_style_id','heygen_brand_kit_id','heygen_orientation','heygen_incognito_mode'];
+foreach($defaults as $k){ if((!isset($cfg[$k]) || trim((string)$cfg[$k])==='') && isset($GLOBALS[$k]) && trim((string)$GLOBALS[$k])!=='') $cfg[$k]=$GLOBALS[$k]; }
+if(empty($cfg['heygen_orientation'])) $cfg['heygen_orientation']='landscape';
+if(empty($cfg['heygen_callback_token'])) $cfg['heygen_callback_token']=rpia_new_token();
+// Auto-correção: mantém a configuração da HeyGen persistida em data/reporter_ia_config.json.
+// Isso evita o erro "HeyGen sem chave configurada" quando o painel usa o JSON antes do config.php.
+rpia_config_save(tvs_heygen_repair_config($cfg));
+
+if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'){
+  $action=$_POST['action']??'';
+  if($action==='save_config'){
+    $postedKey=trim((string)($_POST['heygen_api_key']??''));
+    if($postedKey!=='' && !preg_match('/^\*+$/',$postedKey)) $cfg['heygen_api_key']=$postedKey;
+    foreach(['heygen_avatar_id','heygen_voice_id','heygen_style_id','heygen_brand_kit_id','heygen_orientation','heygen_reference_file_url'] as $k){ $cfg[$k]=trim((string)($_POST[$k]??'')); }
+    $cfg['heygen_incognito_mode']=isset($_POST['heygen_incognito_mode'])?'1':'0';
+    if(empty($cfg['heygen_callback_token'])) $cfg['heygen_callback_token']=rpia_new_token();
+    rpia_config_save($cfg); $msg='Configurações do Video Agent HeyGen salvas.';
+  }
+  if($action==='test_heygen'){
+    $styles=rpia_heygen_list_styles($cfg);
+    if(!$styles['ok']) $err=$styles['error']; else $msg='Conexão HeyGen OK. Estilos disponíveis: '.count($styles['data']??[]).'.';
+  }
+  if($action==='list_styles'){
+    $styles=rpia_heygen_list_styles($cfg);
+    if(!$styles['ok']) $err=$styles['error']; else { $cfg['heygen_styles_cache']=$styles['data']; $cfg['heygen_styles_updated_at']=date('c'); rpia_config_save($cfg); $msg='Lista de estilos atualizada. Copie o style_id desejado para a configuração.'; }
+  }
+  if($action==='generate_script'){
+    $news=rpia_find_news($_POST['news_id']??'');
+    if(!$news) $err='Matéria não encontrada.'; else {
+      $jobs=rpia_read('videos_ia.json'); $script=rpia_generate_script($news);
+      $job=['id'=>'job_'.date('YmdHis').'_'.bin2hex(random_bytes(2)),'news_id'=>$news['id']??'','title'=>$news['title']??'TV Sumaré News','city'=>$news['city']??'Região','category'=>$news['category']??'Giro da Região','source'=>$news['source']??'Fonte consultada','image'=>$news['image']??'assets/cat-cidade.svg','script'=>$script,'status'=>'roteiro_pronto','created_at'=>date('c')];
+      array_unshift($jobs,$job); rpia_write('videos_ia.json',$jobs); $msg='Roteiro IA gerado e salvo.';
+    }
+  }
+  if($action==='update_script'){
+    $idx=null; [$job,$jobs]=rpia_find_videojob($_POST['job_id']??'',$idx);
+    if(!$job) $err='Roteiro não encontrado.'; else { $jobs[$idx]['script']=trim((string)($_POST['script']??'')); $jobs[$idx]['updated_at']=date('c'); rpia_write('videos_ia.json',$jobs); $msg='Roteiro atualizado.'; }
+  }
+  if($action==='send_heygen'){
+    $idx=null; [$job,$jobs]=rpia_find_videojob($_POST['job_id']??'',$idx);
+    if(!$job) $err='Roteiro não encontrado.'; else { $r=rpia_heygen_create($job,$cfg); if(!$r['ok']) $err=$r['error']; else { $jobs[$idx]['heygen_session_id']=$r['session_id']; if(!empty($r['video_id'])) $jobs[$idx]['heygen_video_id']=$r['video_id']; $jobs[$idx]['heygen_status']=$r['status']; $jobs[$idx]['heygen_callback_id']=$job['id']; $jobs[$idx]['heygen_payload']=$r['payload']; $jobs[$idx]['status']='heygen_agente_processando'; $jobs[$idx]['updated_at']=date('c'); rpia_write('videos_ia.json',$jobs); $msg='Agente de Vídeo HeyGen criado. Sessão: '.($r['session_id']?:'sem sessão').' Vídeo: '.($r['video_id']?:'aguardando video_id'); } }
+  }
+  if($action==='check_heygen'){
+    $idx=null; [$job,$jobs]=rpia_find_videojob($_POST['job_id']??'',$idx);
+    if(!$job) $err='Vídeo não encontrado.'; else { $r=rpia_heygen_status($job,$cfg); if(!$r['ok']) $err=$r['error']; else { if(!empty($r['video_id'])) $jobs[$idx]['heygen_video_id']=$r['video_id']; if(array_key_exists('progress',$r)) $jobs[$idx]['heygen_progress']=$r['progress']; $jobs[$idx]['heygen_session_status']=$r['session_status']??($jobs[$idx]['heygen_session_status']??''); $jobs[$idx]['heygen_video_status']=$r['video_status']??($jobs[$idx]['heygen_video_status']??''); if(!empty($r['video_url'])){ $jobs[$idx]['video_url']=$r['video_url']; $jobs[$idx]['captioned_video_url']=$r['captioned_video_url']??''; $jobs[$idx]['thumb']=$r['thumb'] ?: ($jobs[$idx]['image']??'assets/cat-cidade.svg'); $jobs[$idx]['duration']=$r['duration']??null; $jobs[$idx]['video_page_url']=$r['video_page_url']??''; $jobs[$idx]['status']='video_pronto'; } elseif(($r['video_status']??'')==='failed'){ $jobs[$idx]['status']='heygen_falhou'; $jobs[$idx]['heygen_failure']=$r['failure_message']??($r['failure_code']??'Falha na geração.'); } else { $jobs[$idx]['status']='heygen_agente_processando'; } $jobs[$idx]['updated_at']=date('c'); rpia_write('videos_ia.json',$jobs); $msg='Status atualizado. Sessão: '.($r['session_status']??'consultada').' Vídeo: '.($r['video_status']??'aguardando'); } }
+  }
+  if($action==='publish_video'){
+    $idx=null; [$job,$jobs]=rpia_find_videojob($_POST['job_id']??'',$idx);
+    if(!$job || (empty($job['video_url']) && empty($job['captioned_video_url']))) $err='Vídeo ainda não possui URL pronta.'; else { rpia_publish_video($job); $jobs[$idx]['status']='publicado'; $jobs[$idx]['published_at']=date('c'); rpia_write('videos_ia.json',$jobs); $msg='Vídeo publicado no TV Sumaré Play.'; }
+  }
+}
+$news=rpia_read('noticias.json'); usort($news,function($a,$b){ return strcmp($b['published_at']??$b['created_at']??'', $a['published_at']??$a['created_at']??''); }); $news=array_slice($news,0,30);
+$jobs=rpia_read('videos_ia.json');
+$callbackUrl=rpia_abs_url('api/heygen-callback.php?token='.rawurlencode((string)($cfg['heygen_callback_token']??'')));
+$stylesCache=is_array($cfg['heygen_styles_cache']??null)?$cfg['heygen_styles_cache']:[];
+?><!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Repórter IA | TV Sumaré</title><link rel="stylesheet" href="admin.css?v=130"><style>.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}.box textarea{min-height:170px}.job{border:1px solid #e2e8f0;border-radius:16px;padding:14px;margin:12px 0;background:#fff}.pill{display:inline-block;padding:4px 8px;border-radius:999px;background:#eef2ff;color:#1d4ed8;font-size:12px;font-weight:800;margin-right:6px}.pill.ok{background:#dcfce7;color:#166534}.pill.warn{background:#fff7ed;color:#9a3412}.news-list{max-height:520px;overflow:auto}.news-item{border-bottom:1px solid #e5e7eb;padding:12px 0}.muted{color:#64748b}.code{font-family:monospace;font-size:12px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:10px;padding:8px;word-break:break-all}.mini{font-size:12px}.style-list{max-height:190px;overflow:auto;border:1px solid #e5e7eb;border-radius:12px;padding:8px;background:#f8fafc}.style-row{padding:6px;border-bottom:1px solid #e5e7eb}.style-row:last-child{border-bottom:0}@media(max-width:900px){.grid2,.grid3{grid-template-columns:1fr}}</style></head><body><div class="admin"><?php include __DIR__.'/_menu.php'; ?><main class="main"><div class="top"><div><span class="eyebrow">TV Sumaré Play</span><h1>Repórter IA + HeyGen Video Agent</h1><p class="muted" style="text-align:left">Gere roteiro jornalístico, crie uma sessão no Video Agent da HeyGen, acompanhe o processamento e publique no TV Sumaré Play. Meta inicial: 3 vídeos por semana.</p></div><a class="btn secondary" href="../videos.php" target="_blank">Ver TV Sumaré Play</a></div><?php if($msg): ?><div class="notice"><?=rpia_h($msg)?></div><?php endif; ?><?php if($err): ?><div class="notice error"><?=rpia_h($err)?></div><?php endif; ?>
+<section class="box"><h2>Configuração HeyGen Video Agent</h2><p class="muted">Endpoint usado: <strong>POST /v3/video-agents</strong>. O retorno é assíncrono por sessão; depois o painel consulta a sessão e o vídeo final.</p><p class="mini muted"><strong>Chave HeyGen:</strong> <?=rpia_heygen_key($cfg)!==''?'configurada e oculta':'não configurada'?> • <strong>Avatar:</strong> <?=rpia_h($cfg['heygen_avatar_id']??'')?> • <strong>Voz:</strong> <?=rpia_h($cfg['heygen_voice_id']??'')?></p><form method="post" class="form"><?=tvs_csrf_field()?><input type="hidden" name="action" value="save_config"><div class="grid3"><div><label>HeyGen API Key</label><input type="password" name="heygen_api_key" value="" autocomplete="off" placeholder="Chave já configurada — preencha só se quiser trocar"></div><div><label>Avatar ID</label><input name="heygen_avatar_id" value="<?=rpia_h($cfg['heygen_avatar_id']??'')?>" placeholder="avatar_id do seu avatar"></div><div><label>Voice ID</label><input name="heygen_voice_id" value="<?=rpia_h($cfg['heygen_voice_id']??'')?>" placeholder="voice_id da voz"></div><div><label>Style ID</label><input name="heygen_style_id" value="<?=rpia_h($cfg['heygen_style_id']??'')?>" placeholder="opcional: style_id"></div><div><label>Brand Kit ID</label><input name="heygen_brand_kit_id" value="<?=rpia_h($cfg['heygen_brand_kit_id']??'')?>" placeholder="opcional: brand_kit_id"></div><div><label>Orientação</label><select name="heygen_orientation"><option value="landscape" <?=($cfg['heygen_orientation']??'landscape')==='landscape'?'selected':''?>>landscape — site/YouTube</option><option value="portrait" <?=($cfg['heygen_orientation']??'')==='portrait'?'selected':''?>>portrait — Reels/Stories</option></select></div><div><label>Arquivo de referência HTTPS opcional</label><input name="heygen_reference_file_url" value="<?=rpia_h($cfg['heygen_reference_file_url']??'')?>" placeholder="imagem, PDF ou vídeo público"></div><div><label>Incognito mode</label><label style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" name="heygen_incognito_mode" value="1" <?=rpia_bool($cfg['heygen_incognito_mode']??'0')?'checked':''?>> Não usar memória do agente</label></div></div><p class="mini muted">Callback configurado automaticamente:</p><div class="code"><?=rpia_h($callbackUrl)?></div><div class="actions" style="margin-top:12px"><button class="btn" type="submit">Salvar configuração</button></div></form><div class="actions" style="margin-top:12px"><form method="post" style="display:inline"><?=tvs_csrf_field()?><input type="hidden" name="action" value="test_heygen"><button class="btn secondary" type="submit">Testar conexão HeyGen</button></form><form method="post" style="display:inline"><?=tvs_csrf_field()?><input type="hidden" name="action" value="list_styles"><button class="btn secondary" type="submit">Buscar estilos</button></form></div><?php if($stylesCache): ?><h3>Estilos encontrados</h3><div class="style-list"><?php foreach(array_slice($stylesCache,0,20) as $s): ?><div class="style-row"><strong><?=rpia_h($s['name']??'Estilo')?></strong><br><span class="mini">style_id: <code><?=rpia_h($s['style_id']??'')?></code> <?=!empty($s['aspect_ratio'])?' • '.rpia_h($s['aspect_ratio']):''?></span></div><?php endforeach; ?></div><?php endif; ?></section>
+<div class="grid2" style="margin-top:18px"><section class="box"><h2>Matérias aprovadas</h2><p class="muted">Escolha uma matéria relevante para gerar roteiro IA.</p><div class="news-list"><?php if(!$news): ?><p>Nenhuma notícia publicada ainda.</p><?php endif; ?><?php foreach($news as $n): ?><div class="news-item"><strong><?=rpia_h($n['title']??'Sem título')?></strong><br><small><?=rpia_h(($n['city']??'Região').' • '.($n['category']??'Notícia').' • '.($n['source']??''))?></small><form method="post" style="margin-top:8px"><?=tvs_csrf_field()?><input type="hidden" name="action" value="generate_script"><input type="hidden" name="news_id" value="<?=rpia_h($n['id']??'')?>"><button class="btn orange" type="submit">Gerar roteiro IA</button></form></div><?php endforeach; ?></div></section><section class="box"><h2>Fila de vídeos IA</h2><?php if(!$jobs): ?><p class="muted">Nenhum roteiro gerado ainda.</p><?php endif; ?><?php foreach($jobs as $j): $ready=!empty($j['video_url'])||!empty($j['captioned_video_url']); ?><article class="job"><span class="pill <?=($j['status']??'')==='video_pronto'?'ok':'warn'?>"><?=rpia_h($j['status']??'roteiro')?></span><span class="pill"><?=rpia_h($j['category']??'Giro da Região')?></span><h3><?=rpia_h($j['title']??'Vídeo TV Sumaré')?></h3><small class="muted"><?=rpia_h($j['city']??'Região')?> <?=!empty($j['heygen_session_id'])?' • Sessão: '.rpia_h($j['heygen_session_id']):''?> <?=!empty($j['heygen_video_id'])?' • Vídeo: '.rpia_h($j['heygen_video_id']):''?></small><?php if(!empty($j['heygen_progress'])): ?><div class="mini muted">Progresso da sessão: <?=rpia_h($j['heygen_progress'])?>%</div><?php endif; ?><?php if(!empty($j['heygen_failure'])): ?><div class="notice error mini"><?=rpia_h($j['heygen_failure'])?></div><?php endif; ?><form method="post" style="margin-top:10px"><?=tvs_csrf_field()?><input type="hidden" name="action" value="update_script"><input type="hidden" name="job_id" value="<?=rpia_h($j['id']??'')?>"><textarea name="script"><?=rpia_h($j['script']??'')?></textarea><button class="btn secondary" type="submit">Salvar roteiro</button></form><div class="actions" style="margin-top:8px"><form method="post" style="display:inline"><?=tvs_csrf_field()?><input type="hidden" name="action" value="send_heygen"><input type="hidden" name="job_id" value="<?=rpia_h($j['id']??'')?>"><button class="btn orange" type="submit">Criar no Video Agent</button></form><?php if(!empty($j['heygen_session_id']) || !empty($j['heygen_video_id'])): ?><form method="post" style="display:inline"><?=tvs_csrf_field()?><input type="hidden" name="action" value="check_heygen"><input type="hidden" name="job_id" value="<?=rpia_h($j['id']??'')?>"><button class="btn secondary" type="submit">Atualizar status</button></form><?php endif; ?><?php if($ready): ?><form method="post" style="display:inline"><?=tvs_csrf_field()?><input type="hidden" name="action" value="publish_video"><input type="hidden" name="job_id" value="<?=rpia_h($j['id']??'')?>"><button class="btn" type="submit">Publicar no Play</button></form><a class="btn secondary" href="<?=rpia_h($j['captioned_video_url']??$j['video_url'])?>" target="_blank">Abrir vídeo</a><?php endif; ?></div></article><?php endforeach; ?></section></div></main></div></body></html>

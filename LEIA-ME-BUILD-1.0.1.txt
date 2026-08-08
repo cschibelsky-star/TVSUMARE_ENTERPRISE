@@ -1,0 +1,21 @@
+TVSUMARE_ENTERPRISE_1.0_MASTER_BUILD_1.0.1
+
+Correções aplicadas:
+- Configuração Gemini restaurada em admin/config.php com chave exclusiva da TV Sumaré via GEMINI_API_KEY ou preenchimento manual.
+- Modelo padrão Gemini: gemini-2.5-flash; fallback: gemini-2.5-flash-lite.
+- Imagem padrão institucional criada em assets/tvsumare-noticia-padrao.svg.
+- Cards de notícias agora sempre exibem imagem, evitando grid quebrado.
+- Resumos limpam fontes soltas como G1, Portal ON, sampi.net.br e Hora Campinas no fim do texto.
+- Ao Vivo administrativo restaurado em /admin/aovivo.php.
+- Página pública /aovivo.php preservada.
+- Duplicidade de notícias reforçada por id, URL, título e resumo.
+- CSS final ajustado para ticker, cards, miniaturas e destaque por cidade.
+- Estrutura /admin/admin removida da build.
+
+Após subir:
+1. Cole a chave Gemini exclusiva da TV Sumaré em admin/config.php ou configure GEMINI_API_KEY no servidor.
+2. Teste /admin/status.php e use o botão Testar conexão Gemini.
+3. Teste /admin/aovivo.php e /aovivo.php.
+4. Abra /noticias.php para validar cards com imagem.
+
+Não substitua data/, uploads/ e vídeos sem backup prévio.

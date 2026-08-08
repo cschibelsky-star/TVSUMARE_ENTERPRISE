@@ -1,0 +1,24 @@
+TVSUMARE_ENTERPRISE_2.0_BUILD_02
+
+Foco desta build:
+- Home refinada sem faixa laranja de Últimas Notícias.
+- Assinatura: TV Sumaré Enterprise — Tecnologia by Vitrine AI Pro.
+- Editorias por assunto com cards modernos e imagens consistentes.
+- Admin com menu lateral reorganizado por grupos.
+- Dashboard Executivo refeito.
+- Saúde das Fontes compacta, sem página enorme em branco.
+- CSS administrativo limpo e responsivo.
+- Mantidos TV Sumaré Play, Ao Vivo, Guia Comercial, RSS, Radar e dados existentes.
+
+Depois de subir, testar:
+/admin/login.php
+/admin/index.php
+/admin/fontes-status.php
+/admin/reparar-noticias-master.php
+/index.php
+/noticias.php
+/videos.php
+/aovivo.php
+
+Observação:
+Não apaga data/, uploads/ ou vídeos. Antes de subir, faça backup da instalação atual.

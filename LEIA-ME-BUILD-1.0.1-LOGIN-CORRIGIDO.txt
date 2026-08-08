@@ -1,0 +1,19 @@
+TVSUMARE_ENTERPRISE_1.0_MASTER_BUILD_1.0.1_LOGIN_CORRIGIDO
+
+Correcao aplicada:
+- Corrigido loop de redirecionamento entre /login.php e /admin/login.php.
+- /login.php permanece como atalho para /admin/login.php.
+- /admin/login.php agora e o formulario real de login.
+- /admin/auth.php redireciona falhas de login para /admin/login.php?erro=1.
+
+Teste apos subir:
+1) Acessar /login.php.
+2) Confirmar o redirecionamento para /admin/login.php.
+3) Entrar apenas com credenciais definidas por variaveis de ambiente.
+
+Seguranca:
+- Nao existe credencial padrao versionada.
+- Configure TVSUMARE_ADMIN_USER.
+- Configure TVSUMARE_ADMIN_PASS_HASH com hash forte gerado fora do repositorio.
+- Configure GEMINI_API_KEY somente no ambiente de homologacao ou producao.
+- Nunca grave senhas, hashes ou chaves em arquivos versionados.

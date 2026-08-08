@@ -1,0 +1,27 @@
+TV SUMARÉ ENTERPRISE 2.0 - BUILD 01
+
+Objetivo:
+- Refinar a Home sem perder identidade da TV.
+- Preservar TV Sumaré Play, Ao Vivo, Guia Comercial e estrutura atual.
+- Modernizar o painel administrativo.
+- Reforçar descarte regional, notícias antigas e duplicidades.
+
+Alterações principais:
+1. Dashboard administrativo novo em /admin/index.php.
+2. Menu lateral reorganizado e mais limpo.
+3. Saúde das Fontes compacta, sem página enorme em branco.
+4. Editor IA com ativo correto no menu e melhor integração visual.
+5. Home com blocos editoriais por tema: Empregos, Saúde, Educação, Segurança e Cidade.
+6. CSS público refinado: cards mais padronizados, imagens consistentes, colunistas e blocos multimídia preservados.
+7. Filtro regional mais rígido: bloqueia cidades fora do recorte, incluindo Caraguatatuba e outras fora da região.
+8. Reparo de notícias atualizado para limpar notícias antigas acima de 21 dias, duplicadas e fora da região.
+
+Após subir:
+1. Acesse /admin/index.php
+2. Acesse /admin/reparar-noticias-master.php
+3. Teste /index.php e /noticias.php
+4. Teste /admin/fontes-status.php
+5. Teste /admin/radar-regional.php
+
+Observação:
+Esta build não remove a identidade atual da Home. Ela apenas melhora hierarquia, acabamento, filtro editorial e backoffice.

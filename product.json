@@ -1,36 +1,39 @@
 {
   "key": "tv-sumare-enterprise",
-  "name": "TV Sumaré Enterprise",
-  "version": "3.0.0",
-  "status": "scaffold",
+  "name": "TV Sumare Enterprise",
+  "version": "3.0.0-hml.2",
+  "status": "homologation-prepared",
   "runtime": {
-    "type": "not-implemented",
-    "database": "none",
-    "containerized": false
+    "type": "php-8.3-apache",
+    "database": "json-files",
+    "containerized": true
   },
   "health": {
-    "path": null,
-    "expected_status": null
+    "path": "/health.php",
+    "expected_status": 200
   },
   "core": {
-    "authentication": "core-future",
-    "licensing": "core",
+    "authentication": "local-disabled-by-default",
+    "licensing": "core-future",
     "commercial_leads": "core-future"
   },
   "dependencies": [
-    "Vitrine AI Pro CORE para autenticação, licenciamento e comercial",
-    "Definição do runtime oficial antes da primeira build funcional"
+    "Docker Compose",
+    "Persistent data under /srv/tvsumare/shared",
+    "Explicit environment variables for optional AI integrations"
   ],
   "capabilities_planned": [
     "Motor Editorial 3.0",
     "Image Engine",
-    "TV Sumaré Play 2.0",
+    "TV Sumare Play 2.0",
     "Dashboard Enterprise",
     "Content Hub"
   ],
   "notes": [
-    "O repositório contém atualmente apenas o README inicial.",
-    "Não há aplicação, banco, Docker, painel ou health check versionados.",
-    "O produto não deve ser classificado como MVP funcional ou produção."
+    "Legacy PHP baseline imported from immutable HostGator snapshot.",
+    "Secrets, data, uploads, logs and ZIP archives are excluded from Git.",
+    "Homologation uses an internal network plus a separate bridge network for controlled egress.",
+    "Current persistence is JSON-file based; MariaDB and Redis are not runtime requirements for this baseline.",
+    "DNS and production remain unchanged."
   ]
 }

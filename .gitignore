@@ -1,0 +1,8 @@
+.env
+.env.*
+data/
+uploads/
+videos/
+logs/
+*.zip
+*.log

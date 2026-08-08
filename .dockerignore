@@ -1,0 +1,11 @@
+.git
+.github
+.env
+.env.*
+data
+uploads
+videos
+logs
+*.zip
+*.log
+MIGRATION_STATE.json
