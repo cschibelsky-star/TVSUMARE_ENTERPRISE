@@ -26,6 +26,7 @@ function tvs_admin_link($key,$href,$label,$active){
     <?=tvs_admin_link('editor_ia','editor-ia.php','Editor IA',$activeAdmin)?>
     <?=tvs_admin_link('gemini','gemini.php','Gemini',$activeAdmin)?>
     <?=tvs_admin_link('reporter_ia','reporter-ia.php','Repórter IA',$activeAdmin)?>
+    <?=tvs_admin_link('distribuicao_social','distribuicao-social.php','Distribuição Social',$activeAdmin)?>
     <?=tvs_admin_link('tvplay','tvplay.php','TV Play IA',$activeAdmin)?>
 
     <span class="menu-group">Conteúdo</span>
