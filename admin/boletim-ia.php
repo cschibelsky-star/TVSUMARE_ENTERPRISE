@@ -14,83 +14,56 @@ function bia_clean($v){ return trim(preg_replace('/\s+/u',' ',strip_tags((string
 function bia_excerpt($v,$max=420){ $v=bia_clean($v); if(function_exists('mb_strlen') && mb_strlen($v,'UTF-8')>$max) return rtrim(mb_substr($v,0,$max,'UTF-8')).'…'; return strlen($v)>$max?rtrim(substr($v,0,$max)).'…':$v; }
 function bia_find_news($rows,$id){ foreach($rows as $r){ if((string)($r['id']??'')===(string)$id) return $r; } return null; }
 function bia_sentence($news){ $base=$news['summary']??($news['subtitle']??($news['body']??'')); $text=bia_excerpt($base,520); return $text!==''?$text:'Confira esta atualização acompanhada pela redação da TV Sumaré.'; }
-function bia_script_one($news){
-  $title=bia_clean($news['title']??'Atualização regional'); $city=bia_clean($news['city']??'Sumaré'); $summary=bia_sentence($news); $source=bia_clean($news['source']??'fonte consultada');
-  return "TV Sumaré em um minuto. {$title}. {$summary} A informação é referente a {$city}. Fonte: {$source}. Continue acompanhando a TV Sumaré para novas atualizações.";
-}
-function bia_script_service($news){
-  $title=bia_clean($news['title']??'Serviço TV Sumaré'); $summary=bia_sentence($news); $city=bia_clean($news['city']??'Sumaré'); $source=bia_clean($news['source']??'fonte consultada');
-  return "Serviço TV Sumaré. Atenção, {$city}. {$title}. {$summary} Antes de se deslocar ou tomar qualquer providência, confira as orientações e canais oficiais citados na matéria. Fonte: {$source}. Informação rápida é na TV Sumaré.";
-}
-function bia_script_agenda($news){
-  $title=bia_clean($news['title']??'Agenda da Cidade'); $summary=bia_sentence($news); $city=bia_clean($news['city']??'Sumaré'); $source=bia_clean($news['source']??'fonte consultada');
-  return "Agenda da Cidade, na TV Sumaré. Tem programação em {$city}. {$title}. {$summary} Consulte a matéria completa para confirmar horários, local e eventuais alterações. Fonte: {$source}. Acompanhe a TV Sumaré.";
-}
-function bia_script_giro($selected,$all){
-  $pool=[$selected]; foreach($all as $n){ if(($n['id']??'')===($selected['id']??'')) continue; $pool[]=$n; if(count($pool)>=3) break; }
-  $parts=[]; foreach($pool as $i=>$n){ $num=$i+1; $parts[]="Notícia {$num}: ".bia_clean($n['title']??'Atualização').'. '.bia_excerpt($n['summary']??($n['subtitle']??''),180); }
-  return "Giro Rápido TV Sumaré. As principais informações da região em poucos segundos. ".implode(' ',$parts)." Confira os detalhes no portal TV Sumaré e acompanhe nossas próximas atualizações.";
-}
-function bia_format_meta($format){
-  $map=[
-    'noticia_1_minuto'=>['label'=>'Notícia em 1 Minuto','target'=>'45–60 s'],
-    'giro_rapido'=>['label'=>'Giro Rápido','target'=>'45–60 s'],
-    'servico'=>['label'=>'Serviço TV Sumaré','target'=>'30–45 s'],
-    'agenda'=>['label'=>'Agenda da Cidade','target'=>'30–60 s'],
-  ]; return $map[$format]??$map['noticia_1_minuto'];
+function bia_script_one($news){ $title=bia_clean($news['title']??'Atualização regional'); $city=bia_clean($news['city']??'Sumaré'); $summary=bia_sentence($news); $source=bia_clean($news['source']??'fonte consultada'); return "TV Sumaré em um minuto. {$title}. {$summary} A informação é referente a {$city}. Fonte: {$source}. Continue acompanhando a TV Sumaré para novas atualizações."; }
+function bia_script_service($news){ $title=bia_clean($news['title']??'Serviço TV Sumaré'); $summary=bia_sentence($news); $city=bia_clean($news['city']??'Sumaré'); $source=bia_clean($news['source']??'fonte consultada'); return "Serviço TV Sumaré. Atenção, {$city}. {$title}. {$summary} Antes de se deslocar ou tomar qualquer providência, confira as orientações e canais oficiais citados na matéria. Fonte: {$source}. Informação rápida é na TV Sumaré."; }
+function bia_script_agenda($news){ $title=bia_clean($news['title']??'Agenda da Cidade'); $summary=bia_sentence($news); $city=bia_clean($news['city']??'Sumaré'); $source=bia_clean($news['source']??'fonte consultada'); return "Agenda da Cidade, na TV Sumaré. Tem programação em {$city}. {$title}. {$summary} Consulte a matéria completa para confirmar horários, local e eventuais alterações. Fonte: {$source}. Acompanhe a TV Sumaré."; }
+function bia_script_giro($selected,$all){ $pool=[$selected]; foreach($all as $n){ if(($n['id']??'')===($selected['id']??'')) continue; $pool[]=$n; if(count($pool)>=3) break; } $parts=[]; foreach($pool as $i=>$n){ $num=$i+1; $parts[]="Notícia {$num}: ".bia_clean($n['title']??'Atualização').'. '.bia_excerpt($n['summary']??($n['subtitle']??''),180); } return "Giro Rápido TV Sumaré. As principais informações da região em poucos segundos. ".implode(' ',$parts)." Confira os detalhes no portal TV Sumaré e acompanhe nossas próximas atualizações."; }
+function bia_format_meta($format){ $map=['noticia_1_minuto'=>['label'=>'Notícia em 1 Minuto','target'=>'45–60 s'],'giro_rapido'=>['label'=>'Giro Rápido','target'=>'45–60 s'],'servico'=>['label'=>'Serviço TV Sumaré','target'=>'30–45 s'],'agenda'=>['label'=>'Agenda da Cidade','target'=>'30–60 s']]; return $map[$format]??$map['noticia_1_minuto']; }
+function bia_presenter_for_format($format,$cfg){
+  $theme='noticias';
+  if($format==='agenda') $theme='cidade';
+  elseif($format==='giro_rapido') $theme='giro';
+  elseif($format==='servico') $theme='noticias';
+  $labels=['noticias'=>'Notícias & Serviço','cidade'=>'Cidade, Cultura & Agenda','giro'=>'Giro Rápido & Destaques'];
+  $p=$cfg['presenters'][$theme]??[];
+  return ['theme'=>$theme,'theme_label'=>$labels[$theme]??'Boletim','name'=>$p['name']??'Apresentador do Boletim','tone'=>$p['tone']??'informal, próximo, ágil e confiável','avatar_id'=>$p['avatar_id']??'','voice_id'=>$p['voice_id']??'','style_id'=>$p['style_id']??''];
 }
 
-$news=bia_read('noticias.json');
-usort($news,function($a,$b){ return strcmp((string)($b['published_at']??$b['created_at']??''),(string)($a['published_at']??$a['created_at']??'')); });
-$news=array_slice($news,0,40);
+$news=bia_read('noticias.json'); usort($news,function($a,$b){ return strcmp((string)($b['published_at']??$b['created_at']??''),(string)($a['published_at']??$a['created_at']??'')); }); $news=array_slice($news,0,40);
 $jobs=bia_read('videos_ia.json');
 $cfg=bia_config_read();
-$cfg += ['presenter_name'=>'Apresentador do Boletim','presenter_tone'=>'informal, próximo, ágil e confiável','heygen_avatar_id'=>'','heygen_voice_id'=>'','heygen_style_id'=>''];
+$cfg['presenters']=$cfg['presenters']??[];
+$cfg['presenters']['noticias']=array_merge(['name'=>'TV Sumaré Agora','tone'=>'informal, próximo, ágil e confiável','avatar_id'=>'a3953e35ec7a43948caa515d9d5f3e89','voice_id'=>'','style_id'=>''],$cfg['presenters']['noticias']??[]);
+$cfg['presenters']['cidade']=array_merge(['name'=>'TV Sumaré Cidade','tone'=>'leve, espontâneo, próximo, simpático e descontraído','avatar_id'=>'22fdb234baf14540ae4e01a805b2d2a6','voice_id'=>'','style_id'=>''],$cfg['presenters']['cidade']??[]);
+$cfg['presenters']['giro']=array_merge(['name'=>'TV Sumaré Giro','tone'=>'dinâmico, humano, energético, natural e conversacional','avatar_id'=>'ecc586fbd3e94cd4a07347c098364fc8','voice_id'=>'','style_id'=>''],$cfg['presenters']['giro']??[]);
 $msg=''; $err='';
 
-if(($_SERVER['REQUEST_METHOD']??'GET')==='POST' && isset($_POST['save_presenter'])){
+if(($_SERVER['REQUEST_METHOD']??'GET')==='POST' && isset($_POST['save_presenters'])){
   tvs_verify_csrf();
-  $cfg['presenter_name']=bia_clean($_POST['presenter_name']??'Apresentador do Boletim');
-  $cfg['presenter_tone']=bia_clean($_POST['presenter_tone']??'informal, próximo, ágil e confiável');
-  $cfg['heygen_avatar_id']=trim((string)($_POST['heygen_avatar_id']??''));
-  $cfg['heygen_voice_id']=trim((string)($_POST['heygen_voice_id']??''));
-  $cfg['heygen_style_id']=trim((string)($_POST['heygen_style_id']??''));
-  bia_config_write($cfg);
-  $msg='Perfil exclusivo do apresentador dos boletins salvo.';
+  foreach(['noticias','cidade','giro'] as $key){
+    $cfg['presenters'][$key]['name']=bia_clean($_POST[$key.'_name']??'');
+    $cfg['presenters'][$key]['tone']=bia_clean($_POST[$key.'_tone']??'');
+    $cfg['presenters'][$key]['avatar_id']=trim((string)($_POST[$key.'_avatar_id']??''));
+    $cfg['presenters'][$key]['voice_id']=trim((string)($_POST[$key.'_voice_id']??''));
+    $cfg['presenters'][$key]['style_id']=trim((string)($_POST[$key.'_style_id']??''));
+  }
+  bia_config_write($cfg); $msg='Três perfis de apresentadores dos boletins foram salvos.';
 }
 
 if(($_SERVER['REQUEST_METHOD']??'GET')==='POST' && isset($_POST['create_boletim'])){
-  tvs_verify_csrf();
-  $newsId=trim((string)($_POST['news_id']??'')); $format=trim((string)($_POST['format']??'noticia_1_minuto'));
-  $selected=bia_find_news($news,$newsId);
+  tvs_verify_csrf(); $newsId=trim((string)($_POST['news_id']??'')); $format=trim((string)($_POST['format']??'noticia_1_minuto')); $selected=bia_find_news($news,$newsId);
   if(!$selected){ $err='Selecione uma matéria publicada.'; }
   else {
-    $meta=bia_format_meta($format);
-    if($format==='giro_rapido') $script=bia_script_giro($selected,$news);
-    elseif($format==='servico') $script=bia_script_service($selected);
-    elseif($format==='agenda') $script=bia_script_agenda($selected);
-    else $script=bia_script_one($selected);
-    $job=[
-      'id'=>'job_boletim_'.date('YmdHis').'_'.bin2hex(random_bytes(2)),
-      'news_id'=>$selected['id']??'',
-      'title'=>$meta['label'].' — '.bia_clean($selected['title']??'TV Sumaré'),
-      'city'=>$selected['city']??'Sumaré','category'=>'Boletim TV Sumaré',
-      'source'=>$selected['source']??'Fonte consultada','image'=>$selected['image']??'assets/cat-cidade.svg',
-      'script'=>$script,'status'=>'roteiro_pronto','created_at'=>date('c'),
-      'boletim'=>true,'boletim_format'=>$format,'boletim_format_label'=>$meta['label'],
-      'duration_target'=>$meta['target'],'orientation'=>'portrait','aspect_ratio'=>'9:16',
-      'social_ready'=>true,'distribution_targets'=>['instagram','tiktok'],
-      'presenter_name'=>$cfg['presenter_name'],'presenter_tone'=>$cfg['presenter_tone'],
-      'heygen_avatar_id'=>$cfg['heygen_avatar_id'],'heygen_voice_id'=>$cfg['heygen_voice_id'],'heygen_style_id'=>$cfg['heygen_style_id']
-    ];
-    array_unshift($jobs,$job); bia_write('videos_ia.json',$jobs);
-    $msg='Boletim vertical criado com o perfil exclusivo do apresentador. Revise o roteiro no Repórter IA antes da geração.';
+    $meta=bia_format_meta($format); if($format==='giro_rapido') $script=bia_script_giro($selected,$news); elseif($format==='servico') $script=bia_script_service($selected); elseif($format==='agenda') $script=bia_script_agenda($selected); else $script=bia_script_one($selected);
+    $presenter=bia_presenter_for_format($format,$cfg);
+    $job=['id'=>'job_boletim_'.date('YmdHis').'_'.bin2hex(random_bytes(2)),'news_id'=>$selected['id']??'','title'=>$meta['label'].' — '.bia_clean($selected['title']??'TV Sumaré'),'city'=>$selected['city']??'Sumaré','category'=>'Boletim TV Sumaré','source'=>$selected['source']??'Fonte consultada','image'=>$selected['image']??'assets/cat-cidade.svg','script'=>$script,'status'=>'roteiro_pronto','created_at'=>date('c'),'boletim'=>true,'boletim_format'=>$format,'boletim_format_label'=>$meta['label'],'boletim_theme'=>$presenter['theme'],'boletim_theme_label'=>$presenter['theme_label'],'duration_target'=>$meta['target'],'orientation'=>'portrait','aspect_ratio'=>'9:16','social_ready'=>true,'distribution_targets'=>['instagram','tiktok'],'presenter_name'=>$presenter['name'],'presenter_tone'=>$presenter['tone'],'heygen_avatar_id'=>$presenter['avatar_id'],'heygen_voice_id'=>$presenter['voice_id'],'heygen_style_id'=>$presenter['style_id']];
+    array_unshift($jobs,$job); bia_write('videos_ia.json',$jobs); $msg='Boletim criado no ambiente “'.$presenter['theme_label'].'”. Revise o roteiro no Repórter IA antes da geração.';
   }
 }
 $boletins=array_values(array_filter($jobs,function($j){ return !empty($j['boletim']); }));
-?><!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Boletim TV Sumaré IA</title><link rel="stylesheet" href="admin.css?v=11"></head><body><div class="admin"><?php include __DIR__.'/_menu.php'; ?><main class="main"><h1>Boletim TV Sumaré IA</h1><p>Crie vídeos verticais 9:16 com um apresentador próprio para Reels e TikTok, separado do avatar jornalístico principal do Repórter IA.</p>
+?><!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Boletim TV Sumaré IA</title><link rel="stylesheet" href="admin.css?v=13"></head><body><div class="admin"><?php include __DIR__.'/_menu.php'; ?><main class="main"><h1>Boletim TV Sumaré IA</h1><p>Três apresentadores e três ambientes editoriais para variar aparência, ritmo e linguagem dos vídeos verticais 9:16 no Instagram Reels e TikTok.</p>
 <?php if($msg): ?><div class="box"><strong><?=bia_h($msg)?></strong></div><?php endif; ?><?php if($err): ?><div class="box"><strong><?=bia_h($err)?></strong></div><?php endif; ?>
-<div class="box" style="margin-top:14px"><h2>Apresentador exclusivo dos boletins</h2><p>Use aqui um avatar mais informal e próximo do público. Esta configuração não substitui o avatar principal do Repórter IA.</p><form method="post" class="form"><?=tvs_csrf_field()?><div class="grid2"><div><label>Nome/persona</label><input name="presenter_name" value="<?=bia_h($cfg['presenter_name'])?>" placeholder="Ex.: Dani — TV Sumaré Agora"></div><div><label>Tom de apresentação</label><input name="presenter_tone" value="<?=bia_h($cfg['presenter_tone'])?>" placeholder="informal, jovem, próximo e ágil"></div><div><label>HeyGen Avatar ID</label><input name="heygen_avatar_id" value="<?=bia_h($cfg['heygen_avatar_id'])?>" placeholder="avatar_id exclusivo dos boletins"></div><div><label>HeyGen Voice ID</label><input name="heygen_voice_id" value="<?=bia_h($cfg['heygen_voice_id'])?>" placeholder="voice_id opcional"></div><div><label>HeyGen Style ID</label><input name="heygen_style_id" value="<?=bia_h($cfg['heygen_style_id'])?>" placeholder="style_id vertical opcional"></div></div><button class="btn" name="save_presenter" value="1">Salvar apresentador dos boletins</button></form></div>
-<div class="box" style="margin-top:14px"><h2>Novo boletim vertical</h2><?php if(!$news): ?><p>Nenhuma matéria publicada disponível.</p><?php else: ?><form method="post" class="form"><?=tvs_csrf_field()?><div class="grid2"><div><label>Formato</label><select name="format"><option value="noticia_1_minuto">Notícia em 1 Minuto — 45 a 60 s</option><option value="giro_rapido">Giro Rápido — até 3 notícias</option><option value="servico">Serviço TV Sumaré — 30 a 45 s</option><option value="agenda">Agenda da Cidade — 30 a 60 s</option></select></div><div><label>Matéria principal</label><select name="news_id" required><?php foreach($news as $n): ?><option value="<?=bia_h($n['id']??'')?>"><?=bia_h(($n['city']??'Região').' — '.($n['title']??'Sem título'))?></option><?php endforeach; ?></select></div></div><p><strong>Apresentador:</strong> <?=bia_h($cfg['presenter_name'])?> • <strong>Tom:</strong> <?=bia_h($cfg['presenter_tone'])?><br><strong>Saída:</strong> vertical 9:16 • revisão obrigatória • Instagram Reels + TikTok.</p><button class="btn orange" name="create_boletim" value="1">Criar roteiro do boletim</button> <a class="btn" href="reporter-ia.php">Abrir Repórter IA</a></form><?php endif; ?></div>
-<div class="box" style="margin-top:14px"><h2>Boletins criados</h2><?php if(!$boletins): ?><p>Nenhum boletim criado nesta fila.</p><?php else: ?><?php foreach(array_slice($boletins,0,12) as $b): ?><div style="padding:12px 0;border-top:1px solid #e5e7eb"><strong><?=bia_h($b['title']??'Boletim')?></strong><br><small><?=bia_h(($b['presenter_name']??'Apresentador').' • '.($b['boletim_format_label']??'').' • '.($b['aspect_ratio']??'9:16').' • '.($b['duration_target']??'').' • status: '.($b['status']??''))?></small><p><?=bia_h(bia_excerpt($b['script']??'',260))?></p></div><?php endforeach; ?><?php endif; ?></div>
+<div class="box" style="margin-top:14px"><h2>Apresentadores por ambiente</h2><form method="post" class="form"><?=tvs_csrf_field()?><?php foreach(['noticias'=>'Notícias & Serviço','cidade'=>'Cidade, Cultura & Agenda','giro'=>'Giro Rápido & Destaques'] as $key=>$label): $p=$cfg['presenters'][$key]; ?><h3><?=bia_h($label)?></h3><div class="grid2"><div><label>Nome/persona</label><input name="<?=$key?>_name" value="<?=bia_h($p['name'])?>"></div><div><label>Tom</label><input name="<?=$key?>_tone" value="<?=bia_h($p['tone'])?>"></div><div><label>HeyGen Avatar ID</label><input name="<?=$key?>_avatar_id" value="<?=bia_h($p['avatar_id'])?>"></div><div><label>HeyGen Voice ID</label><input name="<?=$key?>_voice_id" value="<?=bia_h($p['voice_id'])?>" placeholder="adicionar depois da clonagem da voz"></div><div><label>HeyGen Style ID</label><input name="<?=$key?>_style_id" value="<?=bia_h($p['style_id'])?>"></div></div><?php endforeach; ?><button class="btn" name="save_presenters" value="1">Salvar três apresentadores</button></form></div>
+<div class="box" style="margin-top:14px"><h2>Novo boletim vertical</h2><?php if(!$news): ?><p>Nenhuma matéria publicada disponível.</p><?php else: ?><form method="post" class="form"><?=tvs_csrf_field()?><div class="grid2"><div><label>Formato / ambiente</label><select name="format"><option value="noticia_1_minuto">Notícia em 1 Minuto — Notícias & Serviço</option><option value="servico">Serviço TV Sumaré — Notícias & Serviço</option><option value="agenda">Agenda da Cidade — Cidade, Cultura & Agenda</option><option value="giro_rapido">Giro Rápido — Giro Rápido & Destaques</option></select></div><div><label>Matéria principal</label><select name="news_id" required><?php foreach($news as $n): ?><option value="<?=bia_h($n['id']??'')?>"><?=bia_h(($n['city']??'Região').' — '.($n['title']??'Sem título'))?></option><?php endforeach; ?></select></div></div><p><strong>Saída:</strong> vertical 9:16 • revisão obrigatória • Instagram Reels + TikTok.</p><button class="btn orange" name="create_boletim" value="1">Criar roteiro do boletim</button> <a class="btn" href="reporter-ia.php">Abrir Repórter IA</a></form><?php endif; ?></div>
+<div class="box" style="margin-top:14px"><h2>Boletins criados</h2><?php if(!$boletins): ?><p>Nenhum boletim criado nesta fila.</p><?php else: ?><?php foreach(array_slice($boletins,0,12) as $b): ?><div style="padding:12px 0;border-top:1px solid #e5e7eb"><strong><?=bia_h($b['title']??'Boletim')?></strong><br><small><?=bia_h(($b['presenter_name']??'Apresentador').' • '.($b['boletim_theme_label']??'').' • '.($b['aspect_ratio']??'9:16').' • '.($b['duration_target']??'').' • status: '.($b['status']??''))?></small><p><?=bia_h(bia_excerpt($b['script']??'',260))?></p></div><?php endforeach; ?><?php endif; ?></div>
 </main></div></body></html>
