@@ -1,7 +1,11 @@
 Options -Indexes
-Require all denied
+DirectoryIndex index.php
+
+<IfModule mod_authz_core.c>
+  Require all granted
+</IfModule>
 
 <IfModule !mod_authz_core.c>
   Order allow,deny
-  Deny from all
+  Allow from all
 </IfModule>
