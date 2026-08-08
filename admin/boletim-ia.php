@@ -8,6 +8,8 @@ function bia_h($v){ return htmlspecialchars((string)$v,ENT_QUOTES,'UTF-8'); }
 function bia_path($name){ return dirname(__DIR__).'/data/'.$name; }
 function bia_read($name){ $p=bia_path($name); if(!is_file($p)) return []; $d=json_decode(file_get_contents($p),true); return is_array($d)?$d:[]; }
 function bia_write($name,$rows){ $p=bia_path($name); if(!is_dir(dirname($p))) @mkdir(dirname($p),0775,true); file_put_contents($p,json_encode(array_values($rows),JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES),LOCK_EX); }
+function bia_config_read(){ $p=bia_path('boletim_ia_config.json'); if(!is_file($p)) return []; $d=json_decode(file_get_contents($p),true); return is_array($d)?$d:[]; }
+function bia_config_write($cfg){ $p=bia_path('boletim_ia_config.json'); if(!is_dir(dirname($p))) @mkdir(dirname($p),0775,true); file_put_contents($p,json_encode($cfg,JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES),LOCK_EX); }
 function bia_clean($v){ return trim(preg_replace('/\s+/u',' ',strip_tags((string)$v))); }
 function bia_excerpt($v,$max=420){ $v=bia_clean($v); if(function_exists('mb_strlen') && mb_strlen($v,'UTF-8')>$max) return rtrim(mb_substr($v,0,$max,'UTF-8')).'…'; return strlen($v)>$max?rtrim(substr($v,0,$max)).'…':$v; }
 function bia_find_news($rows,$id){ foreach($rows as $r){ if((string)($r['id']??'')===(string)$id) return $r; } return null; }
@@ -42,7 +44,20 @@ $news=bia_read('noticias.json');
 usort($news,function($a,$b){ return strcmp((string)($b['published_at']??$b['created_at']??''),(string)($a['published_at']??$a['created_at']??'')); });
 $news=array_slice($news,0,40);
 $jobs=bia_read('videos_ia.json');
+$cfg=bia_config_read();
+$cfg += ['presenter_name'=>'Apresentador do Boletim','presenter_tone'=>'informal, próximo, ágil e confiável','heygen_avatar_id'=>'','heygen_voice_id'=>'','heygen_style_id'=>''];
 $msg=''; $err='';
+
+if(($_SERVER['REQUEST_METHOD']??'GET')==='POST' && isset($_POST['save_presenter'])){
+  tvs_verify_csrf();
+  $cfg['presenter_name']=bia_clean($_POST['presenter_name']??'Apresentador do Boletim');
+  $cfg['presenter_tone']=bia_clean($_POST['presenter_tone']??'informal, próximo, ágil e confiável');
+  $cfg['heygen_avatar_id']=trim((string)($_POST['heygen_avatar_id']??''));
+  $cfg['heygen_voice_id']=trim((string)($_POST['heygen_voice_id']??''));
+  $cfg['heygen_style_id']=trim((string)($_POST['heygen_style_id']??''));
+  bia_config_write($cfg);
+  $msg='Perfil exclusivo do apresentador dos boletins salvo.';
+}
 
 if(($_SERVER['REQUEST_METHOD']??'GET')==='POST' && isset($_POST['create_boletim'])){
   tvs_verify_csrf();
@@ -64,15 +79,18 @@ if(($_SERVER['REQUEST_METHOD']??'GET')==='POST' && isset($_POST['create_boletim'
       'script'=>$script,'status'=>'roteiro_pronto','created_at'=>date('c'),
       'boletim'=>true,'boletim_format'=>$format,'boletim_format_label'=>$meta['label'],
       'duration_target'=>$meta['target'],'orientation'=>'portrait','aspect_ratio'=>'9:16',
-      'social_ready'=>true,'distribution_targets'=>['instagram','tiktok']
+      'social_ready'=>true,'distribution_targets'=>['instagram','tiktok'],
+      'presenter_name'=>$cfg['presenter_name'],'presenter_tone'=>$cfg['presenter_tone'],
+      'heygen_avatar_id'=>$cfg['heygen_avatar_id'],'heygen_voice_id'=>$cfg['heygen_voice_id'],'heygen_style_id'=>$cfg['heygen_style_id']
     ];
     array_unshift($jobs,$job); bia_write('videos_ia.json',$jobs);
-    $msg='Boletim vertical criado. Revise o roteiro no Repórter IA antes de enviar para geração do vídeo.';
+    $msg='Boletim vertical criado com o perfil exclusivo do apresentador. Revise o roteiro no Repórter IA antes da geração.';
   }
 }
 $boletins=array_values(array_filter($jobs,function($j){ return !empty($j['boletim']); }));
-?><!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Boletim TV Sumaré IA</title><link rel="stylesheet" href="admin.css?v=10"></head><body><div class="admin"><?php include __DIR__.'/_menu.php'; ?><main class="main"><h1>Boletim TV Sumaré IA</h1><p>Crie roteiros curtos para vídeos verticais 9:16. O roteiro entra na fila existente do Repórter IA para revisão humana, geração do vídeo e posterior distribuição em Instagram Reels e TikTok.</p>
+?><!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Boletim TV Sumaré IA</title><link rel="stylesheet" href="admin.css?v=11"></head><body><div class="admin"><?php include __DIR__.'/_menu.php'; ?><main class="main"><h1>Boletim TV Sumaré IA</h1><p>Crie vídeos verticais 9:16 com um apresentador próprio para Reels e TikTok, separado do avatar jornalístico principal do Repórter IA.</p>
 <?php if($msg): ?><div class="box"><strong><?=bia_h($msg)?></strong></div><?php endif; ?><?php if($err): ?><div class="box"><strong><?=bia_h($err)?></strong></div><?php endif; ?>
-<div class="box" style="margin-top:14px"><h2>Novo boletim vertical</h2><?php if(!$news): ?><p>Nenhuma matéria publicada disponível.</p><?php else: ?><form method="post" class="form"><?=tvs_csrf_field()?><div class="grid2"><div><label>Formato</label><select name="format"><option value="noticia_1_minuto">Notícia em 1 Minuto — 45 a 60 s</option><option value="giro_rapido">Giro Rápido — até 3 notícias</option><option value="servico">Serviço TV Sumaré — 30 a 45 s</option><option value="agenda">Agenda da Cidade — 30 a 60 s</option></select></div><div><label>Matéria principal</label><select name="news_id" required><?php foreach($news as $n): ?><option value="<?=bia_h($n['id']??'')?>"><?=bia_h(($n['city']??'Região').' — '.($n['title']??'Sem título'))?></option><?php endforeach; ?></select></div></div><p><strong>Saída:</strong> vertical 9:16 • revisão obrigatória • destinos preparados: Instagram Reels + TikTok.</p><button class="btn orange" name="create_boletim" value="1">Criar roteiro do boletim</button> <a class="btn" href="reporter-ia.php">Abrir Repórter IA</a></form><?php endif; ?></div>
-<div class="box" style="margin-top:14px"><h2>Boletins criados</h2><?php if(!$boletins): ?><p>Nenhum boletim criado nesta fila.</p><?php else: ?><?php foreach(array_slice($boletins,0,12) as $b): ?><div style="padding:12px 0;border-top:1px solid #e5e7eb"><strong><?=bia_h($b['title']??'Boletim')?></strong><br><small><?=bia_h(($b['boletim_format_label']??'').' • '.($b['aspect_ratio']??'9:16').' • '.($b['duration_target']??'').' • status: '.($b['status']??''))?></small><p><?=bia_h(bia_excerpt($b['script']??'',260))?></p></div><?php endforeach; ?><?php endif; ?></div>
+<div class="box" style="margin-top:14px"><h2>Apresentador exclusivo dos boletins</h2><p>Use aqui um avatar mais informal e próximo do público. Esta configuração não substitui o avatar principal do Repórter IA.</p><form method="post" class="form"><?=tvs_csrf_field()?><div class="grid2"><div><label>Nome/persona</label><input name="presenter_name" value="<?=bia_h($cfg['presenter_name'])?>" placeholder="Ex.: Dani — TV Sumaré Agora"></div><div><label>Tom de apresentação</label><input name="presenter_tone" value="<?=bia_h($cfg['presenter_tone'])?>" placeholder="informal, jovem, próximo e ágil"></div><div><label>HeyGen Avatar ID</label><input name="heygen_avatar_id" value="<?=bia_h($cfg['heygen_avatar_id'])?>" placeholder="avatar_id exclusivo dos boletins"></div><div><label>HeyGen Voice ID</label><input name="heygen_voice_id" value="<?=bia_h($cfg['heygen_voice_id'])?>" placeholder="voice_id opcional"></div><div><label>HeyGen Style ID</label><input name="heygen_style_id" value="<?=bia_h($cfg['heygen_style_id'])?>" placeholder="style_id vertical opcional"></div></div><button class="btn" name="save_presenter" value="1">Salvar apresentador dos boletins</button></form></div>
+<div class="box" style="margin-top:14px"><h2>Novo boletim vertical</h2><?php if(!$news): ?><p>Nenhuma matéria publicada disponível.</p><?php else: ?><form method="post" class="form"><?=tvs_csrf_field()?><div class="grid2"><div><label>Formato</label><select name="format"><option value="noticia_1_minuto">Notícia em 1 Minuto — 45 a 60 s</option><option value="giro_rapido">Giro Rápido — até 3 notícias</option><option value="servico">Serviço TV Sumaré — 30 a 45 s</option><option value="agenda">Agenda da Cidade — 30 a 60 s</option></select></div><div><label>Matéria principal</label><select name="news_id" required><?php foreach($news as $n): ?><option value="<?=bia_h($n['id']??'')?>"><?=bia_h(($n['city']??'Região').' — '.($n['title']??'Sem título'))?></option><?php endforeach; ?></select></div></div><p><strong>Apresentador:</strong> <?=bia_h($cfg['presenter_name'])?> • <strong>Tom:</strong> <?=bia_h($cfg['presenter_tone'])?><br><strong>Saída:</strong> vertical 9:16 • revisão obrigatória • Instagram Reels + TikTok.</p><button class="btn orange" name="create_boletim" value="1">Criar roteiro do boletim</button> <a class="btn" href="reporter-ia.php">Abrir Repórter IA</a></form><?php endif; ?></div>
+<div class="box" style="margin-top:14px"><h2>Boletins criados</h2><?php if(!$boletins): ?><p>Nenhum boletim criado nesta fila.</p><?php else: ?><?php foreach(array_slice($boletins,0,12) as $b): ?><div style="padding:12px 0;border-top:1px solid #e5e7eb"><strong><?=bia_h($b['title']??'Boletim')?></strong><br><small><?=bia_h(($b['presenter_name']??'Apresentador').' • '.($b['boletim_format_label']??'').' • '.($b['aspect_ratio']??'9:16').' • '.($b['duration_target']??'').' • status: '.($b['status']??''))?></small><p><?=bia_h(bia_excerpt($b['script']??'',260))?></p></div><?php endforeach; ?><?php endif; ?></div>
 </main></div></body></html>
