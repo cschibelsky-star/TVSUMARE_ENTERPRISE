@@ -1,7 +1,5 @@
 Options -Indexes
-Require all denied
 
-<IfModule !mod_authz_core.c>
-  Order allow,deny
-  Deny from all
-</IfModule>
+# O acesso ao painel e controlado pela autenticacao PHP em admin/auth.php.
+# A listagem de diretorio permanece desativada e arquivos sensiveis continuam
+# protegidos pelas regras do .htaccess raiz e pelos subdiretorios dedicados.
