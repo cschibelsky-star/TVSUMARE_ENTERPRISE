@@ -1,8 +1,6 @@
 <?php
-// Cron opcional do Radar Regional TV Sumaré.
-// Use apenas se quiser execução real automática à meia-noite pelo cPanel.
-// Comando sugerido:
-// 0 0 * * * /usr/local/bin/php -q /home/USUARIO/public_html/admin/cron_radar.php >/dev/null 2>&1
+// Cron opcional do Radar Regional TV Sumaré para o ambiente VPS.
+// Execução automática deve ser configurada pelo orquestrador/cron da VPS.
 
 define('TVS_RADAR_CRON', true);
 require_once dirname(__DIR__).'/config.php';
@@ -17,7 +15,7 @@ $n = function_exists('tvs_radar_update_queue') ? tvs_radar_update_queue(max(1,mi
 if(function_exists('tvs_radar_save_status')){
   tvs_radar_save_status([
     'last_run'=>date('c'),
-    'last_mode'=>'cron_meia_noite',
+    'last_mode'=>'cron_vps',
     'last_generated'=>$n,
     'last_message'=>$n>0?"{$n} matéria(s) gerada(s) pelo cron.":'Nenhuma matéria nova gerada pelo cron.'
   ]);
