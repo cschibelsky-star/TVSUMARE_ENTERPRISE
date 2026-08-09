@@ -29,12 +29,7 @@ $patches=[
   }
 OLD,<<<'NEW'
   // Sem OG/Twitter confiável, não associa imagem aleatória do HTML à pauta.
-NEW,'Monitor image policy'],
-['/var/www/html/monitor_lib.php',<<<'OLD'
-  $arr[]=['data'=>date('d/m H:i'),'status'=>'DESCARTADA','cidade'=>$item['city']??'Região','fonte'=>$item['source']??'Fonte','titulo'=>$item['title']??'','motivo'=>$reason,'url'=>$item['url']??''];
-OLD,<<<'NEW'
-  $arr[]=['data'=>date('d/m H:i'),'created_at'=>date('c'),'status'=>'DESCARTADA','city'=>$item['city']??'Região','cidade'=>$item['city']??'Região','source'=>$item['source']??'Fonte','fonte'=>$item['source']??'Fonte','title'=>$item['title']??'','titulo'=>$item['title']??'','reason'=>$reason,'motivo'=>$reason,'source_url'=>$item['url']??'','url'=>$item['url']??'','description'=>$item['description']??'','summary'=>$item['description']??'','body'=>$item['body']??($item['text']??''),'text'=>$item['text']??($item['body']??($item['description']??'')),'image'=>$item['image']??'','image_source_type'=>$item['image_source_type']??'','image_review_required'=>$item['image_review_required']??0,'published_at'=>$item['published_at']??''];
-NEW,'Monitor discard traceability']
+NEW,'Monitor image policy']
 ];
 foreach($patches as $p) patch_once($p[0],$p[1],$p[2],$p[3]);
 echo "ADMIN_MODULE_HARDENING_APPLIED=SIM\n";
