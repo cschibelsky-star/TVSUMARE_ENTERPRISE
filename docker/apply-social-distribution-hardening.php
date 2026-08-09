@@ -16,8 +16,8 @@ ds_patch($code,
 "\$duplicate=false; foreach(\$queue as \$q){ if((\$q['video_id']??'')===\$videoId && ds_queue_active(\$q)){ \$duplicate=true; break; } }",
 'Social idempotency');
 ds_patch($code,
-"$ready=array_values(array_filter($videos,'ds_ready'));",
-"$ready=array_values(array_filter($videos,function($v) use ($queue){ if(!ds_ready($v)) return false; foreach($queue as $q){ if(($q['video_id']??'')===($v['id']??'') && ds_queue_active($q)) return false; } return true; }));",
+'$ready=array_values(array_filter($videos,\'ds_ready\'));',
+'$ready=array_values(array_filter($videos,function($v) use ($queue){ if(!ds_ready($v)) return false; foreach($queue as $q){ if(($q[\'video_id\']??\'\')===($v[\'id\']??\'\') && ds_queue_active($q)) return false; } return true; }));',
 'Social ready filtering');
 ds_patch($code,
 "<div class=\"box\" style=\"margin-top:14px\"><h2>Novo envio</h2><?php if(!\$ready): ?><p>Nenhum vídeo do Repórter IA está pronto no momento.</p><?php else: ?><form method=\"post\" class=\"form\"><?=tvs_csrf_field()?>",
