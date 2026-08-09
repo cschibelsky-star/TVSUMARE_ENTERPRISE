@@ -51,8 +51,8 @@ patch_one($boletim,
 'Boletim finish');
 
 patch_one($boletim,
-"<label>Formato</label>",
-"<label>Quantidade de boletins</label><input type=\"number\" name=\"quantity\" min=\"1\" max=\"10\" value=\"1\"><small>Ao pedir mais de um, o sistema prioriza pautas diferentes.</small><label>Formato</label>",
+"<div class=\"grid2\"><div><label>Formato do boletim</label><select name=\"format\">",
+"<div class=\"grid2\"><div><label>Quantidade de boletins</label><input type=\"number\" name=\"quantity\" min=\"1\" max=\"10\" value=\"1\"><small>Ao pedir mais de um, o sistema prioriza pautas diferentes.</small></div><div><label>Formato do boletim</label><select name=\"format\">",
 'Boletim quantity UI');
 
 echo "VIDEO_AI_HARDENING_APPLIED=SIM\n";
