@@ -4,7 +4,8 @@ require_login();
 $activeAdmin='dashboard';
 function h($s){return htmlspecialchars((string)$s,ENT_QUOTES,'UTF-8');}
 function j($file){ $p=dirname(__DIR__).'/data/'.$file; $a=json_decode(@file_get_contents($p),true); return is_array($a)?$a:[]; }
-$news=j('noticias.json'); $drafts=j('materias_aprovacao.json'); $discard=j('pautas_descartadas.json'); $videos=j('videos.json'); $via=j('videos_ia.json'); $fontes=j('fontes.json'); $validityAlerts=j('content_validity_alerts.json');
+function dashboard_validity_alerts($news){ $out=[]; foreach($news as $n){ $ts=0; foreach(['published_at','created_at','date'] as $k){if(!empty($n[$k])&&($x=strtotime((string)$n[$k]))){$ts=$x;break;}} $age=$ts?max(0,(int)floor((time()-$ts)/86400)):null; $txt=function_exists('mb_strtolower')?mb_strtolower(strip_tags((string)(($n['category']??'').' '.($n['title']??'').' '.($n['subtitle']??'').' '.($n['summary']??''))),'UTF-8'):strtolower(strip_tags((string)($n['title']??''))); $sensitive=preg_match('~\b(vagas?|empregos?|processo seletivo|concurso|inscri[cç][oõ]es|edital|evento|agenda|programa[cç][aã]o|interdi[cç][aã]o|tr[aâ]nsito|vacina[cç][aã]o|campanha|prazo|atendimento|curso|matr[ií]cula|feira|show|festival)\b~iu',$txt)===1; $limit=$sensitive?7:30; $checked=strtotime((string)($n['validity_checked_at']??'')); if($checked&&(time()-$checked)<($limit*86400))continue; if($age===null||$age>=$limit||($n['validity_status']??'')==='revisao_solicitada')$out[]=$n; } return $out; }
+$news=j('noticias.json'); $drafts=j('materias_aprovacao.json'); $discard=j('pautas_descartadas.json'); $videos=j('videos.json'); $via=j('videos_ia.json'); $fontes=j('fontes.json'); $validityAlerts=dashboard_validity_alerts($news);
 $today=date('Y-m-d'); $publishedToday=0;
 foreach($news as $n){ $d=substr((string)($n['published_at']??$n['created_at']??$n['date']??''),0,10); if($d===$today) $publishedToday++; }
 $geminiOk = !empty($GLOBALS['gemini_api_key'] ?? getenv('GEMINI_API_KEY'));
