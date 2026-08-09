@@ -8,7 +8,9 @@ RUN a2enmod rewrite headers \
 
 COPY . /var/www/html/
 
-RUN chown -R root:root /var/www/html \
+RUN php /var/www/html/docker/apply-radar-editorial-policy.php \
+    && rm -f /var/www/html/docker/apply-radar-editorial-policy.php \
+    && chown -R root:root /var/www/html \
     && find /var/www/html -type d -exec chmod 0755 {} + \
     && find /var/www/html -type f -exec chmod 0644 {} +
 
