@@ -10,15 +10,29 @@ function patch_once($path,$old,$new,$label){
 
 patch_once(
   '/var/www/html/admin/editor-ia.php',
-  "if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'){\n  $action=$_POST['action']??'search_generate';",
-  "if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'){\n  tvs_verify_csrf();\n  $action=$_POST['action']??'search_generate';",
+  <<<'OLD'
+if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'){
+  $action=$_POST['action']??'search_generate';
+OLD,
+  <<<'NEW'
+if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'){
+  tvs_verify_csrf();
+  $action=$_POST['action']??'search_generate';
+NEW,
   'Editor IA CSRF'
 );
 
 patch_once(
   '/var/www/html/admin/tvplay.php',
-  "if($_SERVER['REQUEST_METHOD']==='POST'){\n  $action=$_POST['action']??'';",
-  "if($_SERVER['REQUEST_METHOD']==='POST'){\n  tvs_verify_csrf();\n  $action=$_POST['action']??'';",
+  <<<'OLD'
+if($_SERVER['REQUEST_METHOD']==='POST'){
+  $action=$_POST['action']??'';
+OLD,
+  <<<'NEW'
+if($_SERVER['REQUEST_METHOD']==='POST'){
+  tvs_verify_csrf();
+  $action=$_POST['action']??'';
+NEW,
   'TV Play IA CSRF'
 );
 
