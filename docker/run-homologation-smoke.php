@@ -14,8 +14,9 @@ $social=txt($root.'/admin/distribuicao-social.php');
 $callback=txt($root.'/api/heygen-callback.php');
 $menu=txt($root.'/admin/_menu.php');
 
-check($radar!=='' && (has($radar,'NOTÍCIA RÁPIDA') || has($radar,'Notícia Rápida') || has($radar,'noticia_rapida')), 'Radar aceita notícia rápida');
-check($radar!=='' && (has($radar,'ENRIQUECER') || has($radar,'enriquecer') || has($radar,'enriquec')), 'Radar possui caminho de enriquecimento');
+check($radar!=='' && has($radar,'Notícia rápida'), 'Radar aceita notícia rápida');
+check($radar!=='' && has($radar,'Enriquecer com IA'), 'Radar possui caminho de enriquecimento');
+check($radar!=='' && has($radar,"if(\$wc<8)"), 'Radar não descarta automaticamente texto apenas por ser curto');
 check($log!=='' && (has($log,'Recuperar para revisão') || has($log,'recuperar') || has($log,'recover')), 'Log Editorial possui recuperação');
 check($log!=='' && (has($log,'source_url') || has($log,'url') || has($log,'fonte')), 'Recuperação preserva referência de origem');
 check($valid!=='' && has($valid,'Solicitar revisão'), 'Validade Editorial solicita revisão');
