@@ -18,6 +18,7 @@ function tvs_admin_link($key,$href,$label,$active){
 
     <span class="menu-group">Redação</span>
     <?=tvs_admin_link('radar','radar-regional.php','Aprovações',$activeAdmin)?>
+    <?=tvs_admin_link('validade','content-validity.php','Validade Editorial',$activeAdmin)?>
     <?=tvs_admin_link('noticias','noticias.php','Publicadas',$activeAdmin)?>
     <?=tvs_admin_link('lixeira','lixeira.php','Lixeira',$activeAdmin)?>
     <?=tvs_admin_link('log_editorial','log-editorial.php','Log Editorial',$activeAdmin)?>
