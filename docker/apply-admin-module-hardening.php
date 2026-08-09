@@ -43,7 +43,27 @@ OLD,<<<'NEW'
 if($_SERVER['REQUEST_METHOD']==='POST'){
   tvs_verify_csrf();
   foreach($defaults
-NEW,'Monetizacao CSRF']
+NEW,'Monetizacao CSRF'],
+['/var/www/html/admin/status.php',<<<'OLD'
+$geminiTest=null;
+$heygenTest=null;
+if(($_SERVER['REQUEST_METHOD']??'GET')==='POST' && ($_POST['action']??'')==='test_gemini'){
+OLD,<<<'NEW'
+$geminiTest=null;
+$heygenTest=null;
+if(($_SERVER['REQUEST_METHOD']??'GET')==='POST') tvs_verify_csrf();
+if(($_SERVER['REQUEST_METHOD']??'GET')==='POST' && ($_POST['action']??'')==='test_gemini'){
+NEW,'Status CSRF'],
+['/var/www/html/admin/rss-central.php',<<<'OLD'
+try{
+  if($_SERVER['REQUEST_METHOD']==='POST'){
+    $action = $_POST['action'] ?? '';
+OLD,<<<'NEW'
+try{
+  if($_SERVER['REQUEST_METHOD']==='POST'){
+    tvs_verify_csrf();
+    $action = $_POST['action'] ?? '';
+NEW,'Central RSS CSRF']
 ];
 foreach($patches as $p) patch_once($p[0],$p[1],$p[2],$p[3]);
 echo "ADMIN_MODULE_HARDENING_APPLIED=SIM\n";
