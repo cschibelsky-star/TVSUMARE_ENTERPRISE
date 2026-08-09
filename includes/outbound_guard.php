@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 function tvs_outbound_allowed_hosts(): array {
     $defaults = [
+        'api.openai.com',
         'generativelanguage.googleapis.com',
         'api.heygen.com',
         'api.anthropic.com',
