@@ -7,10 +7,10 @@ function cv_h($v){ return htmlspecialchars((string)$v,ENT_QUOTES,'UTF-8'); }
 function cv_path($name){ return dirname(__DIR__).'/data/'.$name; }
 function cv_read($name){ $d=tvs_read_json_file(cv_path($name)); return is_array($d)?$d:[]; }
 function cv_write($name,$rows){ return tvs_save_json_file(cv_path($name),array_values($rows)); }
-function cv_date($n){ foreach(['published_at','updated_at','created_at','date'] as $k){ if(!empty($n[$k])){ $ts=strtotime((string)$n[$k]); if($ts) return $ts; } } return 0; }
+function cv_date($n){ foreach(['published_at','created_at','date'] as $k){ if(!empty($n[$k])){ $ts=strtotime((string)$n[$k]); if($ts) return $ts; } } return 0; }
 function cv_sensitive($n){ $t=tvs_lower(tvs_clean_text(($n['category']??'').' '.($n['title']??'').' '.($n['subtitle']??'').' '.($n['summary']??''))); return preg_match('~\b(vagas?|empregos?|processo seletivo|concurso|inscri[cç][oõ]es|edital|evento|agenda|programa[cç][aã]o|interdi[cç][aã]o|tr[aâ]nsito|vacina[cç][aã]o|campanha|prazo|atendimento|curso|matr[ií]cula|feira|show|festival)\b~iu',$t)===1; }
 function cv_age($n){ $ts=cv_date($n); return $ts?max(0,(int)floor((time()-$ts)/86400)):null; }
-function cv_needs_review($n){ $age=cv_age($n); if($age===null) return true; return cv_sensitive($n)?$age>=7:$age>=30; }
+function cv_needs_review($n){ $age=cv_age($n); $limit=cv_sensitive($n)?7:30; $checked=strtotime((string)($n['validity_checked_at']??'')); if($checked && (time()-$checked)<($limit*86400)) return false; if(($n['validity_status']??'')==='revisao_solicitada') return true; if($age===null) return true; return $age>=$limit; }
 function cv_reason($n){ $age=cv_age($n); if($age===null) return 'Data editorial não identificada.'; if(cv_sensitive($n)) return "Conteúdo temporal/serviço com {$age} dia(s): confirmar prazo, agenda ou validade."; return "Matéria publicada há {$age} dia(s): confirmar se continua atual."; }
 $news=cv_read('noticias.json'); $log=cv_read('content_validity_log.json'); $notice=''; $error='';
 if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'){
@@ -19,7 +19,7 @@ if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'){
   if($idx===null){$error='Matéria não encontrada.';} else {
     $now=date('c'); $title=$news[$idx]['title']??'Sem título';
     if($action==='confirm'){
-      $news[$idx]['validity_checked_at']=$now; $news[$idx]['validity_status']='confirmada'; $news[$idx]['updated_at']=$now;
+      $news[$idx]['validity_checked_at']=$now; $news[$idx]['validity_status']='confirmada';
       $log[]=['id'=>uniqid('valid_'),'news_id'=>$id,'title'=>$title,'action'=>'VALIDADE_CONFIRMADA','reason'=>'Editor confirmou que o conteúdo continua válido.','created_at'=>$now]; $notice='Validade confirmada e registrada.';
     } elseif($action==='review'){
       $news[$idx]['validity_status']='revisao_solicitada'; $news[$idx]['validity_review_requested_at']=$now;
