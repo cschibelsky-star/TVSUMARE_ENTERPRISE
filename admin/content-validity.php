@@ -12,6 +12,7 @@ function cv_sensitive($n){ $t=tvs_lower(tvs_clean_text(($n['category']??'').' '.
 function cv_age($n){ $ts=cv_date($n); return $ts?max(0,(int)floor((time()-$ts)/86400)):null; }
 function cv_needs_review($n){ $age=cv_age($n); $limit=cv_sensitive($n)?7:30; $checked=strtotime((string)($n['validity_checked_at']??'')); if($checked && (time()-$checked)<($limit*86400)) return false; if(($n['validity_status']??'')==='revisao_solicitada') return true; if($age===null) return true; return $age>=$limit; }
 function cv_reason($n){ $age=cv_age($n); if($age===null) return 'Data editorial não identificada.'; if(cv_sensitive($n)) return "Conteúdo temporal/serviço com {$age} dia(s): confirmar prazo, agenda ou validade."; return "Matéria publicada há {$age} dia(s): confirmar se continua atual."; }
+function cv_sync_alerts($news){ $alerts=[]; foreach($news as $n){ if(!cv_needs_review($n)) continue; $alerts[]=['id'=>'alert_'.substr(hash('sha256',(string)($n['id']??'').($n['title']??'')),0,16),'news_id'=>$n['id']??'','title'=>$n['title']??'Sem título','city'=>$n['city']??'Região','category'=>$n['category']??'Notícia','age_days'=>cv_age($n),'priority'=>cv_sensitive($n)?'alta':'normal','reason'=>cv_reason($n),'status'=>'aguardando_revisao','notification_channels'=>['painel','email_quando_configurado','whatsapp_quando_configurado'],'detected_at'=>date('c')]; } cv_write('content_validity_alerts.json',$alerts); return $alerts; }
 $news=cv_read('noticias.json'); $log=cv_read('content_validity_log.json'); $notice=''; $error='';
 if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'){
   tvs_verify_csrf(); $id=(string)($_POST['id']??''); $action=(string)($_POST['action']??''); $idx=null;
@@ -28,7 +29,7 @@ if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'){
       $trash=cv_read('lixeira_noticias.json'); $item=$news[$idx]; $item['deleted_at']=$now; $item['archive_reason']='Conteúdo perdeu validade após revisão editorial.'; $trash[]=$item; array_splice($news,$idx,1); cv_write('lixeira_noticias.json',$trash);
       $log[]=['id'=>uniqid('valid_'),'news_id'=>$id,'title'=>$title,'action'=>'ARQUIVADA','reason'=>'Arquivada manualmente após conferência de validade.','created_at'=>$now]; $notice='Matéria arquivada com rastreabilidade.';
     }
-    cv_write('noticias.json',$news); $log=array_slice($log,-500); cv_write('content_validity_log.json',$log);
+    cv_write('noticias.json',$news); $log=array_slice($log,-500); cv_write('content_validity_log.json',$log); cv_sync_alerts($news);
   }
 }
 $review=array_values(array_filter($news,'cv_needs_review')); usort($review,function($a,$b){return (cv_age($b)??9999)<=>(cv_age($a)??9999);});
