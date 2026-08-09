@@ -14,6 +14,7 @@ RUN php /var/www/html/docker/apply-radar-editorial-policy.php \
     && php /var/www/html/docker/apply-social-distribution-hardening.php \
     && php /var/www/html/docker/apply-admin-module-hardening.php \
     && php /var/www/html/docker/apply-reporter-queue-hardening.php \
+    && php /var/www/html/docker/apply-heygen-recovery.php \
     && php /var/www/html/docker/run-homologation-smoke.php \
     && rm -f /var/www/html/docker/apply-radar-editorial-policy.php \
     && rm -f /var/www/html/docker/apply-video-ai-hardening.php \
@@ -21,6 +22,7 @@ RUN php /var/www/html/docker/apply-radar-editorial-policy.php \
     && rm -f /var/www/html/docker/apply-social-distribution-hardening.php \
     && rm -f /var/www/html/docker/apply-admin-module-hardening.php \
     && rm -f /var/www/html/docker/apply-reporter-queue-hardening.php \
+    && rm -f /var/www/html/docker/apply-heygen-recovery.php \
     && rm -f /var/www/html/docker/run-homologation-smoke.php \
     && chown -R root:root /var/www/html \
     && find /var/www/html -type d -exec chmod 0755 {} + \
