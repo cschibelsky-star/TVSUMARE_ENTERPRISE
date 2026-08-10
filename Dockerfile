@@ -20,6 +20,7 @@ RUN php /var/www/html/docker/apply-radar-editorial-policy.php \
     && php /var/www/html/docker/apply-presenter-catalog-integration.php \
     && php /var/www/html/docker/apply-heygen-credit-revalidation.php \
     && php /var/www/html/docker/apply-reporter-dedup-hardening.php \
+    && php /var/www/html/docker/apply-heygen-v3-schema-fix.php \
     && php /var/www/html/docker/test-reporter-dedup.php \
     && php /var/www/html/docker/run-homologation-smoke.php \
     && rm -f /var/www/html/docker/apply-radar-editorial-policy.php \
@@ -34,6 +35,7 @@ RUN php /var/www/html/docker/apply-radar-editorial-policy.php \
     && rm -f /var/www/html/docker/apply-presenter-catalog-integration.php \
     && rm -f /var/www/html/docker/apply-heygen-credit-revalidation.php \
     && rm -f /var/www/html/docker/apply-reporter-dedup-hardening.php \
+    && rm -f /var/www/html/docker/apply-heygen-v3-schema-fix.php \
     && rm -f /var/www/html/docker/test-reporter-dedup.php \
     && rm -f /var/www/html/docker/run-homologation-smoke.php \
     && chown -R root:root /var/www/html \
