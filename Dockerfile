@@ -2,7 +2,10 @@ FROM php:8.3-apache
 
 COPY docker/apache-security.conf /etc/apache2/conf-available/tvsumare-security.conf
 
-RUN a2enmod rewrite headers \
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/* \
+    && a2enmod rewrite headers \
     && a2enconf tvsumare-security \
     && sed -ri -e 's!AllowOverride None!AllowOverride All!g' /etc/apache2/apache2.conf
 
