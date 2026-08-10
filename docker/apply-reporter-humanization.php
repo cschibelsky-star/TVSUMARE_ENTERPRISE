@@ -14,7 +14,7 @@ $new="  \$isBoletim=!empty(\$job['boletim']); \$presenter=tvs_clean_text(\$job['
 hum_patch($code,$old,$new,'Humanized Video Agent prompt');
 
 $old="  foreach(['avatar_id'=>'heygen_avatar_id','voice_id'=>'heygen_voice_id','style_id'=>'heygen_style_id','brand_kit_id'=>'heygen_brand_kit_id'] as \$api=>\$local){ \$jobValue=trim((string)(\$job[\$local]??'')); \$cfgValue=trim((string)(\$cfg[\$local]??'')); \$v=\$jobValue!==''?\$jobValue:\$cfgValue; if(\$v!=='') \$payload[\$api]=\$v; }";
-$new="  foreach(['avatar_id'=>'heygen_avatar_id','voice_id'=>'heygen_voice_id','style_id'=>'heygen_style_id','brand_kit_id'=>'heygen_brand_kit_id'] as \$api=>\$local){ \$jobValue=trim((string)(\$job[\$local]??'')); \$cfgValue=trim((string)(\$cfg[\$local]??'')); \$v=\$jobValue!==''?\$jobValue:\$cfgValue; if(\$api==='voice_id') \$v=rpia_human_voice_id(); if(\$v!=='') \$payload[\$api]=\$v; } \$payload['metadata']=['presentation_profile'=>rpia_presentation_profile(\$job)['id'],'humanization'=>'enterprise_v1'];";
+$new="  foreach(['avatar_id'=>'heygen_avatar_id','voice_id'=>'heygen_voice_id','style_id'=>'heygen_style_id','brand_kit_id'=>'heygen_brand_kit_id'] as \$api=>\$local){ \$jobValue=trim((string)(\$job[\$local]??'')); \$cfgValue=trim((string)(\$cfg[\$local]??'')); \$v=\$jobValue!==''?\$jobValue:\$cfgValue; if(\$api==='voice_id') \$v=rpia_human_voice_id(); if(\$v!=='') \$payload[\$api]=\$v; }";
 hum_patch($code,$old,$new,'Preferred human voice');
 
 if(file_put_contents($reporter,$code)===false){fwrite(STDERR,"Falha ao gravar Reporter IA\n");exit(3);} echo "REPORTER_HUMANIZATION_APPLIED=SIM\n";
