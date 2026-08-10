@@ -29,6 +29,7 @@ function tvs_csrf_token() { if (empty($_SESSION['tvs_csrf_token']) || !is_string
 function tvs_csrf_field() { return '<input type="hidden" name="_csrf" value="'.htmlspecialchars(tvs_csrf_token(), ENT_QUOTES, 'UTF-8').'">'; }
 function tvs_csrf_is_valid() { $expected=(string)($_SESSION['tvs_csrf_token']??''); $given=(string)($_POST['_csrf']??''); return $expected!=='' && $given!=='' && hash_equals($expected,$given); }
 function tvs_csrf_reject() { http_response_code(419); header('Content-Type: text/plain; charset=utf-8'); exit('Invalid or expired request token.'); }
+function tvs_verify_csrf() { if (!tvs_csrf_is_valid()) tvs_csrf_reject(); return true; }
 function tvs_login_error_redirect($reason) { if (basename((string)($_SERVER['SCRIPT_NAME']??''))==='auth.php') { header('Location: login.php?erro='.rawurlencode((string)$reason)); exit; } }
 function tvs_admin_password_ok($password) { global $admin_pass_hash,$admin_pass; $password=(string)$password; if(!empty($admin_pass_hash)&&password_verify($password,(string)$admin_pass_hash))return true; if(!empty($admin_pass)&&hash_equals((string)$admin_pass,$password))return true; return false; }
 function tvs_login_throttled() { $now=time(); $_SESSION['tvs_login_attempts']=$_SESSION['tvs_login_attempts']??[]; $_SESSION['tvs_login_attempts']=array_values(array_filter($_SESSION['tvs_login_attempts'],fn($attempt)=>($now-(int)$attempt)<900)); return count($_SESSION['tvs_login_attempts'])>=8; }
