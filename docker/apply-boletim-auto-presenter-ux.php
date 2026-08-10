@@ -19,22 +19,26 @@ $boletim='/var/www/html/admin/boletim-ia.php';
 $b=file_get_contents($boletim);
 if($b===false){fwrite(STDERR,"Boletim IA não encontrado\n");exit(1);}
 
-bux_patch($b,
-  "$cfg=bia_config_read(); $cfg['presenters']=$cfg['presenters']??[];",
-  "$cfg=bia_config_read(); $cfg['presenters']=$cfg['presenters']??[]; $reporterCfg=bia_read('reporter_ia_config.json'); $defaultVoice=trim((string)($reporterCfg['heygen_voice_id']??''));",
-  'Boletim voice fallback load'
-);
+$old= <<<'PHP'
+$cfg=bia_config_read(); $cfg['presenters']=$cfg['presenters']??[];
+PHP;
+$new= <<<'PHP'
+$cfg=bia_config_read(); $cfg['presenters']=$cfg['presenters']??[]; $reporterCfg=bia_read('reporter_ia_config.json'); $defaultVoice=trim((string)($reporterCfg['heygen_voice_id']??''));
+PHP;
+bux_patch($b,$old,$new,'Boletim voice fallback load');
 
-bux_patch($b,
-  "$cfg['presenters']['giro']=array_merge(['name'=>'TV Sumaré Giro','tone'=>'dinâmico, humano, energético, natural e conversacional','avatar_id'=>'ecc586fbd3e94cd4a07347c098364fc8','voice_id'=>'','style_id'=>''],$cfg['presenters']['giro']??[]);",
-  "$cfg['presenters']['giro']=array_merge(['name'=>'TV Sumaré Giro','tone'=>'dinâmico, humano, energético, natural e conversacional','avatar_id'=>'ecc586fbd3e94cd4a07347c098364fc8','voice_id'=>'','style_id'=>''],$cfg['presenters']['giro']??[]); foreach(['noticias','cidade','giro'] as $pk){ if(trim((string)($cfg['presenters'][$pk]['voice_id']??''))==='' && $defaultVoice!=='') $cfg['presenters'][$pk]['voice_id']=$defaultVoice; }",
-  'Boletim voice fallback apply'
-);
+$old= <<<'PHP'
+$cfg['presenters']['giro']=array_merge(['name'=>'TV Sumaré Giro','tone'=>'dinâmico, humano, energético, natural e conversacional','avatar_id'=>'ecc586fbd3e94cd4a07347c098364fc8','voice_id'=>'','style_id'=>''],$cfg['presenters']['giro']??[]);
+PHP;
+$new= <<<'PHP'
+$cfg['presenters']['giro']=array_merge(['name'=>'TV Sumaré Giro','tone'=>'dinâmico, humano, energético, natural e conversacional','avatar_id'=>'ecc586fbd3e94cd4a07347c098364fc8','voice_id'=>'','style_id'=>''],$cfg['presenters']['giro']??[]); foreach(['noticias','cidade','giro'] as $pk){ if(trim((string)($cfg['presenters'][$pk]['voice_id']??''))==='' && $defaultVoice!=='') $cfg['presenters'][$pk]['voice_id']=$defaultVoice; }
+PHP;
+bux_patch($b,$old,$new,'Boletim voice fallback apply');
 
 $oldStart='<div class="box" style="margin-top:14px"><h2>Apresentadores disponíveis para a OpenAI</h2><form method="post" class="form"><?=tvs_csrf_field()?>';
 $start=strpos($b,$oldStart);
 if($start===false){fwrite(STDERR,"Boletim config UI início não encontrado\n");exit(4);}
-$oldEnd='</form></div>\n<div class="box" style="margin-top:14px"><h2>Novo boletim vertical</h2>';
+$oldEnd="</form></div>\n<div class=\"box\" style=\"margin-top:14px\"><h2>Novo boletim vertical</h2>";
 $end=strpos($b,$oldEnd,$start);
 if($end===false){fwrite(STDERR,"Boletim config UI fim não encontrado\n");exit(5);}
 $advanced=<<<'HTML'
