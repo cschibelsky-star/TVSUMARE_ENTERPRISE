@@ -26,6 +26,7 @@ function tvs_admin_link($key,$href,$label,$active){
     <span class="menu-group">Inteligência Artificial</span>
     <?=tvs_admin_link('editor_ia','editor-ia.php','Editor IA',$activeAdmin)?>
     <?=tvs_admin_link('reporter_ia','reporter-ia.php','Repórter IA',$activeAdmin)?>
+    <?=tvs_admin_link('apresentadores_ia','apresentadores-ia.php','Apresentadores IA',$activeAdmin)?>
     <?=tvs_admin_link('boletim_ia','boletim-ia.php','Boletim IA',$activeAdmin)?>
     <?=tvs_admin_link('distribuicao_social','distribuicao-social.php','Distribuição Social',$activeAdmin)?>
     <?=tvs_admin_link('tvplay','tvplay.php','TV Play IA',$activeAdmin)?>
