@@ -15,6 +15,11 @@ function tvs_outbound_allowed_hosts(): array {
         'g1.globo.com',
         'www.bing.com',
         'search.yahoo.com',
+        'www.youtube.com',
+        'i.ytimg.com',
+        'accounts.google.com',
+        'oauth2.googleapis.com',
+        'www.googleapis.com',
     ];
     $extra = array_filter(array_map(
         static fn($host) => strtolower(trim((string) $host)),
@@ -79,7 +84,9 @@ function tvs_outbound_curl_options($url, int $timeout = 10): ?array {
     if ($details === null) {
         return null;
     }
-    $timeout = max(2, min($timeout, 30));
+    // Uploads resumíveis de vídeo podem durar vários minutos. Chamadas normais
+    // continuam usando os timeouts curtos definidos por cada consumidor.
+    $timeout = max(2, min($timeout, 900));
     return [
         CURLOPT_PROTOCOLS => CURLPROTO_HTTPS,
         CURLOPT_REDIR_PROTOCOLS => CURLPROTO_HTTPS,
