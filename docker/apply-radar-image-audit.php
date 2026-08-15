@@ -17,7 +17,7 @@ if(strpos($source,$marker)!==false){
     exit(0);
 }
 
-$start=strpos($source,"function tvs_publish_from_queue($id,$post){");
+$start=strpos($source,'function tvs_publish_from_queue($id,$post){');
 $end=strpos($source,"\nfunction tvs_selected_ids_from_post(){",$start===false?0:$start);
 if($start===false || $end===false || $end<=$start){
     fwrite(STDERR,"publish function boundaries not found\n");
