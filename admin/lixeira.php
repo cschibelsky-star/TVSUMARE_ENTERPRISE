@@ -25,6 +25,10 @@ function tvs_lixeira_log($item,$status,$reason){
     'reason'=>$reason,
     'url'=>$item['source_url']??($item['url']??''),
     'image'=>$item['image']??($item['image_url']??''),
+    'image_source_type'=>$item['image_source_type']??'',
+    'image_credit'=>$item['image_credit']??'',
+    'image_review_required'=>$item['image_review_required']??0,
+    'image_reviewed_at'=>$item['image_reviewed_at']??'',
     'created_at'=>date('c')
   ];
   $log=array_slice($log,-500);
@@ -116,6 +120,13 @@ if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'){
         <small class="muted">Apagada em <?=tvs_lixeira_h(date('d/m/Y H:i',strtotime($n['deleted_at']??'now')))?> • <?=tvs_lixeira_h($n['city']??'Região')?> • <?=tvs_lixeira_h($n['category']??'Sem categoria')?></small>
         <h2><?=tvs_lixeira_h($n['title']??'Sem título')?></h2>
         <?php if(!empty($n['subtitle'])): ?><p><?=tvs_lixeira_h($n['subtitle'])?></p><?php endif; ?>
+        <?php if(!empty($n['image'])): ?>
+          <p class="muted">
+            Imagem: <?=tvs_lixeira_h($n['image_source_type']??'legado')?>
+            <?php if(!empty($n['image_credit'])): ?> • <?=tvs_lixeira_h($n['image_credit'])?><?php endif; ?>
+            <?php if(!empty($n['image_reviewed_at'])): ?> • revisada em <?=tvs_lixeira_h(date('d/m/Y H:i',strtotime((string)$n['image_reviewed_at'])))?><?php endif; ?>
+          </p>
+        <?php endif; ?>
         <div class="actions">
           <form method="post">
             <?=tvs_csrf_field()?>
