@@ -141,6 +141,11 @@ if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'){
           ? (function_exists('tvs_image_credit_from_source')?tvs_image_credit_from_source(tvs_quick_post('source','Redação TV Sumaré'),$finalImage):'')
           : (string)($sessionDraft['image_credit']??'');
         $finalImageReviewRequired=$imageChanged?0:(int)($sessionDraft['image_review_required']??0);
+        $imageReviewConfirmed=(string)($_POST['image_review_confirm']??'')==='1';
+
+        if($finalImageReviewRequired && !$imageReviewConfirmed){
+          $error='A imagem padrão precisa ser confirmada pelo editor antes da publicação.';
+        } else {
 
         $arr[]=[
           'id'=>uniqid('news_'),
@@ -176,6 +181,7 @@ if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'){
           $notice='Notícia enriquecida e publicada com sucesso.';
         } else {
           $error='Não foi possível gravar noticias.json. Nada deve ser considerado publicado.';
+        }
         }
       }
     }
@@ -248,7 +254,7 @@ if(!$draft && isset($_SESSION['tvs_quick_news_draft'])) $draft=$_SESSION['tvs_qu
       <div><label>Categoria</label><input name="category" value="<?=tvs_quick_h($draft['category']??'Cidades')?>"></div>
       <div><label>Fonte</label><input name="source" value="<?=tvs_quick_h($draft['source']??'')?>"></div>
       <div><label>URL da fonte</label><input name="source_url" value="<?=tvs_quick_h($draft['source_url']??'')?>"></div>
-      <div class="full"><label>Imagem</label><input name="image" value="<?=tvs_quick_h($draft['image']??'')?>"><div class="image-meta">Origem: <?=tvs_quick_h($draft['image_source_type']??'manual')?><?php if(!empty($draft['image_credit'])): ?> • <?=tvs_quick_h($draft['image_credit'])?><?php endif; ?></div><?php if(!empty($draft['image_review_required'])): ?><div class="image-warning">Imagem padrão utilizada. Confirme se deseja mantê-la antes de publicar.</div><?php endif; ?></div>
+      <div class="full"><label>Imagem</label><input name="image" value="<?=tvs_quick_h($draft['image']??'')?>"><div class="image-meta">Origem: <?=tvs_quick_h($draft['image_source_type']??'manual')?><?php if(!empty($draft['image_credit'])): ?> • <?=tvs_quick_h($draft['image_credit'])?><?php endif; ?></div><?php if(!empty($draft['image_review_required'])): ?><div class="image-warning"><strong>Imagem padrão utilizada.</strong> Confirme explicitamente antes de publicar.</div><label class="review-confirm"><input type="checkbox" name="image_review_confirm" value="1"> Confirmo o uso da imagem padrão nesta matéria.</label><?php endif; ?></div>
       <div class="full"><label>Texto enriquecido</label><textarea name="body" required style="min-height:360px"><?=tvs_quick_h($draft['body']??'')?></textarea></div>
       <div class="full"><label>Tags</label><input name="tags" value="<?=tvs_quick_h($draft['tags']??'')?>"></div>
       <div><label>SEO title</label><input name="seo_title" value="<?=tvs_quick_h($draft['seo_title']??'')?>"></div>
