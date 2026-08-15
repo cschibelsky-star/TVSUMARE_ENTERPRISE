@@ -12,6 +12,7 @@ RUN apt-get update \
 COPY . /var/www/html/
 
 RUN php /var/www/html/docker/apply-radar-editorial-policy.php \
+    && php /var/www/html/docker/apply-radar-image-audit.php \
     && php /var/www/html/docker/apply-video-ai-hardening.php \
     && php /var/www/html/docker/apply-boletim-diversity-hardening.php \
     && php /var/www/html/docker/apply-social-distribution-hardening.php \
@@ -30,6 +31,7 @@ RUN php /var/www/html/docker/apply-radar-editorial-policy.php \
     && php /var/www/html/docker/test-youtube-integration.php \
     && php /var/www/html/docker/run-homologation-smoke.php \
     && rm -f /var/www/html/docker/apply-radar-editorial-policy.php \
+    && rm -f /var/www/html/docker/apply-radar-image-audit.php \
     && rm -f /var/www/html/docker/apply-video-ai-hardening.php \
     && rm -f /var/www/html/docker/apply-boletim-diversity-hardening.php \
     && rm -f /var/www/html/docker/apply-social-distribution-hardening.php \
