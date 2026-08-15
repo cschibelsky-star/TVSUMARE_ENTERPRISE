@@ -59,7 +59,6 @@ if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'){
     }
 
     if(!tvs_save_json_file($newsFile,array_values($keep))){
-      // Compensação: se a remoção da lista publicada falhar, retire o item recém-adicionado da lixeira.
       array_pop($trash);
       tvs_save_json_file($trashFile,array_values($trash));
       header('Location: noticias.php?error=news_write'); exit;
@@ -80,7 +79,7 @@ usort($news,function($a,$b){return strcmp((string)($b['published_at']??$b['creat
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Publicadas | TV Sumaré</title>
 <link rel="stylesheet" href="admin.css?v=2.0.4">
-<style>.inline-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.inline-actions form{margin:0}.btn.danger{background:#b42318;color:#fff}</style>
+<style>.inline-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.inline-actions form{margin:0}.btn.danger{background:#b42318;color:#fff}.image-audit{margin-top:5px;font-size:12px;color:#64748b}.image-audit.warn{color:#9a3412;font-weight:700}</style>
 </head>
 <body>
 <div class="admin">
@@ -106,15 +105,26 @@ usort($news,function($a,$b){return strcmp((string)($b['published_at']??$b['creat
   <section class="box">
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Data</th><th>Cidade</th><th>Categoria</th><th>Matéria</th><th>Ação</th></tr></thead>
+        <thead><tr><th>Data</th><th>Cidade</th><th>Categoria</th><th>Matéria</th><th>Imagem</th><th>Ação</th></tr></thead>
         <tbody>
-        <?php if(!$news):?><tr><td colspan="5">Nenhuma matéria publicada.</td></tr><?php endif;?>
+        <?php if(!$news):?><tr><td colspan="6">Nenhuma matéria publicada.</td></tr><?php endif;?>
         <?php foreach(array_slice($news,0,150) as $n):?>
           <tr>
             <td><?=np_h(!empty($n['published_at']??$n['created_at'])?date('d/m/Y H:i',strtotime($n['published_at']??$n['created_at'])):'')?></td>
             <td><?=np_h($n['city']??'Região')?></td>
             <td><?=np_h($n['category']??'Notícia')?></td>
             <td><strong><?=np_h($n['title']??'Sem título')?></strong><br><small><?=np_h($n['source']??'')?></small></td>
+            <td>
+              <?php
+                $imgType=(string)($n['image_source_type']??'legado');
+                $imgCredit=(string)($n['image_credit']??'');
+                $imgPending=!empty($n['image_review_required']);
+              ?>
+              <strong><?=np_h($imgType)?></strong>
+              <?php if($imgCredit!==''): ?><div class="image-audit"><?=np_h($imgCredit)?></div><?php endif; ?>
+              <?php if(!empty($n['image_reviewed_at'])): ?><div class="image-audit">Revisada em <?=np_h(date('d/m/Y H:i',strtotime((string)$n['image_reviewed_at'])))?></div><?php endif; ?>
+              <?php if($imgPending): ?><div class="image-audit warn">REVISÃO PENDENTE</div><?php endif; ?>
+            </td>
             <td>
               <div class="inline-actions">
                 <a class="btn small" href="../noticia.php?id=<?=rawurlencode((string)($n['id']??''))?>" target="_blank">Abrir</a>
