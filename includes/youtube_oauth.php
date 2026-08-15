@@ -22,7 +22,10 @@ if (!function_exists('tvs_youtube_oauth_config')) {
   function tvs_youtube_oauth_exchange($code,$state){
     $saved=tvs_youtube_oauth_read(); $hash=(string)($saved['oauth_state_hash']??''); $created=(int)($saved['oauth_state_created_at']??0); if($hash==='' || !hash_equals($hash,hash('sha256',(string)$state)) || $created<time()-900) return ['ok'=>false,'error'=>'Estado OAuth inválido ou expirado.'];
     $c=tvs_youtube_oauth_config(); $r=tvs_youtube_http_form('https://oauth2.googleapis.com/token',['code'=>$code,'client_id'=>$c['client_id'],'client_secret'=>$c['client_secret'],'redirect_uri'=>tvs_youtube_redirect_uri(),'grant_type'=>'authorization_code']); if(empty($r['ok'])) return $r;
-    $d=$r['data']; $saved['access_token']=$d['access_token']??''; if(!empty($d['refresh_token'])) $saved['refresh_token']=$d['refresh_token']; $saved['token_type']=$d['token_type']??'Bearer'; $saved['scope']=$d['scope']??''; $saved['expires_at']=time()+(int)($d['expires_in']??3600)-60; unset($saved['oauth_state_hash'],$saved['oauth_state_created_at']); tvs_youtube_oauth_write($saved); return ['ok'=>true];
+    $d=$r['data']; $saved['access_token']=$d['access_token']??''; if(!empty($d['refresh_token'])) $saved['refresh_token']=$d['refresh_token']; $saved['token_type']=$d['token_type']??'Bearer'; $saved['scope']=$d['scope']??''; $saved['expires_at']=time()+(int)($d['expires_in']??3600)-60; unset($saved['oauth_state_hash'],$saved['oauth_state_created_at']);
+    if(!tvs_youtube_oauth_write($saved)) return ['ok'=>false,'error'=>'OAuth concluído, mas não foi possível persistir o token do YouTube.'];
+    if(trim((string)($saved['access_token']??''))==='') return ['ok'=>false,'error'=>'Google não retornou access_token para o YouTube.'];
+    return ['ok'=>true,'has_refresh_token'=>trim((string)($saved['refresh_token']??''))!==''];
   }
   function tvs_youtube_access_token(){
     $saved=tvs_youtube_oauth_read(); if(trim((string)($saved['access_token']??''))!=='' && (int)($saved['expires_at']??0)>time()+60) return ['ok'=>true,'access_token'=>$saved['access_token']];
