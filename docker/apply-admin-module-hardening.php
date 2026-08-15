@@ -3,9 +3,14 @@ function patch_once($path,$old,$new,$label){
   $code=file_get_contents($path);
   if($code===false){fwrite(STDERR,"{$label}: arquivo não encontrado\n");exit(1);}
   $count=substr_count($code,$old);
+  if($count===0 && strpos($code,$new)!==false){
+    echo "{$label}: hardening já aplicado.\n";
+    return;
+  }
   if($count!==1){fwrite(STDERR,"{$label}: trecho esperado count={$count}; abortando\n");exit(2);}
   $code=str_replace($old,$new,$code);
-  if(file_put_contents($path,$code)===false){fwrite(STDERR,"{$label}: falha ao gravar\n");exit(3);}
+  if(file_put_contents($path,$code,LOCK_EX)===false){fwrite(STDERR,"{$label}: falha ao gravar\n");exit(3);}
+  echo "{$label}: aplicado.\n";
 }
 $patches=[
 ['/var/www/html/admin/editor-ia.php',"if((\$_SERVER['REQUEST_METHOD']??'GET')==='POST'){\n  \$action=\$_POST['action']??'search_generate';","if((\$_SERVER['REQUEST_METHOD']??'GET')==='POST'){\n  tvs_verify_csrf();\n  \$action=\$_POST['action']??'search_generate';",'Editor IA CSRF'],
