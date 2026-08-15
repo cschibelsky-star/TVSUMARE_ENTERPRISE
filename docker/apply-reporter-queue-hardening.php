@@ -8,9 +8,9 @@ if($code===false){
 
 $required=[
     'provider block'=>'function rpia_provider_blocked($cfg)',
-    'send lock'=>"send_lock_at",
+    'send lock'=>'send_lock_at',
     'dedupe'=>'function rpia_is_latest_approved_job($job,$jobs)',
-    'approval gate'=>"roteiro_aprovado",
+    'approval gate'=>'roteiro_aprovado',
 ];
 foreach($required as $label=>$marker){
     if(strpos($code,$marker)===false){
@@ -21,7 +21,10 @@ foreach($required as $label=>$marker){
 }
 
 if(strpos($code,'function rpia_job_state($j)')===false){
-    $anchor="\n\n$msg=''; $err='';";
+    $anchor=<<<'TXT'
+
+$msg=''; $err='';
+TXT;
     $pos=strpos($code,$anchor);
     if($pos===false){
         fwrite(STDERR,"Reporter helper anchor não encontrado\n");
@@ -48,8 +51,12 @@ PHP;
     echo "Reporter state helpers: já aplicados.\n";
 }
 
-if(strpos($code,"if($action==='archive_job')")===false){
-    $anchor="\n}\n$news=rpia_read('noticias.json');";
+if(strpos($code,"if(\$action==='archive_job')")===false){
+    $anchor=<<<'TXT'
+
+}
+$news=rpia_read('noticias.json');
+TXT;
     $pos=strpos($code,$anchor);
     if($pos===false){
         fwrite(STDERR,"Reporter actions anchor não encontrado\n");
@@ -78,8 +85,12 @@ PHP;
 }
 
 if(strpos($code,'$activeJobs=array_values(array_filter($jobs')===false){
-    $old="$jobs=rpia_read('videos_ia.json'); $callbackUrl=";
-    $new="$jobs=rpia_read('videos_ia.json'); $activeJobs=array_values(array_filter($jobs,function($j){ return empty($j['archived']) && !in_array(rpia_job_state($j),['cancelled','failed','published'],true); })); $historyJobs=array_values(array_filter($jobs,function($j){ return !empty($j['archived']) || in_array(rpia_job_state($j),['cancelled','failed','published'],true); })); $callbackUrl=";
+    $old=<<<'TXT'
+$jobs=rpia_read('videos_ia.json'); $callbackUrl=
+TXT;
+    $new=<<<'TXT'
+$jobs=rpia_read('videos_ia.json'); $activeJobs=array_values(array_filter($jobs,function($j){ return empty($j['archived']) && !in_array(rpia_job_state($j),['cancelled','failed','published'],true); })); $historyJobs=array_values(array_filter($jobs,function($j){ return !empty($j['archived']) || in_array(rpia_job_state($j),['cancelled','failed','published'],true); })); $callbackUrl=
+TXT;
     $count=substr_count($code,$old);
     if($count!==1){
         fwrite(STDERR,"Reporter queue split: trecho esperado count={$count}; abortando\n");
