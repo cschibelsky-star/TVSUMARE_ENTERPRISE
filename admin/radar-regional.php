@@ -1641,19 +1641,20 @@ function tvs_radar_has_generic_text($text){
 }
 function tvs_radar_discard($cand,$city,$reason){
   $file=dirname(__DIR__).'/data/pautas_descartadas.json';
-  $items=tvs_read_json_file($file);
-  $items[]=[
-    'id'=>uniqid('desc_'),
-    'city'=>$city,
-    'title'=>$cand['title']??'',
-    'url'=>$cand['url']??'',
-    'source'=>$cand['source']??'Fonte consultada',
-    'reason'=>$reason,
-    'created_at'=>date('c')
-  ];
-  $items=array_slice($items,-200);
+  $items=tvs_read_json_file($file); if(!is_array($items)) $items=[];
+  $row=is_array($cand)?$cand:[];
+  $row['original_id']=$cand['id']??'';
+  $row['id']=uniqid('desc_');
+  $row['city']=$city;
+  $row['title']=$cand['title']??'';
+  $row['url']=$cand['url']??($cand['source_url']??'');
+  $row['source']=$cand['source']??'Fonte consultada';
+  $row['reason']=$reason;
+  $row['created_at']=date('c');
+  $items[]=$row;
+  $items=array_slice($items,-500);
   tvs_save_json_file($file,$items);
-  if(function_exists('tvs_radar_log_event')) tvs_radar_log_event($cand['title']??'', $cand['source']??'Fonte consultada', $city, 'DESCARTADA', $reason, $cand['url']??'');
+  if(function_exists('tvs_radar_log_event')) tvs_radar_log_event($row['title'], $row['source'], $city, 'DESCARTADA', $reason, $row['url']);
 }
 function tvs_radar_quality_ok(&$article,&$reason=''){
   if(!is_array($article)){ $reason='IA não retornou matéria válida'; return false; }
@@ -1930,7 +1931,14 @@ function tvs_publish_many_from_queue($ids){
 }
 function tvs_discard_many_from_queue($ids){
   $lookup=array_fill_keys($ids,true); $removed=0; $queue=tvs_queue_read(); $new=[];
-  foreach($queue as $q){ if(isset($lookup[$q['id']??''])){ $removed++; continue; } $new[]=$q; }
+  foreach($queue as $q){
+    if(isset($lookup[$q['id']??''])){
+      $q['discard_origin']='bulk_manual';
+      tvs_radar_discard($q,$q['city']??'Região','Descartada manualmente em lote pelo editor.');
+      $removed++; continue;
+    }
+    $new[]=$q;
+  }
   tvs_queue_save($new); return $removed;
 }
 function tvs_mark_many_for_review($ids){
@@ -1999,6 +2007,7 @@ function tvs_reprocess_discarded_pautas($limit=12,$mode='normal'){
 }
 
 if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'){
+  tvs_verify_csrf();
   $action=$_POST['action']??'';
   if($action==='update_radar'){
     $cfg=tvs_radar_config();
@@ -2045,7 +2054,10 @@ if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'){
     [$ok,$drop]=tvs_reprocess_discarded_pautas(36,'volume');
     $notice='Reprocessamento em Volume Máximo concluído: '.$ok.' pauta(s) voltaram para revisão.';
   } elseif($action==='discard'){
-    $id=$_POST['id']??''; $queue=tvs_queue_read(); $new=[]; foreach($queue as $q){ if(($q['id']??'')!==$id) $new[]=$q; } tvs_queue_save($new); $notice='Matéria descartada.';
+    $id=$_POST['id']??''; $queue=tvs_queue_read(); $new=[]; $found=null;
+    foreach($queue as $q){ if(($q['id']??'')===$id){ $found=$q; continue; } $new[]=$q; }
+    if($found){ $found['discard_origin']='manual'; tvs_radar_discard($found,$found['city']??'Região','Descartada manualmente pelo editor.'); tvs_queue_save($new); $notice='Matéria descartada e preservada no Log Editorial.'; }
+    else $error='Matéria não encontrada na fila.';
   } elseif($action==='save_edit'){
     $id=$_POST['id']??''; $queue=tvs_queue_read();
     foreach($queue as &$q){

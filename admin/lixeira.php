@@ -4,10 +4,32 @@ require_login();
 require_once __DIR__ . '/monitor_lib.php';
 
 $activeAdmin='lixeira';
-$trash=dirname(__DIR__).'/data/lixeira_noticias.json';
-$nf=dirname(__DIR__).'/data/noticias.json';
+$base=dirname(__DIR__).'/data';
+$trash=$base.'/lixeira_noticias.json';
+$nf=$base.'/noticias.json';
+$logFile=$base.'/radar_log.json';
 $items=tvs_read_json_file($trash);
 if(!is_array($items)) $items=[];
+
+function tvs_lixeira_h($v){ return htmlspecialchars((string)$v,ENT_QUOTES,'UTF-8'); }
+function tvs_lixeira_log($item,$status,$reason){
+  global $logFile;
+  $log=tvs_read_json_file($logFile);
+  if(!is_array($log)) $log=[];
+  $log[]=[
+    'id'=>uniqid('log_'),
+    'title'=>$item['title']??'Sem título',
+    'source'=>$item['source']??'Fonte',
+    'city'=>$item['city']??'Região',
+    'status'=>$status,
+    'reason'=>$reason,
+    'url'=>$item['source_url']??($item['url']??''),
+    'image'=>$item['image']??($item['image_url']??''),
+    'created_at'=>date('c')
+  ];
+  $log=array_slice($log,-500);
+  tvs_save_json_file($logFile,$log);
+}
 
 if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'){
   tvs_verify_csrf();
@@ -22,23 +44,42 @@ if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'){
         $restored=$it;
       } else $keep[]=$it;
     }
-    if($restored){
-      $news=tvs_read_json_file($nf); if(!is_array($news)) $news=[];
-      $news[]=$restored;
-      tvs_save_json_file($nf,$news);
-      tvs_save_json_file($trash,$keep);
+    if(!$restored){ header('Location: lixeira.php?error=not_found'); exit; }
+
+    $news=tvs_read_json_file($nf); if(!is_array($news)) $news=[];
+    $already=false;
+    foreach($news as $n){
+      if((string)($n['id']??'')===$id){ $already=true; break; }
     }
-    header('Location: lixeira.php?restored=1'); exit;
+
+    if(!$already){
+      $news[]=$restored;
+      if(!tvs_save_json_file($nf,$news)){ header('Location: lixeira.php?error=restore_write'); exit; }
+    }
+    if(!tvs_save_json_file($trash,$keep)){ header('Location: lixeira.php?error=trash_write'); exit; }
+
+    tvs_lixeira_log(
+      $restored,
+      $already?'RESTAURACAO_JA_EXISTENTE':'RESTAURADA',
+      $already
+        ? 'Item removido da lixeira porque a notícia já estava publicada; duplicação evitada.'
+        : 'Notícia restaurada manualmente da lixeira para publicadas.'
+    );
+    header('Location: lixeira.php?restored='.($already?'existing':'1')); exit;
   }
 
   if($action==='delete' && $id!==''){
-    $items=array_values(array_filter($items,static fn($i)=>(string)($i['id']??'')!==$id));
-    tvs_save_json_file($trash,$items);
+    $deleted=null; $keep=[];
+    foreach($items as $it){
+      if((string)($it['id']??'')===$id){ $deleted=$it; continue; }
+      $keep[]=$it;
+    }
+    if(!$deleted){ header('Location: lixeira.php?error=not_found'); exit; }
+    if(!tvs_save_json_file($trash,array_values($keep))){ header('Location: lixeira.php?error=delete_write'); exit; }
+    tvs_lixeira_log($deleted,'EXCLUIDA_DEFINITIVAMENTE','Notícia excluída definitivamente da lixeira após confirmação editorial.');
     header('Location: lixeira.php?deleted=1'); exit;
   }
 }
-
-function tvs_lixeira_h($v){ return htmlspecialchars((string)$v,ENT_QUOTES,'UTF-8'); }
 ?>
 <!doctype html>
 <html lang="pt-BR">
@@ -46,7 +87,7 @@ function tvs_lixeira_h($v){ return htmlspecialchars((string)$v,ENT_QUOTES,'UTF-8
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Lixeira | TV Sumaré</title>
-  <link rel="stylesheet" href="admin.css?v=16">
+  <link rel="stylesheet" href="admin.css?v=2.0.4">
 </head>
 <body>
 <div class="admin">
@@ -56,12 +97,15 @@ function tvs_lixeira_h($v){ return htmlspecialchars((string)$v,ENT_QUOTES,'UTF-8
       <div>
         <span class="eyebrow">Redação</span>
         <h1>Lixeira de notícias</h1>
-        <p class="muted">Restaure conteúdos removidos por engano ou exclua definitivamente após conferência editorial.</p>
+        <p class="muted">Restaure conteúdos removidos por engano ou exclua definitivamente após conferência editorial. As ações ficam registradas no Log Editorial.</p>
       </div>
+      <div class="actions"><a class="btn secondary" href="log-editorial.php">Ver Log Editorial</a></div>
     </div>
 
-    <?php if(isset($_GET['restored'])): ?><div class="notice">Notícia restaurada com sucesso.</div><?php endif; ?>
-    <?php if(isset($_GET['deleted'])): ?><div class="notice">Notícia excluída definitivamente.</div><?php endif; ?>
+    <?php if(($_GET['restored']??'')==='1'): ?><div class="notice">Notícia restaurada com sucesso.</div><?php endif; ?>
+    <?php if(($_GET['restored']??'')==='existing'): ?><div class="notice">A notícia já estava publicada. A duplicação foi evitada e o item foi removido da lixeira.</div><?php endif; ?>
+    <?php if(isset($_GET['deleted'])): ?><div class="notice">Notícia excluída definitivamente e registrada no Log Editorial.</div><?php endif; ?>
+    <?php if(isset($_GET['error'])): ?><div class="notice error">Não foi possível concluir a operação. Nenhum conteúdo deve ser considerado restaurado/excluído até nova conferência.</div><?php endif; ?>
 
     <?php if(!$items): ?>
       <div class="box">Lixeira vazia.</div>
