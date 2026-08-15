@@ -1,27 +1,127 @@
 <?php
 $path='/var/www/html/admin/reporter-ia.php';
 $code=file_get_contents($path);
-if($code===false){fwrite(STDERR,"Reporter IA não encontrado\n");exit(1);}
-function rdh_replace(&$code,$old,$new,$label){$n=substr_count($code,$old);if($n!==1){fwrite(STDERR,"{$label}: trecho esperado count={$n}; abortando\n");exit(2);} $code=str_replace($old,$new,$code);}
+if($code===false){
+    fwrite(STDERR,"Reporter IA não encontrado\n");
+    exit(1);
+}
 
-$old="function rpia_state_label(\$state){ return ['ready'=>'Roteiro pronto','processing'=>'Processando','completed'=>'Vídeo pronto','failed'=>'Falhou','cancelled'=>'Cancelado','published'=>'Publicado'][\$state]??'Aguardando'; }";
-$new="function rpia_state_label(\$state){ return ['ready'=>'Roteiro pronto','processing'=>'Processando','completed'=>'Vídeo pronto','failed'=>'Falhou','cancelled'=>'Cancelado','published'=>'Publicado','superseded'=>'Substituído por versão mais recente'][\$state]??'Aguardando'; }\nfunction rpia_job_dedupe_key(\$j){ \$newsId=trim((string)(\$j['news_id']??'')); if(\$newsId!=='') return 'news:'.\$newsId; \$title=tvs_lower(tvs_clean_text(\$j['title']??'')); \$title=preg_replace('/[^a-z0-9áàâãéêíóôõúç]+/u',' ',\$title); \$title=preg_replace('/\\s+/u',' ',trim((string)\$title)); return \$title!==''?'title:'.\$title:'job:'.(string)(\$j['id']??''); }\nfunction rpia_supersede_ready_duplicates(\$jobs){ \$seen=[]; \$changed=false; foreach(\$jobs as \$i=>\$j){ if(!empty(\$j['archived'])) continue; \$state=rpia_job_state(\$j); if(\$state!=='ready') continue; \$key=rpia_job_dedupe_key(\$j); if(!isset(\$seen[\$key])){ \$seen[\$key]=\$i; continue; } \$keep=\$seen[\$key]; \$a=(string)(\$jobs[\$keep]['created_at']??''); \$b=(string)(\$j['created_at']??''); if(\$b>\$a){ \$old=\$keep; \$seen[\$key]=\$i; \$keep=\$i; \$iToArchive=\$old; } else \$iToArchive=\$i; \$jobs[\$iToArchive]['status']='superseded'; \$jobs[\$iToArchive]['archived']='1'; \$jobs[\$iToArchive]['superseded_by']=(string)(\$jobs[\$keep]['id']??''); \$jobs[\$iToArchive]['superseded_at']=date('c'); \$jobs[\$iToArchive]['updated_at']=date('c'); \$changed=true; } return [\$jobs,\$changed]; }\nfunction rpia_is_current_ready_job(\$job,\$jobs){ if(rpia_job_state(\$job)!=='ready' || !empty(\$job['archived'])) return false; \$key=rpia_job_dedupe_key(\$job); \$id=(string)(\$job['id']??''); foreach(\$jobs as \$other){ if((string)(\$other['id']??'')===\$id || !empty(\$other['archived'])) continue; if(rpia_job_state(\$other)!=='ready' || rpia_job_dedupe_key(\$other)!==\$key) continue; if((string)(\$other['created_at']??'')>(string)(\$job['created_at']??'')) return false; } return true; }";
-rdh_replace($code,$old,$new,'Reporter dedupe helpers');
+$required=[
+    'job state'=>'function rpia_job_state($j)',
+    'dedupe key'=>'function rpia_job_dedupe_key($j)',
+    'latest approved'=>'function rpia_is_latest_approved_job($job,$jobs)',
+    'send lock'=>'send_lock_at',
+];
+foreach($required as $label=>$marker){
+    if(strpos($code,$marker)===false){
+        fwrite(STDERR,"Reporter dedupe {$label}: marcador moderno ausente; abortando\n");
+        exit(2);
+    }
+    echo "Reporter dedupe {$label}: fluxo moderno preservado.\n";
+}
 
-$old="if(in_array(\$s,['publicado','published'],true)) return 'published'; return 'ready'; }";
-$new="if(in_array(\$s,['publicado','published'],true)) return 'published'; if(in_array(\$s,['superseded','substituido','substituído'],true)) return 'superseded'; return 'ready'; }";
-rdh_replace($code,$old,$new,'Reporter superseded state');
+if(strpos($code,"return 'superseded';")===false){
+    $old=<<<'OLD'
+  if(in_array($s,['publicado','published'],true)) return 'published';
+OLD;
+    $new=<<<'NEW'
+  if(in_array($s,['publicado','published'],true)) return 'published';
+  if(in_array($s,['superseded','substituido','substituído'],true)) return 'superseded';
+NEW;
+    $count=substr_count($code,$old);
+    if($count!==1){
+        fwrite(STDERR,"Reporter superseded state: trecho esperado count={$count}; abortando\n");
+        exit(3);
+    }
+    $code=str_replace($old,$new,$code);
+    echo "Reporter superseded state: aplicado.\n";
+}else{
+    echo "Reporter superseded state: já aplicado.\n";
+}
 
-$old="elseif(rpia_job_state(\$job)!=='ready' || !empty(\$job['heygen_session_id']) || !empty(\$job['heygen_video_id'])) \$err='Este roteiro já foi enviado ou não está em estado válido para nova geração.'; else { \$jobs[\$idx]['send_lock_at']=date('c'); \$jobs[\$idx]['status']='enviado'; rpia_write('videos_ia.json',\$jobs);";
-$new="elseif(rpia_job_state(\$job)!=='ready' || !empty(\$job['heygen_session_id']) || !empty(\$job['heygen_video_id'])) \$err='Este roteiro já foi enviado ou não está em estado válido para nova geração.'; elseif(!rpia_is_current_ready_job(\$job,\$jobs)) \$err='Existe uma versão mais recente desta pauta. Atualize a fila antes de enviar.'; else { \$jobs[\$idx]['send_lock_at']=date('c'); \$jobs[\$idx]['status']='enviado'; \$jobs[\$idx]['send_attempt_id']=hash('sha256',(string)(\$job['id']??'').'|'.(string)(\$job['created_at']??'')); rpia_write('videos_ia.json',\$jobs);";
-rdh_replace($code,$old,$new,'Reporter latest-only send');
+if(strpos($code,'function rpia_supersede_ready_duplicates($jobs)')===false){
+    $anchor=<<<'ANCHOR'
 
-$old="\$news=rpia_read('noticias.json'); usort(\$news,function(\$a,\$b){ return strcmp(\$b['published_at']??\$b['created_at']??'', \$a['published_at']??\$a['created_at']??''); }); \$news=array_slice(\$news,0,30); \$jobs=rpia_read('videos_ia.json'); \$activeJobs=array_values(array_filter(\$jobs,function(\$j){ return empty(\$j['archived']) && !in_array(rpia_job_state(\$j),['cancelled','failed','published'],true); })); \$historyJobs=array_values(array_filter(\$jobs,function(\$j){ return !empty(\$j['archived']) || in_array(rpia_job_state(\$j),['cancelled','failed','published'],true); })); \$callbackUrl=";
-$new="\$news=rpia_read('noticias.json'); usort(\$news,function(\$a,\$b){ return strcmp(\$b['published_at']??\$b['created_at']??'', \$a['published_at']??\$a['created_at']??''); }); \$news=array_slice(\$news,0,30); \$jobs=rpia_read('videos_ia.json'); [\$jobs,\$dedupeChanged]=rpia_supersede_ready_duplicates(\$jobs); if(\$dedupeChanged) rpia_write('videos_ia.json',\$jobs); \$activeJobs=array_values(array_filter(\$jobs,function(\$j){ return empty(\$j['archived']) && !in_array(rpia_job_state(\$j),['cancelled','failed','published','superseded'],true); })); \$historyJobs=array_values(array_filter(\$jobs,function(\$j){ return !empty(\$j['archived']) || in_array(rpia_job_state(\$j),['cancelled','failed','published','superseded'],true); })); \$callbackUrl=";
-rdh_replace($code,$old,$new,'Reporter persistent queue dedupe');
+$msg=''; $err='';
+ANCHOR;
+    $pos=strpos($code,$anchor);
+    if($pos===false){
+        fwrite(STDERR,"Reporter dedupe helper anchor não encontrado\n");
+        exit(4);
+    }
+    $helpers=<<<'PHP'
 
-$old='<form method="post"><?=tvs_csrf_field()?><input type="hidden" name="action" value="send_heygen"><input type="hidden" name="job_id" value="<?=rpia_h($j[\'id\']??\'\')?>"><button class="btn orange">Enviar para geração</button></form>';
-$new='<form method="post" onsubmit="var b=this.querySelector(\'button\'); if(b.disabled) return false; b.disabled=true; b.textContent=\'Enviando...\';"><?=tvs_csrf_field()?><input type="hidden" name="action" value="send_heygen"><input type="hidden" name="job_id" value="<?=rpia_h($j[\'id\']??\'\')?>"><button class="btn orange">Enviar para geração</button></form>';
-rdh_replace($code,$old,$new,'Reporter client double-click guard');
+function rpia_supersede_ready_duplicates($jobs){
+  $seen=[];
+  $changed=false;
+  foreach($jobs as $i=>$j){
+    if(!empty($j['archived']) || rpia_job_state($j)!=='ready') continue;
+    $key=rpia_job_dedupe_key($j);
+    if(!isset($seen[$key])){ $seen[$key]=$i; continue; }
+    $keep=$seen[$key];
+    $keepDate=(string)($jobs[$keep]['created_at']??'');
+    $candidateDate=(string)($j['created_at']??'');
+    if($candidateDate>$keepDate){
+      $archive=$keep;
+      $seen[$key]=$i;
+      $keep=$i;
+    }else{
+      $archive=$i;
+    }
+    $jobs[$archive]['status']='superseded';
+    $jobs[$archive]['archived']='1';
+    $jobs[$archive]['superseded_by']=(string)($jobs[$keep]['id']??'');
+    $jobs[$archive]['superseded_at']=date('c');
+    $jobs[$archive]['updated_at']=date('c');
+    $changed=true;
+  }
+  return [$jobs,$changed];
+}
+PHP;
+    $code=substr($code,0,$pos).$helpers.substr($code,$pos);
+    echo "Reporter supersede helpers: aplicados.\n";
+}else{
+    echo "Reporter supersede helpers: já aplicados.\n";
+}
 
-if(file_put_contents($path,$code)===false){fwrite(STDERR,"Falha ao gravar Reporter IA\n");exit(3);} echo "REPORTER_DEDUP_HARDENING_APPLIED=SIM\n";
+if(strpos($code,'$dedupeChanged')===false){
+    $old=<<<'OLD'
+$jobs=rpia_read('videos_ia.json'); $activeJobs=array_values(array_filter($jobs,function($j){ return empty($j['archived']) && !in_array(rpia_job_state($j),['cancelled','failed','published'],true); })); $historyJobs=array_values(array_filter($jobs,function($j){ return !empty($j['archived']) || in_array(rpia_job_state($j),['cancelled','failed','published'],true); })); $callbackUrl=
+OLD;
+    $new=<<<'NEW'
+$jobs=rpia_read('videos_ia.json'); [$jobs,$dedupeChanged]=rpia_supersede_ready_duplicates($jobs); if($dedupeChanged) rpia_write('videos_ia.json',$jobs); $activeJobs=array_values(array_filter($jobs,function($j){ return empty($j['archived']) && !in_array(rpia_job_state($j),['cancelled','failed','published','superseded'],true); })); $historyJobs=array_values(array_filter($jobs,function($j){ return !empty($j['archived']) || in_array(rpia_job_state($j),['cancelled','failed','published','superseded'],true); })); $callbackUrl=
+NEW;
+    $count=substr_count($code,$old);
+    if($count!==1){
+        fwrite(STDERR,"Reporter persistent queue dedupe: trecho esperado count={$count}; abortando\n");
+        exit(5);
+    }
+    $code=str_replace($old,$new,$code);
+    echo "Reporter persistent queue dedupe: aplicado.\n";
+}else{
+    echo "Reporter persistent queue dedupe: já aplicado.\n";
+}
+
+if(strpos($code,"b.textContent='Enviando...'")===false){
+    $old=<<<'OLD'
+<form method="post"><?=tvs_csrf_field()?><input type="hidden" name="action" value="send_heygen"><input type="hidden" name="job_id" value="<?=rpia_h($j['id']??'')?>"><button class="btn orange">Enviar para geração</button></form>
+OLD;
+    $new=<<<'NEW'
+<form method="post" onsubmit="var b=this.querySelector('button'); if(b.disabled) return false; b.disabled=true; b.textContent='Enviando...';"><?=tvs_csrf_field()?><input type="hidden" name="action" value="send_heygen"><input type="hidden" name="job_id" value="<?=rpia_h($j['id']??'')?>"><button class="btn orange">Enviar para geração</button></form>
+NEW;
+    $count=substr_count($code,$old);
+    if($count!==1){
+        fwrite(STDERR,"Reporter client double-click guard: trecho esperado count={$count}; abortando\n");
+        exit(6);
+    }
+    $code=str_replace($old,$new,$code);
+    echo "Reporter client double-click guard: aplicado.\n";
+}else{
+    echo "Reporter client double-click guard: já aplicado.\n";
+}
+
+if(file_put_contents($path,$code,LOCK_EX)===false){
+    fwrite(STDERR,"Falha ao gravar Reporter IA\n");
+    exit(7);
+}
+echo "REPORTER_DEDUP_HARDENING_APPLIED=SIM\n";
