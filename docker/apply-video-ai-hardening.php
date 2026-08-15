@@ -2,6 +2,10 @@
 function patch_one($path,$old,$new,$label){
   $code=file_get_contents($path);
   if($code===false){fwrite(STDERR,"{$label}: arquivo não encontrado\n");exit(1);}
+  if(strpos($label,'Boletim ')===0 && strpos($code,'function bia_create_job(')!==false){
+    echo "{$label}: fluxo moderno do Boletim já presente; patch legado ignorado.\n";
+    return;
+  }
   $count=substr_count($code,$old);
   if($count===0 && $label==='Reporter send' && strpos($code,'elseif(rpia_provider_blocked($cfg))')!==false){
     echo "{$label}: fluxo moderno já endurecido; patch legado ignorado.\n";
