@@ -6,3 +6,7 @@ videos/
 logs/
 *.zip
 *.log
+
+# Backups locais de seguranca
+*.bak-*
+*.backup-*
