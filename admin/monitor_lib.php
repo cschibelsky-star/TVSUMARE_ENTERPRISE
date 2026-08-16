@@ -12,6 +12,22 @@ function tvs_monitor_discard($item,$reason){
   $arr[]=['data'=>date('d/m H:i'),'created_at'=>date('c'),'status'=>'DESCARTADA','city'=>$item['city']??'Região','cidade'=>$item['city']??'Região','source'=>$item['source']??'Fonte','fonte'=>$item['source']??'Fonte','title'=>$item['title']??'','titulo'=>$item['title']??'','reason'=>$reason,'motivo'=>$reason,'source_url'=>$item['url']??'','url'=>$item['url']??'','description'=>$item['description']??'','summary'=>$item['description']??'','body'=>$item['body']??($item['text']??''),'text'=>$item['text']??($item['body']??($item['description']??'')),'image'=>$item['image']??'','image_source_type'=>$item['image_source_type']??'','image_review_required'=>$item['image_review_required']??0,'published_at'=>$item['published_at']??''];
   $arr=array_slice($arr,-300); tvs_save_json_file($file,$arr);
 }
+function tvs_monitor_invalid_extraction($item,$article,&$reason=''){
+  $itemTitle=trim((string)($item['title']??''));
+  $articleTitle=trim((string)($article['title']??''));
+  $description=trim((string)($article['description']??($item['description']??'')));
+  $body=trim((string)($article['body']??''));
+  $combined=$articleTitle.' '.$description.' '.$body;
+  if(preg_match('/^google\s+(?:news|not[ií]cias)$/iu',$articleTitle) || preg_match('/^google\s+(?:news|not[ií]cias)$/iu',$itemTitle)){
+    $reason='Google News retornou página genérica sem matéria jornalística.';
+    return true;
+  }
+  if(stripos($combined,'Comprehensive up-to-date news coverage, aggregated from sources all over the world by Google News')!==false){
+    $reason='Boilerplate do Google News detectado na extração; matéria original não foi resolvida.';
+    return true;
+  }
+  return false;
+}
 function tvs_monitor_seen_keys($drafts,$news){ $seen=[]; foreach(array_merge((array)$drafts,(array)$news) as $n){ if(!empty($n['source_url']))$seen['url:'.$n['source_url']]=1; if(!empty($n['url']))$seen['url:'.$n['url']]=1; $tk=tvs_monitor_title_key($n['title']??''); $city=tvs_lower($n['city']??''); if($tk)$seen['title:'.md5($city.'|'.$tk)]=1; } return $seen; }
 function tvs_monitor_item_is_duplicate($item,$seen){ $url=$item['url']??''; if($url&&isset($seen['url:'.$url]))return true; $tk=tvs_monitor_title_key($item['title']??''); $city=tvs_lower($item['city']??''); return $tk&&isset($seen['title:'.md5($city.'|'.$tk)]); }
 }
