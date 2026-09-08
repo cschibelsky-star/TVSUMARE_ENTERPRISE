@@ -1,8 +1,8 @@
 {
-  "key": "tv-sumare-enterprise",
-  "name": "TV Sumare Enterprise",
-  "version": "3.0.0-hml.2",
-  "status": "homologation-prepared",
+  "key": "tv-digital-enterprise",
+  "name": "TV Digital Enterprise",
+  "version": "3.0.0-hml.3",
+  "status": "hub-decoupling",
   "runtime": {
     "type": "php-8.3-apache",
     "database": "json-files",
@@ -15,25 +15,34 @@
   "core": {
     "authentication": "local-disabled-by-default",
     "licensing": "core-future",
-    "commercial_leads": "core-future"
+    "commercial_leads": "core-future",
+    "ai_hub": "preferred"
   },
   "dependencies": [
     "Docker Compose",
-    "Persistent data under /srv/tvsumare/shared",
-    "Explicit environment variables for optional AI integrations"
+    "Persistent tenant data",
+    "Vitrine IA Pro Core / Centro de IA for shared AI capabilities"
   ],
   "capabilities_planned": [
     "Motor Editorial 3.0",
+    "Editorial IA via Centro de IA",
     "Image Engine",
-    "TV Sumare Play 2.0",
     "Dashboard Enterprise",
-    "Content Hub"
+    "Content Hub",
+    "Optional tenant video provider"
   ],
+  "architecture": {
+    "editorial_ai": "core-hub",
+    "direct_gemini": "temporary-fallback-only",
+    "video_ai": "optional-per-tenant-disabled-by-default",
+    "tv_sumare_heygen": "excluded"
+  },
   "notes": [
-    "Legacy PHP baseline imported from immutable HostGator snapshot.",
+    "Legacy PHP baseline imported from immutable TV Sumare/HostGator snapshot.",
+    "The scalable Enterprise product must not inherit TV Sumare HeyGen credentials, avatar, voice or callbacks.",
+    "Brand name, city, URLs and hashtags must be tenant-configurable.",
     "Secrets, data, uploads, logs and ZIP archives are excluded from Git.",
-    "Homologation uses an internal network plus a separate bridge network for controlled egress.",
     "Current persistence is JSON-file based; MariaDB and Redis are not runtime requirements for this baseline.",
-    "DNS and production remain unchanged."
+    "DNS and production remain unchanged during decoupling."
   ]
 }
