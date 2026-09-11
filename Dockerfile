@@ -27,6 +27,7 @@ RUN php /var/www/html/docker/apply-radar-editorial-policy.php \
     && php /var/www/html/docker/apply-heygen-v3-schema-fix.php \
     && php /var/www/html/docker/apply-video-branding.php \
     && php /var/www/html/docker/apply-youtube-publishing-integration.php \
+    && php /var/www/html/docker/apply-tvsumare-recovery-20260911.php \
     && php /var/www/html/docker/test-reporter-dedup.php \
     && php /var/www/html/docker/test-youtube-integration.php \
     && php /var/www/html/docker/run-homologation-smoke.php \
@@ -46,6 +47,7 @@ RUN php /var/www/html/docker/apply-radar-editorial-policy.php \
     && rm -f /var/www/html/docker/apply-heygen-v3-schema-fix.php \
     && rm -f /var/www/html/docker/apply-video-branding.php \
     && rm -f /var/www/html/docker/apply-youtube-publishing-integration.php \
+    && rm -f /var/www/html/docker/apply-tvsumare-recovery-20260911.php \
     && rm -f /var/www/html/docker/test-reporter-dedup.php \
     && rm -f /var/www/html/docker/test-youtube-integration.php \
     && rm -f /var/www/html/docker/run-homologation-smoke.php \
