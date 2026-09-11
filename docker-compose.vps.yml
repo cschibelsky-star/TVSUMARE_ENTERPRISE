@@ -7,15 +7,13 @@ services:
     restart: unless-stopped
     init: true
     read_only: true
+    env_file:
+      - .env.runtime
     environment:
       TVSUMARE_ENV: homologation
       TVSUMARE_SITE_NAME: TV Sumare
-      TVSUMARE_SITE_URL: ${TVSUMARE_SITE_URL:-http://tvsumare.local}
-      TVSUMARE_ADMIN_USER: ${TVSUMARE_ADMIN_USER:-}
-      TVSUMARE_ADMIN_PASS_HASH: ${TVSUMARE_ADMIN_PASS_HASH:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5-mini}
-      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.0-flash}
       GEMINI_FALLBACK_MODELS: ${GEMINI_FALLBACK_MODELS:-}
       HEYGEN_API_KEY: ${HEYGEN_API_KEY:-}
@@ -24,6 +22,7 @@ services:
       YOUTUBE_PRIVACY_STATUS: ${YOUTUBE_PRIVACY_STATUS:-public}
       SITE_FACTORY_TOKEN: ${SITE_FACTORY_TOKEN:-}
       TVSUMARE_OUTBOUND_HOSTS: ${TVSUMARE_OUTBOUND_HOSTS:-}
+      TVSUMARE_WHATSAPP_WEBHOOK_URL: ${TVSUMARE_WHATSAPP_WEBHOOK_URL:-}
     volumes:
       - /srv/tvsumare/shared/data:/var/www/html/data:rw
       - /srv/tvsumare/shared/uploads:/var/www/html/uploads:rw
@@ -34,10 +33,19 @@ services:
       - /var/run/apache2:rw,nosuid,nodev,size=8m,mode=0755
       - /var/lock/apache2:rw,nosuid,nodev,size=8m,mode=0755
       - /var/lib/php/sessions:rw,noexec,nosuid,nodev,size=16m,mode=1733,uid=33,gid=33
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.tvsumare-hml.rule=Host(`tv-hml.vitrineiapro.com.br`)"
+      - "traefik.http.routers.tvsumare-hml.entrypoints=websecure"
+      - "traefik.http.routers.tvsumare-hml.tls=true"
+      - "traefik.http.routers.tvsumare-hml.tls.certresolver=le"
+      - "traefik.http.services.tvsumare-hml.loadbalancer.server.port=80"
+      - "traefik.docker.network=n8n-traefik_app_network"
     networks:
       - tvsumare_internal
       - tvsumare_egress
       - vitrine_net
+      - n8n-traefik_app_network
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1/health.php"]
       interval: 30s
@@ -61,6 +69,43 @@ services:
         hard: 4096
     stop_grace_period: 20s
 
+  radar_scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tvsumare_radar_scheduler
+    restart: unless-stopped
+    init: true
+    read_only: true
+    env_file:
+      - .env.runtime
+    command: ["/bin/sh", "-c", "while true; do php /var/www/html/admin/cron_radar.php; sleep 3600; done"]
+    environment:
+      TVSUMARE_ENV: homologation
+      TVSUMARE_SITE_NAME: TV Sumare
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5-mini}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.0-flash}
+      GEMINI_FALLBACK_MODELS: ${GEMINI_FALLBACK_MODELS:-}
+      TVSUMARE_OUTBOUND_HOSTS: ${TVSUMARE_OUTBOUND_HOSTS:-}
+      TVSUMARE_WHATSAPP_WEBHOOK_URL: ${TVSUMARE_WHATSAPP_WEBHOOK_URL:-}
+    volumes:
+      - /srv/tvsumare/shared/data:/var/www/html/data:rw
+      - /srv/tvsumare/shared/uploads:/var/www/html/uploads:rw
+      - /srv/tvsumare/shared/logs:/var/www/html/logs:rw
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777
+    networks:
+      - tvsumare_internal
+      - tvsumare_egress
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 64
+    mem_limit: 256m
+    cpus: 0.5
+
 networks:
   tvsumare_internal:
     name: tvsumare_internal
@@ -72,3 +117,6 @@ networks:
   vitrine_net:
     external: true
     name: vitrine_net
+  n8n-traefik_app_network:
+    external: true
+    name: n8n-traefik_app_network
