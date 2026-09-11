@@ -3,8 +3,42 @@ include 'config.php';
 require_once __DIR__.'/includes/tvs_public_helpers.php';
 $active='home';
 $siteSettings=tvs_json('data/site_settings.json');
-$news=tvs_json('data/noticias.json');
-$news=function_exists('tvs_prepare_public_news_v2') ? tvs_prepare_public_news_v2((is_array($news)?$news:[]), 21) : tvs_prepare_public_news(is_array($news)?$news:[], 30);
+$newsRaw=tvs_json('data/noticias.json');
+$newsRaw=is_array($newsRaw)?$newsRaw:[];
+$news=function_exists('tvs_prepare_public_news_v2') ? tvs_prepare_public_news_v2($newsRaw, 21) : tvs_prepare_public_news($newsRaw, 30);
+
+/* Fallback editorial da home: mantém a capa viva sem transformar notícia vencida em destaque. */
+if(count($news)<6){
+  $fallback=function_exists('tvs_prepare_public_news_v2') ? tvs_prepare_public_news_v2($newsRaw, 60) : tvs_prepare_public_news($newsRaw, 60);
+  $seen=[];
+  foreach($news as $n){ $seen[(string)($n['id']??md5($n['title']??''))]=1; }
+  foreach($fallback as $n){
+    $age=tvs_news_age_days($n);
+    $txt=tvs_lc(($n['category']??'').' '.($n['title']??'').' '.($n['subtitle']??'').' '.($n['summary']??''));
+    $timeSensitive=preg_match('~emprego|vagas|processo seletivo|recrutamento|frente fria|chuva|temporal|alerta|evento|show|festival|agenda|inscri[cç][aã]o|mutir[aã]o~iu',$txt);
+    if($age>21 && $timeSensitive) continue;
+    $id=(string)($n['id']??md5($n['title']??''));
+    if(isset($seen[$id])) continue;
+    $seen[$id]=1;
+    $news[]=$n;
+    if(count($news)>=18) break;
+  }
+  usort($news,'tvs_sort_recent');
+}
+
+/* Último fallback: se a janela recente estiver vazia, mantém a área de destaque com conteúdo regional ainda editorialmente válido do acervo. */
+if(!$news){
+  $archive=function_exists('tvs_prepare_public_news_v2') ? tvs_prepare_public_news_v2($newsRaw, 3650) : tvs_prepare_public_news($newsRaw, 3650);
+  foreach($archive as $n){
+    $age=tvs_news_age_days($n);
+    $txt=tvs_lc(($n['category']??'').' '.($n['title']??'').' '.($n['subtitle']??'').' '.($n['summary']??''));
+    $expiredSensitive=$age>21 && preg_match('~emprego|vagas|processo seletivo|recrutamento|frente fria|chuva|temporal|alerta|evento|show|festival|agenda|inscri[cç][aã]o|mutir[aã]o~iu',$txt);
+    if($expiredSensitive) continue;
+    $news[]=$n;
+    if(count($news)>=12) break;
+  }
+  usort($news,'tvs_sort_recent');
+}
 $used=[];
 $editorialSections=function_exists('tvs_curated_sections') ? tvs_curated_sections($news) : [];
 $heroList=tvs_pick_news($news,$used,function($n){ return !tvs_is_sensitive($n); },1);
@@ -49,6 +83,11 @@ function tvs_video_thumb_html($v){
       <h1><?=tvs_h(tvs_title($hero['title']??'Notícia principal',86))?></h1><p><?=tvs_h($hero['subtitle']??tvs_excerpt_clean($hero['summary']??$hero['body']??'',190))?></p><div class="meta">⏱ <?=tvs_read_time($hero['body']??'')?> min • TV Sumaré</div>
     </a>
     <?php if($secondary): ?><div class="hero-side-news"><?php foreach($secondary as $s): ?><a class="side-news-card" href="<?=tvs_h(tvs_news_url($s))?>"><?php $si=tvs_card_img_html($s); if($si) echo $si; ?><div><span><?=tvs_h((tvs_infer_city($s)?:'Região').' • '.($s['category']??'Notícia'))?></span><h2><?=tvs_h(tvs_title($s['title']??'Sem título',74))?></h2></div></a><?php endforeach; ?></div><?php endif; ?>
+  </section>
+  <?php else: ?>
+  <section class="editorial-empty-hero">
+    <img src="assets/logo-tv-sumare.jpeg" alt="TV Sumaré">
+    <div><span>Destaques</span><h2>Redação atualizando a capa</h2><p>As notícias continuam disponíveis no arquivo. A área de destaque será preenchida automaticamente assim que houver uma pauta regional válida para a capa.</p><a class="btn" href="noticias.php">Ver todas as notícias</a></div>
   </section>
   <?php endif; ?>
 
