@@ -7,6 +7,21 @@ require_once dirname(__DIR__).'/config.php';
 require_once __DIR__.'/gemini.php';
 require_once __DIR__.'/monitor_lib.php';
 
+$cronStarted=microtime(true);
+$homeLogDir=dirname(dirname(__DIR__)).'/logs';
+$appLogDir=dirname(__DIR__).'/logs';
+$cronLogDir=(is_dir($homeLogDir) && is_writable($homeLogDir)) ? $homeLogDir : $appLogDir;
+if(!is_dir($cronLogDir)) @mkdir($cronLogDir,0775,true);
+$cronLogFile=$cronLogDir.'/tvsumare-cron-radar.log';
+@file_put_contents($cronLogFile,date('c')." START mode=cron_hostgator pid=".getmypid()."\n",FILE_APPEND|LOCK_EX);
+register_shutdown_function(function() use ($cronLogFile,$cronStarted){
+  $err=error_get_last();
+  if($err && in_array($err['type']??0,[E_ERROR,E_PARSE,E_CORE_ERROR,E_COMPILE_ERROR],true)){
+    $duration=(int)round((microtime(true)-$cronStarted)*1000);
+    @file_put_contents($cronLogFile,date('c')." FATAL duration_ms={$duration} message=".str_replace(["\r","\n"],' ',(string)($err['message']??''))."\n",FILE_APPEND|LOCK_EX);
+  }
+});
+
 $_SERVER['REQUEST_METHOD']='CRON';
 require_once __DIR__.'/radar-regional.php';
 
@@ -14,11 +29,13 @@ $cfg = function_exists('tvs_radar_config') ? tvs_radar_config() : ['per_city'=>6
 $today=date('Y-m-d');
 
 if(empty($cfg['auto_daily'])){
+  @file_put_contents($cronLogFile,date('c')." SKIP reason=auto_daily_disabled\n",FILE_APPEND|LOCK_EX);
   echo "Radar automatico desativado nas configuracoes.\n";
   exit(0);
 }
 
 if((string)($cfg['last_auto_date']??'')===$today){
+  @file_put_contents($cronLogFile,date('c')." SKIP reason=already_ran_today date={$today}\n",FILE_APPEND|LOCK_EX);
   echo "Radar automatico ja executado hoje ({$today}).\n";
   exit(0);
 }
@@ -123,5 +140,8 @@ if($whatsappWebhook!==''){
 
 $notificationFile=dirname(__DIR__).'/data/radar_notification.json';
 if(function_exists('tvs_save_json_file')) tvs_save_json_file($notificationFile,$summary);
+
+$duration=(int)round((microtime(true)-$cronStarted)*1000);
+@file_put_contents($cronLogFile,date('c')." END generated={$n} new_today={$summary['new_today']} publishable={$summary['publishable']} review={$summary['review']} image_review={$summary['image_review']} whatsapp={$summary['whatsapp_status']} duration_ms={$duration}\n",FILE_APPEND|LOCK_EX);
 
 echo "Radar diario executado. Materias geradas: {$n}; WhatsApp: {$summary['whatsapp_status']}\n";

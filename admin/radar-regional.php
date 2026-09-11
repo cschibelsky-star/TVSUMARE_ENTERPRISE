@@ -1,14 +1,22 @@
 <?php
 require_once __DIR__.'/../includes/outbound_guard.php';
-require_once __DIR__.'/auth.php';
-require_login();
+$TVS_RADAR_IS_CLI_CRON = defined('TVS_RADAR_CRON') && TVS_RADAR_CRON && PHP_SAPI === 'cli';
+if(!$TVS_RADAR_IS_CLI_CRON){
+  require_once __DIR__.'/auth.php';
+  require_login();
+}
 require_once dirname(__DIR__).'/config.php';
 require_once __DIR__.'/gemini.php';
 require_once __DIR__.'/monitor_lib.php';
 $activeAdmin='radar';
-$notice=$_SESSION['tvs_flash_notice'] ?? '';
-$error=$_SESSION['tvs_flash_error'] ?? '';
-unset($_SESSION['tvs_flash_notice'], $_SESSION['tvs_flash_error']);
+if($TVS_RADAR_IS_CLI_CRON){
+  $notice='';
+  $error='';
+} else {
+  $notice=$_SESSION['tvs_flash_notice'] ?? '';
+  $error=$_SESSION['tvs_flash_error'] ?? '';
+  unset($_SESSION['tvs_flash_notice'], $_SESSION['tvs_flash_error']);
+}
 $TVS_RADAR_MODE='normal';
 
 $queueFile=dirname(__DIR__).'/data/materias_aprovacao.json';
@@ -280,7 +288,7 @@ function tvs_radar_editorial_score($title,$city,$category,$source,$text,$url='',
   // Cultura, eventos e esportes passam a ter peso de interesse público.
   if(preg_match('~\b(cultura|cultural|evento|eventos|festival|show|shows|feira|agenda|programa[cç][aã]o|teatro|cinema|exposi[cç][aã]o|m[uú]sica|turismo|lazer)\b~iu',$fact)) $score+=24;
   if(preg_match('~\b(esporte|esportes|campeonato|torneio|jogos?|atleta|competi[cç][aã]o|corrida|futebol|v[oô]lei|basquete)\b~iu',$fact)) $score+=21;
-  if(preg_match('~\b(pol[ií]cia|pris[aã]o|preso|opera[cç][aã]o|acidente|homic[ií]dio|assassinato|tr[aá]fico)\b~iu',$fact)) $score+=4;
+  if(preg_match('~\b(pol[ií]cia|pris[aã]o|preso|opera[cç][aã]o|acidente|homic[ií]dio|assassinato|tr[aá]fico)\b~iu',$fact)) $score+=24;
 
   // 4) Magnitude real: 100 vagas é bom, mas não pode virar 100 automático; 2 mil vagas sim é prioridade.
   $vagas=tvs_radar_extract_vagas_number($fact);
@@ -298,20 +306,26 @@ function tvs_radar_editorial_score($title,$city,$category,$source,$text,$url='',
     else $score-=45;
   }
 
-  // 7) Conteúdo sensível nunca vira destaque automático.
-  if(tvs_radar_sensitive_topic($title,$text)) $score=min($score,45);
+  // 7) Sensibilidade define revisão humana, não reduz a relevância editorial.
   return max(0,min(100,$score));
 }
 function tvs_radar_status_from_score($score,$sensitive=false){
-  if($sensitive) return ['review_level'=>'revisao_obrigatoria','editorial_status'=>'Revisão obrigatória'];
-  if($score>=85) return ['review_level'=>'normal','editorial_status'=>'Prioridade máxima'];
-  if($score>=70) return ['review_level'=>'normal','editorial_status'=>'Destaque'];
-  if($score>=50) return ['review_level'=>'normal','editorial_status'=>'Publicável'];
-  if($score>=30) return ['review_level'=>'precisa_revisao','editorial_status'=>'Revisão'];
-  return ['review_level'=>'descartar','editorial_status'=>'Descartar'];
+  if($score>=85) $status='Prioridade máxima';
+  elseif($score>=70) $status='Destaque';
+  elseif($score>=50) $status='Publicável';
+  elseif($score>=30) $status='Revisão';
+  else $status='Descartar';
+
+  if($sensitive && $status!=='Descartar'){
+    return ['review_level'=>'revisao_obrigatoria','editorial_status'=>$status,'sensitive'=>true];
+  }
+  if($status==='Descartar') return ['review_level'=>'descartar','editorial_status'=>'Descartar','sensitive'=>$sensitive];
+  if($status==='Revisão') return ['review_level'=>'precisa_revisao','editorial_status'=>'Revisão','sensitive'=>false];
+  return ['review_level'=>'normal','editorial_status'=>$status,'sensitive'=>false];
 }
 function tvs_radar_can_direct_approve($m){
   if(!empty($m['image_review_required'])) return false;
+  if(!empty($m['sensitive_review_required'])) return false;
   return ($m['review_level']??'')!=='revisao_obrigatoria'
     && ($m['editorial_status']??'')!=='Descartar';
 }
@@ -330,6 +344,9 @@ function tvs_radar_enforce_queue_rules($save=true){
     if($st['review_level']==='descartar'){ $removed++; tvs_radar_log_event($q['title']??'', $q['source']??'', $city, 'DESCARTADA', 'Score editorial insuficiente: '.$score, $q['source_url']??''); continue; }
     if(($q['editorial_score']??null)!==$score || ($q['editorial_status']??'')!==$st['editorial_status']) $changed++;
     $q['editorial_score']=$score; $q['review_level']=$st['review_level']; $q['editorial_status']=$st['editorial_status'];
+    $q['sensitive_review_required']=!empty($st['sensitive']) ? 1 : 0;
+    if(!empty($st['sensitive'])) $q['sensitive_review_reason']='Pauta sensível ou de alto impacto: revisão humana obrigatória antes da publicação.';
+    elseif(isset($q['sensitive_review_reason'])) $q['sensitive_review_reason']='';
     $new[]=$q;
   }
   if($save) tvs_queue_save($new);
@@ -1835,6 +1852,20 @@ function tvs_generate_ready_article($city,$cand){
   $result['image_source_type']=$cand['image_source_type']??'';
   $result['image_review_required']=!empty($cand['image_review_required']) ? 1 : 0;
   $result['image_review_reason']=$cand['image_review_reason']??'';
+  $originalImage=trim((string)($cand['image']??''));
+  $resolvedImage=trim((string)($mat['image']??''));
+  $hasVerifiedSourceImage=false;
+  foreach([$originalImage,$resolvedImage] as $imgCandidate){
+    if($imgCandidate!=='' && function_exists('tvs_is_valid_image_url') && tvs_is_valid_image_url($imgCandidate) && !preg_match('~logo|placeholder|sprite|icon|icone|avatar|favicon~i',$imgCandidate)){
+      $hasVerifiedSourceImage=true;
+      break;
+    }
+  }
+  if(!$hasVerifiedSourceImage){
+    $result['image_review_required']=1;
+    $result['image_review_reason']='Imagem jornalística da matéria não foi confirmada; revisar antes de publicar.';
+    if($result['image_source_type']==='') $result['image_source_type']='category:fallback';
+  }
 
   if(empty($result['image_credit'])){
     $result['image_credit']=tvs_image_credit_from_source(
@@ -1855,6 +1886,8 @@ function tvs_generate_ready_article($city,$cand){
   $result['editorial_score']=$score;
   $result['review_level']=$st['review_level'];
   $result['editorial_status']=$st['editorial_status'];
+  $result['sensitive_review_required']=!empty($st['sensitive']) ? 1 : 0;
+  if(!empty($st['sensitive'])) $result['sensitive_review_reason']='Pauta sensível ou de alto impacto: revisão humana obrigatória antes da publicação.';
 
   if(!empty($result['image_review_required'])){
     $result['review_level']='precisa_revisao';
@@ -2106,7 +2139,21 @@ if(defined('TVS_RADAR_CRON') && TVS_RADAR_CRON){ return; }
 $radarCfg=tvs_radar_config();
 $radarStatus=tvs_radar_status();
 $queue=tvs_queue_read();
-$byCity=[]; foreach($cities as $c) $byCity[$c]=[]; foreach($queue as $q){ if(($q['status']??'aguardando')!=='aguardando') continue; $byCity[$q['city']??'Região'][]=$q; }
+$byCity=[]; foreach($cities as $c) $byCity[$c]=[];
+$sensitiveQueue=[]; $imageReviewQueue=[]; $normalQueue=[];
+foreach($queue as $q){
+  if(($q['status']??'aguardando')!=='aguardando') continue;
+  if(!empty($q['sensitive_review_required']) || ($q['review_level']??'')==='revisao_obrigatoria'){
+    $sensitiveQueue[]=$q;
+    continue;
+  }
+  if(!empty($q['image_review_required'])){
+    $imageReviewQueue[]=$q;
+    continue;
+  }
+  $normalQueue[]=$q;
+  $byCity[$q['city']??'Região'][]=$q;
+}
 $editId=$_GET['edit']??''; $editItem=null; foreach($queue as $q){ if(($q['id']??'')===$editId){$editItem=$q; break;} }
 ?>
 <!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Matérias para Aprovação | TV Sumaré</title><link rel="stylesheet" href="admin.css?v=132"><style>.queue-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}.matter{background:#fff;border:1px solid #e5e7eb;border-radius:18px;padding:14px;box-shadow:0 8px 22px rgba(15,23,42,.06)}.matter img{width:100%;height:150px;object-fit:cover;border-radius:14px;background:#eef2ff}.matter h3{margin:10px 0 6px;font-size:18px}.matter p{color:#475569;font-size:14px}.badge{display:inline-flex;border-radius:999px;background:#eef2ff;color:#1d4ed8;padding:5px 9px;font-size:12px;font-weight:800;margin:6px 5px 6px 0}.city-block{margin:24px 0}.matter-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.edit-form{background:#fff;border-radius:18px;padding:18px;border:1px solid #e5e7eb}.edit-form input,.edit-form textarea,.edit-form select{width:100%;padding:11px;border:1px solid #cbd5e1;border-radius:12px;margin:5px 0 12px}.edit-form textarea{min-height:320px}.muted{color:#64748b}.settings-box{background:#fff;border:1px solid #e5e7eb;border-radius:18px;padding:14px;margin:14px 0}.settings-inline{display:flex;gap:12px;align-items:end;flex-wrap:wrap}.settings-inline label{display:flex;flex-direction:column;font-size:13px;color:#334155}.settings-inline input[type=number]{width:110px;padding:10px;border:1px solid #cbd5e1;border-radius:12px}.settings-inline .check{flex-direction:row;gap:8px;align-items:center}.top-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.bulk-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.bulk-row .check,.bulk-check{display:flex;align-items:center;gap:7px;font-weight:800;color:#334155}.bulk-check{margin-bottom:8px}.bulk-check input{width:18px;height:18px}@media(max-width:1000px){.queue-grid{grid-template-columns:1fr}.matter img{height:190px}}</style></head><body><div class="admin"><?php include __DIR__.'/_menu.php'; ?><main class="main"><div class="top"><div><span class="eyebrow">Centro de Redação • Radar 2.0</span><h1>Matérias para Aprovação</h1><p class="muted">O Radar abastece a redação com mais opções. Você aprova o que achar relevante para a TV Sumaré.</p></div><div class="top-actions"><form method="post"><?=tvs_csrf_field()?><input type="hidden" name="action" value="update_radar"><button class="btn orange" type="submit" onclick="return confirm('Atualizar o Radar agora? Isso pode levar alguns segundos.');">Atualizar Agora</button></form><form method="post"><?=tvs_csrf_field()?><input type="hidden" name="action" value="update_radar_volume"><button class="btn secondary" type="submit" onclick="return confirm('Ativar Modo Volume Máximo? Mais pautas entrarão como revisão humana, não como publicação automática.');">Modo Volume Máximo</button></form></div></div>
@@ -2115,7 +2162,9 @@ $editId=$_GET['edit']??''; $editItem=null; foreach($queue as $q){ if(($q['id']??
 <?php if($editItem): $tags=is_array($editItem['tags']??null)?implode(', ',$editItem['tags']):($editItem['tags']??''); ?>
 <section class="edit-form"><h2>Editar matéria antes de aprovar</h2><form method="post"><?=tvs_csrf_field()?><input type="hidden" name="action" value="save_edit"><input type="hidden" name="id" value="<?=h($editItem['id'])?>"><label>Título</label><input name="title" value="<?=h($editItem['title']??'')?>"><label>Subtítulo</label><input name="subtitle" value="<?=h($editItem['subtitle']??'')?>"><label>Resumo</label><input name="summary" value="<?=h($editItem['summary']??'')?>"><label>Cidade</label><input name="city" value="<?=h($editItem['city']??'')?>"><label>Categoria</label><input name="category" value="<?=h($editItem['category']??'')?>"><label>Imagem</label><input name="image" value="<?=h($editItem['image']??'')?>"><label>Crédito da imagem</label><input name="image_credit" value="<?=h($editItem['image_credit']??'')?>"><label>Texto completo</label><textarea name="body"><?=h($editItem['body']??'')?></textarea><label>Fonte</label><input name="source" value="<?=h($editItem['source']??'')?>"><label>URL da fonte</label><input name="source_url" value="<?=h($editItem['source_url']??'')?>"><label>Tags</label><input name="tags" value="<?=h($tags)?>"><label>SEO title</label><input name="seo_title" value="<?=h($editItem['seo_title']??'')?>"><label>Meta description</label><input name="meta_description" value="<?=h($editItem['meta_description']??'')?>"><label>Slug</label><input name="slug" value="<?=h($editItem['slug']??'')?>"><label>Legenda Instagram</label><textarea name="instagram_caption" style="min-height:120px"><?=h($editItem['instagram_caption']??'')?></textarea><label>Texto WhatsApp</label><textarea name="whatsapp_text" style="min-height:100px"><?=h($editItem['whatsapp_text']??'')?></textarea><div class="matter-actions"><button class="btn" type="submit">Salvar edição</button></form><form method="post"><?=tvs_csrf_field()?><input type="hidden" name="action" value="approve"><input type="hidden" name="id" value="<?=h($editItem['id'])?>"><button class="btn orange" type="submit">Aprovar e publicar</button></form><a class="btn secondary" href="radar-regional.php">Voltar</a></div></section>
 <?php else: ?>
-<?php $discarded=tvs_read_json_file(dirname(__DIR__).'/data/pautas_descartadas.json'); ?><div class="cards"><div class="stat"><span>Matérias aguardando</span><b><?=count($queue)?></b><small>prontas para revisão</small></div><div class="stat"><span>Cidades monitoradas</span><b><?=count($cities)?></b><small>Sumaré e região</small></div><div class="stat"><span>Pautas descartadas</span><b><?=count($discarded)?></b><small>institucionais, duplicadas ou fora da região</small></div></div>
+<?php $discarded=tvs_read_json_file(dirname(__DIR__).'/data/pautas_descartadas.json'); ?><div class="cards"><div class="stat"><span>Fila comum</span><b><?=count($normalQueue)?></b><small>matérias aguardando decisão</small></div><div class="stat"><span>Revisão obrigatória</span><b><?=count($sensitiveQueue)?></b><small>pautas sensíveis ou de alto impacto</small></div><div class="stat"><span>Revisão de imagem</span><b><?=count($imageReviewQueue)?></b><small>imagem precisa ser confirmada</small></div><div class="stat"><span>Pautas descartadas</span><b><?=count($discarded)?></b><small>institucionais, duplicadas ou fora da região</small></div></div>
+<?php if($sensitiveQueue): ?><section class="city-block"><h2>Revisão obrigatória <small class="muted">(<?=count($sensitiveQueue)?>)</small></h2><div class="queue-grid"><?php foreach($sensitiveQueue as $m): ?><article class="matter"><span class="badge" style="background:#fef2f2;color:#b91c1c">Revisão obrigatória</span><span class="badge"><?=h($m['editorial_status']??'Revisão')?></span><?php if(isset($m['editorial_score'])): ?><span class="badge">Score <?=h($m['editorial_score'])?></span><?php endif; ?><h3><?=h($m['title']??'Sem título')?></h3><p><?=h($m['subtitle']??($m['summary']??''))?></p><a class="btn orange" href="?edit=<?=h($m['id'])?>">Revisar</a></article><?php endforeach; ?></div></section><?php endif; ?>
+<?php if($imageReviewQueue): ?><section class="city-block"><h2>Revisão de imagem <small class="muted">(<?=count($imageReviewQueue)?>)</small></h2><div class="queue-grid"><?php foreach($imageReviewQueue as $m): ?><article class="matter"><span class="badge" style="background:#fff7ed;color:#c2410c">Imagem pendente</span><h3><?=h($m['title']??'Sem título')?></h3><p><?=h($m['image_review_reason']??'Revisar imagem antes da publicação.')?></p><a class="btn orange" href="?edit=<?=h($m['id'])?>">Corrigir imagem</a></article><?php endforeach; ?></div></section><?php endif; ?>
 <form id="bulk-form" method="post" class="settings-box bulk-row" onsubmit="return confirm('Aplicar a ação nas matérias selecionadas?');"><?=tvs_csrf_field()?><label class="check"><input type="checkbox" id="select-all-radar"> Selecionar todas visíveis</label><button class="btn orange" type="submit" name="action" value="bulk_approve">Aprovar selecionadas</button><button class="btn secondary" type="submit" name="action" value="bulk_review">Enviar para revisão</button><button class="btn secondary" type="submit" name="action" value="bulk_discard">Descartar selecionadas</button><span class="muted">Use os checkboxes dos cards para operar várias matérias de uma vez.</span></form>
 <?php foreach($cities as $city): $items=array_slice($byCity[$city]??[],0,20); ?>
 <section class="city-block"><h2><?=h($city)?> <small class="muted">(<?=count($items)?>)</small></h2><?php if(!$items): ?><p class="muted">Nenhuma matéria aguardando aprovação para esta cidade.</p><?php else: ?><div class="queue-grid"><?php foreach($items as $m): ?><article class="matter"><label class="bulk-check"><input type="checkbox" class="radar-select" form="bulk-form" name="ids[]" value="<?=h($m['id'])?>"> Selecionar</label><img src="<?=h(tvs_admin_img($m['image']??'', $m['category']??'Cidade'))?>" onerror="this.src='<?=h(tvs_admin_img('', $m['category']??'Cidade'))?>'" alt=""><?php if(!empty($m['image_credit'])): ?><small class="muted" style="display:block;margin:4px 0 8px"><?=h($m['image_credit'])?></small><?php endif; ?><span class="badge"><?=h($m['category']??'Cidade')?></span><?php if(($m['review_level']??'')==='precisa_revisao'): ?><span class="badge" style="background:#fff7ed;color:#c2410c">Precisa revisão</span><?php endif; ?><?php if(!empty($m['image_review_required'])): ?><span class="badge" title="<?=h($m['image_review_reason']??'Revisar imagem')?>" style="background:#fef2f2;color:#b91c1c">Revisar imagem</span><?php endif; ?><span class="badge"><?=h($m['editorial_status']??'Publicável')?></span><?php if(isset($m['editorial_score'])): ?><span class="badge" style="background:#ecfeff;color:#0e7490">Score <?=h($m['editorial_score'])?></span><?php endif; ?><?php if(!empty($m['radar_requested_city']) && $m['radar_requested_city']!==($m['city']??'')): ?><span class="badge" style="background:#eff6ff;color:#1d4ed8">Detectada: <?=h($m['city']??'')?> </span><?php endif; ?><span class="badge"><?=h($m['source']??'Fonte')?></span><h3><?=h($m['title']??'Sem título')?></h3><p><?=h($m['subtitle']??($m['summary']??''))?></p><div class="matter-actions"><?php if(tvs_radar_can_direct_approve($m)): ?><form method="post"><?=tvs_csrf_field()?><input type="hidden" name="action" value="approve"><input type="hidden" name="id" value="<?=h($m['id'])?>"><button class="btn orange" type="submit">Aprovar</button></form><?php else: ?><a class="btn secondary" href="?edit=<?=h($m['id'])?>">Revisar antes</a><?php endif; ?><a class="btn" href="?edit=<?=h($m['id'])?>">Editar</a><form method="post" onsubmit="return confirm('Descartar esta matéria?');"><?=tvs_csrf_field()?><input type="hidden" name="action" value="discard"><input type="hidden" name="id" value="<?=h($m['id'])?>"><button class="btn secondary" type="submit">Descartar</button></form></div></article><?php endforeach; ?></div><?php endif; ?></section>
