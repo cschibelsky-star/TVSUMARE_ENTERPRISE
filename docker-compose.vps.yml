@@ -7,15 +7,13 @@ services:
     restart: unless-stopped
     init: true
     read_only: true
+    env_file:
+      - .env.runtime
     environment:
       TVSUMARE_ENV: homologation
       TVSUMARE_SITE_NAME: TV Sumare
-      TVSUMARE_SITE_URL: ${TVSUMARE_SITE_URL:-http://tvsumare.local}
-      TVSUMARE_ADMIN_USER: ${TVSUMARE_ADMIN_USER:-}
-      TVSUMARE_ADMIN_PASS_HASH: ${TVSUMARE_ADMIN_PASS_HASH:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5-mini}
-      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.0-flash}
       GEMINI_FALLBACK_MODELS: ${GEMINI_FALLBACK_MODELS:-}
       HEYGEN_API_KEY: ${HEYGEN_API_KEY:-}
@@ -34,10 +32,19 @@ services:
       - /var/run/apache2:rw,nosuid,nodev,size=8m,mode=0755
       - /var/lock/apache2:rw,nosuid,nodev,size=8m,mode=0755
       - /var/lib/php/sessions:rw,noexec,nosuid,nodev,size=16m,mode=1733,uid=33,gid=33
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.tvsumare-hml.rule=Host(`tv-hml.vitrineiapro.com.br`)"
+      - "traefik.http.routers.tvsumare-hml.entrypoints=websecure"
+      - "traefik.http.routers.tvsumare-hml.tls=true"
+      - "traefik.http.routers.tvsumare-hml.tls.certresolver=le"
+      - "traefik.http.services.tvsumare-hml.loadbalancer.server.port=80"
+      - "traefik.docker.network=n8n-traefik_app_network"
     networks:
       - tvsumare_internal
       - tvsumare_egress
       - vitrine_net
+      - n8n-traefik_app_network
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1/health.php"]
       interval: 30s
@@ -72,3 +79,6 @@ networks:
   vitrine_net:
     external: true
     name: vitrine_net
+  n8n-traefik_app_network:
+    external: true
+    name: n8n-traefik_app_network
