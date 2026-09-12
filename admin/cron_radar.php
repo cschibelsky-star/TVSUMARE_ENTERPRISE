@@ -50,7 +50,7 @@ if(function_exists('tvs_radar_save_config')) tvs_radar_save_config($cfg);
 if(function_exists('tvs_radar_save_status')){
   tvs_radar_save_status([
     'last_run'=>date('c'),
-    'last_mode'=>'cron_vps_daily',
+    'last_mode'=>'cron_daily',
     'last_generated'=>$n,
     'last_message'=>$n>0?"{$n} matéria(s) gerada(s) pela atualização diária.":'Nenhuma matéria nova gerada na atualização diária.'
   ]);
