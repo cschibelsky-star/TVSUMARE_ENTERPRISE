@@ -2,6 +2,7 @@
 /**
  * Recuperação TV Sumaré 2026-09-11.
  * Aplica correções idempotentes para regressões confirmadas antes do smoke de homologação.
+ * Portável: usa TVSUMARE_ROOT quando informado; caso contrário, a raiz do próprio projeto.
  */
 function recovery_patch_once(string $path,string $old,string $new,string $label): void {
     $code=file_get_contents($path);
@@ -14,7 +15,8 @@ function recovery_patch_once(string $path,string $old,string $new,string $label)
     echo "{$label}: aplicado.\n";
 }
 
-$drafts='/var/www/html/admin/drafts.php';
+$root=rtrim((string)(getenv('TVSUMARE_ROOT')?:dirname(__DIR__)),'/');
+$drafts=$root.'/admin/drafts.php';
 recovery_patch_once(
     $drafts,
     <<<'OLD'
@@ -104,7 +106,7 @@ NEW,
     'Drafts publicação compensatória'
 );
 
-$helpers='/var/www/html/includes/tvs_public_helpers.php';
+$helpers=$root.'/includes/tvs_public_helpers.php';
 recovery_patch_once(
     $helpers,
     <<<'OLD'
