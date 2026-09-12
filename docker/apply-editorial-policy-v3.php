@@ -13,7 +13,8 @@ $patterns=[
   '~function tvs_detect_outside_city\(\$n\)\{.*?\n\}~s' => "function tvs_detect_outside_city(\$n){\n  return function_exists('tvs_v3_external_municipal_source') ? tvs_v3_external_municipal_source(\$n) : '';\n}",
   '~function tvs_region_city_detect\(\$n\)\{.*?\n\}~s' => "function tvs_region_city_detect(\$n){\n  return function_exists('tvs_v3_region_city_detect') ? tvs_v3_region_city_detect(\$n) : '';\n}",
   '~function tvs_is_regional_news_strict\(\$n\)\{.*?\n\}~s' => "function tvs_is_regional_news_strict(\$n){\n  return function_exists('tvs_v3_is_regional_news') ? tvs_v3_is_regional_news(\$n) : false;\n}",
-  '~function tvs_curated_sections\(\$news\)\{.*?\n\}~s' => "function tvs_curated_sections(\$news){\n  return function_exists('tvs_v3_curated_sections') ? tvs_v3_curated_sections(\$news) : [];\n}"
+  '~function tvs_curated_sections\(\$news\)\{.*?\n\}~s' => "function tvs_curated_sections(\$news){\n  return function_exists('tvs_v3_curated_sections') ? tvs_v3_curated_sections(\$news) : [];\n}",
+  '~function tvs_category_match\(\$n,\$terms\)\{.*?\n\}~s' => "function tvs_category_match(\$n,\$terms){\n  \$normalized=array_map(function(\$t){ return tvs_lc((string)\$t); },(array)\$terms);\n  if(function_exists('tvs_v3_section') && array_intersect(\$normalized,['emprego','empregos','vagas','oportunidade'])){\n    return tvs_v3_section(\$n)==='Empregos';\n  }\n  \$txt=tvs_lc((\$n['category']??'').' '.(\$n['title']??'').' '.(\$n['subtitle']??'').' '.(\$n['summary']??'').' '.(\$n['body']??''));\n  foreach((array)\$terms as \$t){ if(strpos(\$txt,tvs_lc(\$t))!==false) return true; }\n  return false;\n}"
 ];
 
 foreach($patterns as $pattern=>$replacement){
