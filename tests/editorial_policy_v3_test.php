@@ -35,6 +35,13 @@ $jobs=[
 ];
 assert_true(tvs_v3_section($jobs)==='Empregos','Empregos preserva categoria explicita');
 
+$economy=[
+  'category'=>'Economia',
+  'title'=>'Sebrae Móvel faz atendimentos durante programação de aniversário',
+  'summary'=>'Ação orienta empreendedores sobre gestão, inovação e desenvolvimento de negócios.'
+];
+assert_true(tvs_v3_section($economy)==='Cidade','Economia nao cruza para Saude ou Empregos');
+
 $security=[
   'category'=>'Cidade',
   'title'=>'Presidente da Câmara é preso durante operação policial',
