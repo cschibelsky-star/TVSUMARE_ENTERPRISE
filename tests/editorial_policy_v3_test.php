@@ -12,6 +12,22 @@ $mossoro=[
 ];
 assert_true(tvs_v3_is_regional_news($mossoro)===false,'Mossoro rotulado como Sumare e bloqueado');
 
+
+$mossoroAggregator=[
+  "city"=>"Sumaré",
+  "title"=>"Prefeitura realiza recuperação asfáltica e de pavimentação no Barrocas e Sumaré",
+  "subtitle"=>"Prefeitura realiza recuperação asfáltica e de pavimentação no Barrocas e Sumaré Prefeitura de Mossoró",
+  "summary"=>"Prefeitura realiza recuperação asfáltica e de pavimentação no Barrocas e Sumaré Prefeitura de Mossoró",
+  "body"=>"Prefeitura realiza recuperação asfáltica e de pavimentação no Barrocas e Sumaré Prefeitura de Mossoró",
+  "source"=>"Google News Sumaré",
+  "source_url"=>"https://news.google.com/rss/articles/exemplo"
+];
+assert_true(
+  tvs_v3_is_regional_news($mossoroAggregator)===false,
+  "Mossoro via Google News Sumare bloqueado"
+);
+
+
 $sumare=[
   'city'=>'',
   'title'=>'Sumaré amplia atendimento nas unidades de saúde',

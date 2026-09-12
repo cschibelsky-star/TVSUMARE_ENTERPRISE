@@ -24,13 +24,14 @@ function tvs_v3_region_city_detect($n){
 function tvs_v3_external_municipal_source($n){
   $source=tvs_v3_lc(trim((string)($n['source']??'')));
   $url=tvs_v3_lc(trim((string)($n['source_url']??'')));
-  $combined=$source.' '.$url;
+  $content=tvs_v3_content_text($n);
+  $combined=trim($source.' '.$url.' '.$content);
   if($combined==='') return '';
 
   $outside=['mossoró','mossoro','caraguatatuba','santos','são vicente','sao vicente','praia grande','guarujá','guaruja','ubatuba','são sebastião','sao sebastiao','ilhabela','sorocaba','ribeirão preto','ribeirao preto','são josé dos campos','sao jose dos campos','taubaté','taubate','piracicaba','limeira','jundiaí','jundiai','indaiatuba','atibaia','cosmópolis','cosmopolis','monte mor','vinhedo','valinhos','itapira','mogi mirim','mogi guaçu','mogi guacu','bauru','marília','marilia','presidente prudente'];
   foreach($outside as $city){ if(strpos($combined,$city)!==false) return $city; }
 
-  if(preg_match('~prefeitura(?: municipal)? de\s+([^|,;:/]+)~u',$source,$m)){
+  if(preg_match('~prefeitura(?: municipal)? de\s+([^|,;:/]+)~u',$content,$m)){
     $declared=trim($m[1]);
     $allowed=false;
     foreach(tvs_v3_allowed_city_map() as $k=>$v){ if(strpos($declared,$k)!==false){ $allowed=true; break; } }
