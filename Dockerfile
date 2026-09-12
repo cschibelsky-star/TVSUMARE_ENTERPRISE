@@ -61,4 +61,5 @@ RUN php /var/www/html/docker/apply-radar-editorial-policy.php \
     && find /var/www/html -type f -exec chmod 0644 {} +
 
 ENTRYPOINT ["tvsumare-entrypoint"]
+CMD ["apache2-foreground"]
 EXPOSE 80
