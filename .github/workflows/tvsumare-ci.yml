@@ -1,0 +1,60 @@
+name: TV Sumare CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - reconcile/hostgator-tvsumare-20260911
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  php-quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP 8.3
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+
+      - name: PHP lint completo
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r -d '' file; do
+            php -l "$file" >/dev/null
+          done < <(find . -type f -name '*.php' -print0)
+          echo "PHP_LINT=PASS"
+
+      - name: Validar regras editoriais criticas
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q "sensitive_review_required" admin/radar-regional.php
+          grep -q "image_review_required" admin/radar-regional.php
+          grep -q "cron-radar.log" admin/cron_radar.php
+          grep -q "Sumaré" admin/radar-regional.php
+          grep -q "Hortolândia" admin/radar-regional.php
+          grep -q "Paulínia" admin/radar-regional.php
+          grep -q "Nova Odessa" admin/radar-regional.php
+          grep -q "Americana" admin/radar-regional.php
+          grep -q "Campinas" admin/radar-regional.php
+          echo "EDITORIAL_GUARDS=PASS"
+
+  docker-smoke:
+    runs-on: ubuntu-latest
+    needs: php-quality
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build da imagem de homologacao
+        run: docker build -t tvsumare-ci .
+
+      - name: Smoke de homologacao
+        run: docker run --rm tvsumare-ci php /var/www/html/docker/run-homologation-smoke.php
