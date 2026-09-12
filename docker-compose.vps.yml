@@ -24,10 +24,10 @@ services:
       TVSUMARE_OUTBOUND_HOSTS: ${TVSUMARE_OUTBOUND_HOSTS:-}
       TVSUMARE_WHATSAPP_WEBHOOK_URL: ${TVSUMARE_WHATSAPP_WEBHOOK_URL:-}
     volumes:
-      - /srv/tvsumare/shared/data:/var/www/html/data:rw
-      - /srv/tvsumare/shared/uploads:/var/www/html/uploads:rw
-      - /srv/tvsumare/shared/videos:/var/www/html/videos:rw
-      - /srv/tvsumare/shared/logs:/var/www/html/logs:rw
+      - /srv/tvsumare/shared/data:/var/www/html/data:rw,z
+      - /srv/tvsumare/shared/uploads:/var/www/html/uploads:rw,z
+      - /srv/tvsumare/shared/videos:/var/www/html/videos:rw,z
+      - /srv/tvsumare/shared/logs:/var/www/html/logs:rw,z
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777
       - /var/run/apache2:rw,nosuid,nodev,size=8m,mode=0755
@@ -90,9 +90,9 @@ services:
       TVSUMARE_OUTBOUND_HOSTS: ${TVSUMARE_OUTBOUND_HOSTS:-}
       TVSUMARE_WHATSAPP_WEBHOOK_URL: ${TVSUMARE_WHATSAPP_WEBHOOK_URL:-}
     volumes:
-      - /srv/tvsumare/shared/data:/var/www/html/data:rw
-      - /srv/tvsumare/shared/uploads:/var/www/html/uploads:rw
-      - /srv/tvsumare/shared/logs:/var/www/html/logs:rw
+      - /srv/tvsumare/shared/data:/var/www/html/data:rw,z
+      - /srv/tvsumare/shared/uploads:/var/www/html/uploads:rw,z
+      - /srv/tvsumare/shared/logs:/var/www/html/logs:rw,z
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777
     networks:
