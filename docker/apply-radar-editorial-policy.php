@@ -17,12 +17,18 @@ function tvs_radar_status_from_score($score,$sensitive=false){
 OLD,
 <<<'NEW'
 function tvs_radar_status_from_score($score,$sensitive=false){
-  if($sensitive) return ['review_level'=>'revisao_obrigatoria','editorial_status'=>'Revisão obrigatória'];
-  if($score>=85) return ['review_level'=>'normal','editorial_status'=>'Prioridade máxima'];
-  if($score>=70) return ['review_level'=>'normal','editorial_status'=>'Destaque'];
-  if($score>=50) return ['review_level'=>'normal','editorial_status'=>'Publicável'];
-  if($score>=30) return ['review_level'=>'precisa_revisao','editorial_status'=>'Revisão'];
-  return ['review_level'=>'precisa_revisao','editorial_status'=>'Enriquecer com IA'];
+  if($score>=85) $status='Prioridade máxima';
+  elseif($score>=70) $status='Destaque';
+  elseif($score>=50) $status='Publicável';
+  elseif($score>=30) $status='Revisão';
+  else $status='Descartar';
+
+  if($sensitive && $status!=='Descartar'){
+    return ['review_level'=>'revisao_obrigatoria','editorial_status'=>$status,'sensitive'=>true];
+  }
+  if($status==='Descartar') return ['review_level'=>'descartar','editorial_status'=>'Descartar','sensitive'=>$sensitive];
+  if($status==='Revisão') return ['review_level'=>'precisa_revisao','editorial_status'=>'Revisão','sensitive'=>false];
+  return ['review_level'=>'normal','editorial_status'=>$status,'sensitive'=>false];
 }
 NEW
 ];
@@ -62,12 +68,17 @@ NEW
 ];
 
 foreach($replacements as [$old,$new]){
-  $count=substr_count($code,$old);
-  if($count!==1){
-    fwrite(STDERR,"Trecho esperado não encontrado de forma única (count={$count}). Patch abortado.\n");
-    exit(2);
+  $oldCount=substr_count($code,$old);
+  $newCount=substr_count($code,$new);
+  if($oldCount===1){
+    $code=str_replace($old,$new,$code);
+    continue;
   }
-  $code=str_replace($old,$new,$code);
+  if($oldCount===0 && $newCount===1){
+    continue;
+  }
+  fwrite(STDERR,"Trecho esperado não encontrado de forma única (old={$oldCount}, new={$newCount}). Patch abortado.\n");
+  exit(2);
 }
 
 if(file_put_contents($path,$code)===false){
