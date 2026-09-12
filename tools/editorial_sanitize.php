@@ -3,14 +3,16 @@
  * Auditoria/saneamento reversivel dos dados editoriais da TV Sumare.
  * Padrao: dry-run. Para aplicar: TVSUMARE_EDITORIAL_APPLY=YES php tools/editorial_sanitize.php --apply --root=/caminho/site
  */
-$root=dirname(__DIR__);
+$toolRoot=dirname(__DIR__);
+$root=$toolRoot;
 $apply=in_array('--apply',$argv,true);
 foreach($argv as $arg){ if(strpos($arg,'--root=')===0) $root=rtrim(substr($arg,7),'/'); }
 if($apply && getenv('TVSUMARE_EDITORIAL_APPLY')!=='YES'){
   fwrite(STDERR,"APPLY bloqueado: defina TVSUMARE_EDITORIAL_APPLY=YES.\n"); exit(2);
 }
 $policy=$root.'/includes/tvs_editorial_policy_v3.php';
-if(!is_file($policy)){ fwrite(STDERR,"Politica V3 nao encontrada: {$policy}\n"); exit(3); }
+if(!is_file($policy)) $policy=$toolRoot.'/includes/tvs_editorial_policy_v3.php';
+if(!is_file($policy)){ fwrite(STDERR,"Politica V3 nao encontrada no alvo nem no release.\n"); exit(3); }
 require_once $policy;
 
 function es_read_json($path){
