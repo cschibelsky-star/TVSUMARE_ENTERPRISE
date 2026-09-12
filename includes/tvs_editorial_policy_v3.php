@@ -27,11 +27,9 @@ function tvs_v3_external_municipal_source($n){
   $combined=$source.' '.$url;
   if($combined==='') return '';
 
-  // Casos externos ja observados e cidades recorrentes que nao pertencem a area editorial.
   $outside=['mossoró','mossoro','caraguatatuba','santos','são vicente','sao vicente','praia grande','guarujá','guaruja','ubatuba','são sebastião','sao sebastiao','ilhabela','sorocaba','ribeirão preto','ribeirao preto','são josé dos campos','sao jose dos campos','taubaté','taubate','piracicaba','limeira','jundiaí','jundiai','indaiatuba','atibaia','cosmópolis','cosmopolis','monte mor','vinhedo','valinhos','itapira','mogi mirim','mogi guaçu','mogi guacu','bauru','marília','marilia','presidente prudente'];
   foreach($outside as $city){ if(strpos($combined,$city)!==false) return $city; }
 
-  // Se a propria fonte se declara Prefeitura de uma cidade, so aceita as seis cidades da cobertura.
   if(preg_match('~prefeitura(?: municipal)? de\s+([^|,;:/]+)~u',$source,$m)){
     $declared=trim($m[1]);
     $allowed=false;
@@ -52,13 +50,15 @@ function tvs_v3_section($n){
   $explicit=tvs_v3_lc(trim((string)($n['category']??'')));
   $txt=tvs_v3_lc(($n['title']??'').' '.($n['subtitle']??'').' '.($n['summary']??'').' '.($n['body']??''));
 
-  // Categoria explicita valida tem prioridade para evitar cruzamento por palavra incidental.
+  // Categoria editorial explicita prevalece sobre palavras incidentais do texto.
   $explicitMap=[
     'emprego'=>'Empregos','empregos'=>'Empregos','vagas'=>'Empregos',
     'saúde'=>'Saúde','saude'=>'Saúde',
     'educação'=>'Educação','educacao'=>'Educação',
     'segurança'=>'Segurança','seguranca'=>'Segurança','polícia'=>'Segurança','policia'=>'Segurança',
-    'cidade'=>'Cidade','cultura'=>'Cidade','eventos'=>'Cidade','evento'=>'Cidade'
+    'cidade'=>'Cidade','cultura'=>'Cidade','eventos'=>'Cidade','evento'=>'Cidade',
+    'economia'=>'Cidade','negócios'=>'Cidade','negocios'=>'Cidade','política'=>'Cidade','politica'=>'Cidade',
+    'esportes'=>'Cidade','esporte'=>'Cidade','meio ambiente'=>'Cidade','turismo'=>'Cidade','inovação'=>'Cidade','inovacao'=>'Cidade'
   ];
   if(isset($explicitMap[$explicit])) return $explicitMap[$explicit];
 
