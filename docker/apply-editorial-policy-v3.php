@@ -1,6 +1,7 @@
 <?php
-/** Aplica politica editorial publica V3 de forma idempotente no runtime. */
-$helpers='/var/www/html/includes/tvs_public_helpers.php';
+/** Aplica politica editorial publica V3 de forma idempotente no runtime/release. */
+$root=rtrim((string)(getenv('TVSUMARE_ROOT')?:dirname(__DIR__)),'/');
+$helpers=$root.'/includes/tvs_public_helpers.php';
 $code=file_get_contents($helpers);
 if($code===false){ fwrite(STDERR,"EDITORIAL_V3: helpers nao encontrado\n"); exit(1); }
 
