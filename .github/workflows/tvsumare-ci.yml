@@ -32,6 +32,9 @@ jobs:
           done < <(find . -type f -name '*.php' -print0)
           echo "PHP_LINT=PASS"
 
+      - name: Teste da politica editorial V3
+        run: php tests/editorial_policy_v3_test.php
+
       - name: Validar regras editoriais criticas
         shell: bash
         run: |
@@ -39,12 +42,8 @@ jobs:
           grep -q "sensitive_review_required" admin/radar-regional.php
           grep -q "image_review_required" admin/radar-regional.php
           grep -q "cron-radar.log" admin/cron_radar.php
-          grep -q "Sumaré" admin/radar-regional.php
-          grep -q "Hortolândia" admin/radar-regional.php
-          grep -q "Paulínia" admin/radar-regional.php
-          grep -q "Nova Odessa" admin/radar-regional.php
-          grep -q "Americana" admin/radar-regional.php
-          grep -q "Campinas" admin/radar-regional.php
+          grep -q "tvs_v3_is_regional_news" includes/tvs_editorial_policy_v3.php
+          grep -q "mossor" includes/tvs_editorial_policy_v3.php
           echo "EDITORIAL_GUARDS=PASS"
 
   docker-smoke:
@@ -53,8 +52,5 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build da imagem de homologacao
+      - name: Build + aplicadores + smoke de homologacao
         run: docker build -t tvsumare-ci .
-
-      - name: Smoke de homologacao
-        run: docker run --rm tvsumare-ci php /var/www/html/docker/run-homologation-smoke.php
