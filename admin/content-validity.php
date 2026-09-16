@@ -158,7 +158,7 @@ usort($review,function($a,$b){ return (cv_age($b)??9999)<=>(cv_age($a)??9999); }
 
   <section class="box" style="margin-top:16px">
     <h2>Notificação ao Editor-Chefe</h2>
-    <p class="muted">A fila acima é o alerta operacional interno. O verificador automático gera <code>data/content_validity_alerts.json</code> para integração com e-mail e, quando disponível/configurado, WhatsApp. A integração externa não remove nem arquiva conteúdo automaticamente.</p>
+    <p class="muted">A fila acima é o alerta operacional interno. O verificador automático gera <code>data/content_validity_alerts.json</code> para integração com os canais externos configurados no sistema. As integrações externas não removem nem arquivam conteúdo automaticamente.</p>
   </section>
 </main>
 </div>
