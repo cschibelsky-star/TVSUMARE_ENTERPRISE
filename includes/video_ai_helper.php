@@ -83,6 +83,14 @@ if (!function_exists('tvp_video_score')) {
     if(preg_match('~saúde|saude|educação|educacao|obras|mobilidade|serviço|servico|defesa civil~u',$c)) return 'servicos_publicos';
     return 'cristian_editor';
   }
+  function tvp_video_engine_decide($item,$requested='auto'){
+    $requested=tvp_text_lc(trim((string)$requested));
+    if(in_array($requested,['veo','heygen'],true)) return $requested;
+    $txt=tvp_text_lc(($item['title']??'').' '.($item['category']??'').' '.($item['summary']??'').' '.($item['editorial_style']??''));
+    if(preg_match('~últimas? notícias|ultimas? noticias|última hora|ultima hora|boletim|apresentador|apresentadora|âncora|ancora|repórter|reporter|avatar~u',$txt)) return 'heygen';
+    return 'veo';
+  }
+  function tvp_video_engine_label($engine){ return $engine==='heygen'?'HeyGen • apresentador':'VEO • vídeo visual'; }
 }
 
 if (!function_exists('tvp_load_video_jobs')) {
@@ -90,9 +98,10 @@ if (!function_exists('tvp_load_video_jobs')) {
   function tvp_save_video_jobs($jobs){ tvp_write_json('videos_ia.json',$jobs); }
   function tvp_find_job($id,&$jobs=null,&$idx=null){ $jobs=tvp_load_video_jobs(); foreach($jobs as $i=>$j){ if(($j['id']??'')===$id){ $idx=$i; return $j; } } return null; }
   function tvp_job_exists_for_news($newsId){ foreach(tvp_load_video_jobs() as $j){ if(($j['news_id']??'')===$newsId && !in_array(($j['status']??''),['cancelado','erro_descartado'],true)) return true; } return false; }
-  function tvp_create_video_job($news,$origin='manual',$suggested=false){
+  function tvp_create_video_job($news,$origin='manual',$suggested=false,$requestedEngine='auto'){
     $newsId=tvp_news_id($news); if($newsId==='' || tvp_job_exists_for_news($newsId)) return ['ok'=>false,'error'=>'Essa notícia já está na fila de vídeos.'];
     $score=tvp_video_score($news);
+    $engine=tvp_video_engine_decide($news,$requestedEngine);
     $job=[
       'id'=>'vjob_'.date('YmdHis').'_'.substr(md5($newsId.microtime(true)),0,6),
       'news_id'=>$newsId,
@@ -107,7 +116,9 @@ if (!function_exists('tvp_load_video_jobs')) {
       'published_at'=>tvp_value($news,['published_at','created_at','date','data','updated_at'],''),
       'score'=>$score,
       'priority'=>tvp_video_priority($score),
-      'presenter_profile'=>tvp_avatar_profile_for_category(tvp_news_category($news)),
+      'video_engine'=>$engine,
+      'presenter_required'=>$engine==='heygen',
+      'presenter_profile'=>$engine==='heygen'?tvp_avatar_profile_for_category(tvp_news_category($news)):'',
       'origin'=>$origin,
       'status'=>$suggested?'sugerido':'roteiro_pendente',
       'script'=>'',
@@ -274,6 +285,104 @@ if (!function_exists('tvp_heygen_config')) {
     if($videoId!==''){ $r=tvp_http('GET','/v3/videos/'.rawurlencode($videoId),null,35); if(!$r['ok']) return $r; $d=$r['data']['data']??($r['data']??[]); $out['video_id']=$videoId; $out['video_status']=$d['status']??''; $out['video_url']=$d['video_url']??''; $out['captioned_video_url']=$d['captioned_video_url']??''; $out['thumb']=$d['thumbnail_url']??''; $out['failure_message']=$d['failure_message']??($d['failure_code']??''); }
     if($sessionId==='' && $videoId==='') return ['ok'=>false,'error'=>'Job sem session_id ou video_id.'];
     $out['ok']=true; return $out;
+  }
+}
+
+if (!function_exists('tvp_veo_config')) {
+  function tvp_veo_config(){
+    return [
+      'api_key'=>trim((string)($GLOBALS['gemini_api_key']??getenv('GEMINI_API_KEY')?:'')),
+      'base_url'=>rtrim((string)(getenv('GEMINI_VEO_BASE_URL')?:'https://generativelanguage.googleapis.com/v1beta'),'/'),
+      'model'=>trim((string)(getenv('GEMINI_VEO_MODEL')?:'veo-3.1-generate-preview')),
+      'aspect_ratio'=>'16:9',
+      'resolution'=>'720p',
+      'duration_seconds'=>8
+    ];
+  }
+  function tvp_veo_http_json($method,$path,$payload=null,$timeout=45){
+    $cfg=tvp_veo_config(); if($cfg['api_key']==='') return ['ok'=>false,'error'=>'Gemini/VEO sem chave configurada.'];
+    if(!function_exists('curl_init')) return ['ok'=>false,'error'=>'cURL indisponível.'];
+    $url=$cfg['base_url'].'/'.ltrim((string)$path,'/');
+    $outbound=tvs_outbound_curl_options($url,$timeout); if($outbound===null) return ['ok'=>false,'error'=>'URL VEO bloqueada pela política de saída.'];
+    $headers=['Accept: application/json','x-goog-api-key: '.$cfg['api_key']];
+    $ch=curl_init($url); $opts=$outbound+[CURLOPT_RETURNTRANSFER=>true,CURLOPT_CUSTOMREQUEST=>$method,CURLOPT_HTTPHEADER=>$headers];
+    if($payload!==null){ $headers[]='Content-Type: application/json'; $opts[CURLOPT_HTTPHEADER]=$headers; $opts[CURLOPT_POSTFIELDS]=json_encode($payload,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES); }
+    curl_setopt_array($ch,$opts); $res=curl_exec($ch); $err=curl_error($ch); $http=(int)curl_getinfo($ch,CURLINFO_HTTP_CODE); curl_close($ch);
+    if($res===false || $res==='') return ['ok'=>false,'http'=>$http,'error'=>'VEO sem resposta. '.$err];
+    $json=json_decode((string)$res,true);
+    if($http<200 || $http>=300) return ['ok'=>false,'http'=>$http,'error'=>'VEO HTTP '.$http.': '.substr((string)$res,0,900),'raw'=>$json?:$res];
+    return ['ok'=>true,'http'=>$http,'data'=>is_array($json)?$json:[]];
+  }
+  function tvp_veo_scene_prompts($job){
+    $title=tvp_clean($job['title']??'Notícia regional');
+    $city=tvp_clean($job['city']??'Região');
+    $cat=tvp_clean($job['category']??'Notícia');
+    $context=tvp_substr(tvp_clean(($job['summary']??'').' '.($job['body']??'').' '.($job['script']??'')),0,800);
+    $guard='Conteúdo visual jornalístico ilustrativo, sem simular filmagem documental real de um fato que não foi gravado. Não mostrar pessoas públicas identificáveis, não inventar placas, documentos, declarações, números ou locais específicos. Sem apresentador falando para a câmera. Sem texto ilegível. Estética de TV regional brasileira, realista e profissional, 16:9.';
+    return [
+      $guard." Cena 1: abertura visual contextual de {$city}, tema {$cat}. Pauta: {$title}. Contexto: {$context}. Movimento de câmera suave, plano de estabelecimento, áudio ambiente discreto.",
+      $guard." Cena 2: b-roll editorial relacionado ao assunto {$title}, mostrando elementos genéricos e verificáveis do tema {$cat}, sem recriar o acontecimento como registro real. Contexto: {$context}. Cortes limpos, linguagem audiovisual jornalística.",
+      $guard." Cena 3: encerramento visual para boletim da TV Sumaré sobre {$title}, com composição limpa, espaço seguro para identidade gráfica sobreposta depois, sem apresentador e sem fala. Contexto regional: {$city}."
+    ];
+  }
+  function tvp_send_veo($job){
+    $cfg=tvp_veo_config(); $ops=[];
+    foreach(tvp_veo_scene_prompts($job) as $i=>$prompt){
+      $payload=['instances'=>[['prompt'=>$prompt]],'parameters'=>['aspectRatio'=>$cfg['aspect_ratio'],'resolution'=>$cfg['resolution'],'durationSeconds'=>$cfg['duration_seconds'],'sampleCount'=>1]];
+      $r=tvp_veo_http_json('POST','models/'.rawurlencode($cfg['model']).':predictLongRunning',$payload,60);
+      if(empty($r['ok'])) return ['ok'=>false,'error'=>'Falha ao iniciar cena '.($i+1).': '.($r['error']??'erro VEO')];
+      $op=trim((string)($r['data']['name']??'')); if($op==='') return ['ok'=>false,'error'=>'VEO não retornou operação para a cena '.($i+1).'.'];
+      $ops[]=$op;
+    }
+    return ['ok'=>true,'operations'=>$ops,'status'=>'gerando'];
+  }
+  function tvp_veo_download($url,$dest){
+    $cfg=tvp_veo_config(); $url=trim((string)$url);
+    if(!preg_match('~^https://~i',$url)) return ['ok'=>false,'error'=>'URL de render VEO inválida.'];
+    $outbound=tvs_outbound_curl_options($url,120); if($outbound===null) return ['ok'=>false,'error'=>'Download VEO bloqueado pela política de saída.'];
+    $fp=@fopen($dest,'wb'); if(!$fp) return ['ok'=>false,'error'=>'Falha ao criar arquivo temporário VEO.'];
+    $ch=curl_init($url); curl_setopt_array($ch,$outbound+[CURLOPT_FILE=>$fp,CURLOPT_FOLLOWLOCATION=>false,CURLOPT_HTTPHEADER=>['Accept: video/mp4,video/*;q=0.9,*/*;q=0.1','x-goog-api-key: '.$cfg['api_key']]]);
+    $ok=curl_exec($ch); $err=curl_error($ch); $http=(int)curl_getinfo($ch,CURLINFO_HTTP_CODE); curl_close($ch); fclose($fp);
+    $size=is_file($dest)?(int)filesize($dest):0;
+    if(!$ok || $http<200 || $http>=300 || $size<10240){ @unlink($dest); return ['ok'=>false,'error'=>'Falha no download VEO HTTP '.$http.'. '.$err]; }
+    return ['ok'=>true,'bytes'=>$size];
+  }
+  function tvp_veo_finalize($uris,$jobId){
+    $ffmpeg=trim((string)@shell_exec('command -v ffmpeg 2>/dev/null')); if($ffmpeg==='') return ['ok'=>false,'error'=>'FFmpeg indisponível.'];
+    $root=tvp_root(); $dir=$root.'/uploads/videos'; if(!is_dir($dir) && !@mkdir($dir,0775,true)) return ['ok'=>false,'error'=>'Falha ao preparar armazenamento de vídeos.'];
+    $safe=preg_replace('/[^a-zA-Z0-9_-]+/','-',(string)$jobId); $safe=trim((string)$safe,'-_')?:'veo-'.date('YmdHis');
+    $tmpDir=sys_get_temp_dir().'/tvs-veo-'.$safe.'-'.bin2hex(random_bytes(3)); if(!@mkdir($tmpDir,0700,true)) return ['ok'=>false,'error'=>'Falha ao preparar temporários VEO.'];
+    $clips=[];
+    foreach(array_values($uris) as $i=>$uri){ $clip=$tmpDir.'/scene-'.$i.'.mp4'; $d=tvp_veo_download($uri,$clip); if(empty($d['ok'])){ foreach($clips as $c) @unlink($c); @rmdir($tmpDir); return $d; } $clips[]=$clip; }
+    $list=$tmpDir.'/concat.txt'; $lines=[]; foreach($clips as $c){ $lines[]="file '".str_replace("'","'\\''",$c)."'"; } file_put_contents($list,implode("\n",$lines));
+    $joined=$tmpDir.'/joined.mp4';
+    $cmd=escapeshellarg($ffmpeg).' -hide_banner -loglevel error -y -f concat -safe 0 -i '.escapeshellarg($list).' -c:v libx264 -preset medium -crf 21 -pix_fmt yuv420p -c:a aac -b:a 160k -movflags +faststart '.escapeshellarg($joined).' 2>&1';
+    $out=[]; $code=0; exec($cmd,$out,$code); if($code!==0 || !is_file($joined) || filesize($joined)<10240){ foreach($clips as $c) @unlink($c); @unlink($list); @rmdir($tmpDir); return ['ok'=>false,'error'=>'Falha ao compor cenas VEO: '.substr(implode("\n",$out),0,700)]; }
+    $final=$dir.'/'.$safe.'.mp4'; $logo=$root.'/assets/logo-tv-sumare.jpeg';
+    if(is_file($logo)){
+      $filter='[1:v][0:v]scale2ref=w=main_w*0.16:h=-1[wm][base];[base][wm]overlay=x=W*0.03:y=H*0.04:format=auto[v]';
+      $cmd2=escapeshellarg($ffmpeg).' -hide_banner -loglevel error -y -i '.escapeshellarg($joined).' -i '.escapeshellarg($logo).' -filter_complex '.escapeshellarg($filter).' -map '.escapeshellarg('[v]').' -map 0:a? -c:v libx264 -preset medium -crf 20 -pix_fmt yuv420p -c:a aac -b:a 160k -movflags +faststart '.escapeshellarg($final).' 2>&1';
+      $out2=[]; $code2=0; exec($cmd2,$out2,$code2);
+      if($code2!==0 || !is_file($final) || filesize($final)<10240) @copy($joined,$final);
+    } else @copy($joined,$final);
+    foreach($clips as $c) @unlink($c); @unlink($list); @unlink($joined); @rmdir($tmpDir);
+    if(!is_file($final) || filesize($final)<10240) return ['ok'=>false,'error'=>'Vídeo VEO final não foi criado.'];
+    @chmod($final,0644); return ['ok'=>true,'video_url'=>'uploads/videos/'.rawurlencode(basename($final)),'bytes'=>(int)filesize($final)];
+  }
+  function tvp_check_veo($job){
+    $ops=$job['veo_operations']??[]; if(!is_array($ops) || !$ops) return ['ok'=>false,'error'=>'Job VEO sem operações.'];
+    $uris=[]; $done=0;
+    foreach($ops as $op){
+      $r=tvp_veo_http_json('GET',$op,null,35); if(empty($r['ok'])) return $r; $d=$r['data']??[];
+      if(empty($d['done'])) continue;
+      if(!empty($d['error'])) return ['ok'=>false,'error'=>'VEO falhou: '.json_encode($d['error'],JSON_UNESCAPED_UNICODE)];
+      $uri=$d['response']['generateVideoResponse']['generatedSamples'][0]['video']['uri']??($d['response']['generatedVideos'][0]['video']['uri']??'');
+      if(!is_string($uri) || trim($uri)==='') return ['ok'=>false,'error'=>'VEO concluiu sem URI de vídeo.'];
+      $uris[]=$uri; $done++;
+    }
+    if($done<count($ops)) return ['ok'=>true,'status'=>'gerando','progress'=>(int)floor(($done/count($ops))*100)];
+    $final=tvp_veo_finalize($uris,$job['id']??uniqid('veo_')); if(empty($final['ok'])) return $final;
+    return ['ok'=>true,'status'=>'pronto','progress'=>100,'video_url'=>$final['video_url'],'bytes'=>$final['bytes']??0];
   }
 }
 
