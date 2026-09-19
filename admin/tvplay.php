@@ -27,6 +27,55 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
     $r=tvp_create_video_job($n,'manual',false);
     tvp_admin_redirect($r['ok']?['msg'=>'Matéria enviada para produção de vídeo.']:['err'=>$r['error']??'Falha ao criar job.']);
   }
+  if($action==='upload_external_video'){
+    $title=tvp_clean($_POST['title']??'');
+    $description=tvp_clean($_POST['description']??'');
+    $category=tvp_clean($_POST['category']??'Vídeo');
+    $city=tvp_clean($_POST['city']??'Sumaré');
+    if($title==='') tvp_admin_redirect(['err'=>'Informe o título do vídeo.']);
+    if(empty($_FILES['video_file']) || !is_array($_FILES['video_file'])) tvp_admin_redirect(['err'=>'Selecione um arquivo MP4.']);
+    $file=$_FILES['video_file'];
+    $uploadErr=(int)($file['error']??UPLOAD_ERR_NO_FILE);
+    if($uploadErr!==UPLOAD_ERR_OK) tvp_admin_redirect(['err'=>'Falha no upload do vídeo (código '.$uploadErr.').']);
+    $tmp=(string)($file['tmp_name']??'');
+    $size=(int)($file['size']??0);
+    if($size<=0 || $size>536870912) tvp_admin_redirect(['err'=>'O vídeo deve ter no máximo 512 MB.']);
+    if(!is_uploaded_file($tmp)) tvp_admin_redirect(['err'=>'Arquivo de upload inválido.']);
+    $mime='';
+    if(class_exists('finfo')){ $fi=new finfo(FILEINFO_MIME_TYPE); $mime=(string)$fi->file($tmp); }
+    $allowed=['video/mp4','application/mp4','video/x-m4v','video/quicktime'];
+    if($mime!=='' && !in_array($mime,$allowed,true)) tvp_admin_redirect(['err'=>'Formato não permitido. Envie MP4/M4V/MOV compatível.']);
+    $ext=strtolower(pathinfo((string)($file['name']??''),PATHINFO_EXTENSION));
+    if(!in_array($ext,['mp4','m4v','mov'],true)) tvp_admin_redirect(['err'=>'Extensão não permitida. Use MP4, M4V ou MOV.']);
+    $uploadDir=dirname(__DIR__).'/uploads/videos';
+    if(!is_dir($uploadDir) && !@mkdir($uploadDir,0775,true)) tvp_admin_redirect(['err'=>'Não foi possível preparar o diretório de vídeos.']);
+    $safeExt=$ext==='mov'?'mov':($ext==='m4v'?'m4v':'mp4');
+    $name='video_'.date('Ymd_His').'_'.bin2hex(random_bytes(5)).'.'.$safeExt;
+    $dest=$uploadDir.'/'.$name;
+    if(!move_uploaded_file($tmp,$dest)) tvp_admin_redirect(['err'=>'Não foi possível salvar o vídeo no armazenamento persistente.']);
+    @chmod($dest,0644);
+    $relative='uploads/videos/'.$name;
+    $videos=tvp_read_json('videos.json');
+    array_unshift($videos,[
+      'id'=>'upl_'.date('YmdHis').'_'.substr(hash('sha256',$name),0,8),
+      'title'=>$title,
+      'description'=>$description,
+      'category'=>$category?:'Vídeo',
+      'city'=>$city?:'Sumaré',
+      'url'=>$relative,
+      'video_url'=>$relative,
+      'status'=>'active',
+      'origin'=>'manual_upload',
+      'source'=>'Upload manual',
+      'original_filename'=>basename((string)($file['name']??'')),
+      'file_size'=>$size,
+      'mime_type'=>$mime,
+      'published_at'=>date('c'),
+      'created_at'=>date('c')
+    ]);
+    tvp_write_json('videos.json',$videos);
+    tvp_admin_redirect(['msg'=>'Vídeo enviado e publicado no TV Play com sucesso.']);
+  }
   if($action==='approve_suggestion'){
     $idx=null; $jobs=null; $job=tvp_find_job($_POST['job_id']??'',$jobs,$idx);
     if(!$job) tvp_admin_redirect(['err'=>'Job não encontrado.']);
@@ -92,6 +141,7 @@ $stats=['sugerido'=>0,'roteiro'=>0,'gerando'=>0,'pronto'=>0,'publicado'=>0,'erro
 <!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>TV Play IA</title><link rel="stylesheet" href="admin.css?v=180"><style>
 .cards{display:grid;grid-template-columns:repeat(6,1fr);gap:12px}.card{background:#fff;border:1px solid #e5e7eb;border-radius:16px;padding:14px}.card b{font-size:28px}.grid2{display:grid;grid-template-columns:minmax(320px,.9fr) minmax(420px,1.1fr);gap:16px}.job{border:1px solid #dbe5f2;border-radius:18px;padding:16px;margin:12px 0;background:#fff;box-shadow:0 10px 24px rgba(15,47,104,.05)}.pill{display:inline-block;padding:5px 9px;border-radius:999px;background:#eef2ff;color:#1d4ed8;font-size:12px;font-weight:900;margin:0 6px 6px 0}.pill.prioridade_maxima{background:#fee2e2;color:#991b1b}.pill.destaque{background:#dbeafe;color:#1d4ed8}.pill.publicavel{background:#dcfce7;color:#166534}.pill.revisao{background:#fef3c7;color:#92400e}.pill.baixa{background:#f1f5f9;color:#475569}.muted{color:#64748b}.mini{font-size:12px}.news-list{max-height:720px;overflow:auto}.news-item{border-bottom:1px solid #e5e7eb;padding:12px 0}.script{width:100%;min-height:210px;line-height:1.55}.workflow{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}.step{font-size:12px;border-radius:999px;padding:6px 10px;background:#f1f5f9;color:#64748b;font-weight:800}.step.on{background:#dbeafe;color:#1d4ed8}.step.done{background:#dcfce7;color:#166534}.step.err{background:#fee2e2;color:#991b1b}.job-actions form{display:inline}.hint{border:1px dashed #bfd2ea;background:#f8fbff;border-radius:14px;padding:10px;margin:10px 0;color:#475569}.status-line{font-size:13px;color:#475569;margin-top:6px}.btn[disabled]{opacity:.45;cursor:not-allowed}.auto-refresh{font-size:12px;color:#64748b;margin-left:8px}@media(max-width:1100px){.cards,.grid2{grid-template-columns:1fr}.card b{font-size:22px}}</style></head><body><div class="admin"><?php include __DIR__.'/_menu.php'; ?><main class="main"><div class="top"><div><span class="eyebrow">Enterprise 1.3.1</span><h1>Assistente de Produção IA</h1><p class="muted" style="text-align:left">Fluxo corrigido: produzir vídeo, gerar roteiro, aprovar, enviar para HeyGen, atualizar status, publicar.</p></div><div class="actions"><a class="btn secondary" href="../videos.php" target="_blank">Ver TV Play</a><a class="btn secondary" href="heygen-diagnostico.php">Diagnóstico HeyGen</a></div></div><?php if($msg): ?><div class="notice"><?=tvp_h($msg)?></div><?php endif; ?><?php if($err): ?><div class="notice error"><?=tvp_h($err)?></div><?php endif; ?>
 <section class="cards"><div class="card"><b><?=$stats['sugerido']?></b><br><small>Sugeridos</small></div><div class="card"><b><?=$stats['roteiro']?></b><br><small>Roteiros</small></div><div class="card"><b><?=$stats['gerando']?></b><br><small>Gerando</small></div><div class="card"><b><?=$stats['pronto']?></b><br><small>Prontos</small></div><div class="card"><b><?=$stats['publicado']?></b><br><small>Publicados</small></div><div class="card"><b><?=$stats['erro']?></b><br><small>Erros</small></div></section>
+<section class="box" style="margin-top:16px"><h2>Adicionar vídeo externo</h2><p class="muted">Envie um vídeo produzido fora da TV Sumaré, inclusive no app da HeyGen, sem consumir a API da plataforma.</p><form method="post" enctype="multipart/form-data"><?=tvs_csrf_field()?><input type="hidden" name="action" value="upload_external_video"><div class="grid2" style="grid-template-columns:1fr 1fr;gap:12px"><div><label>Título</label><input type="text" name="title" required maxlength="180" placeholder="Ex.: Boletim Regional - Empregos em Sumaré"></div><div><label>Arquivo de vídeo</label><input type="file" name="video_file" required accept="video/mp4,video/quicktime,.mp4,.m4v,.mov"></div><div><label>Categoria</label><input type="text" name="category" maxlength="80" value="Vídeo"></div><div><label>Cidade</label><input type="text" name="city" maxlength="80" value="Sumaré"></div></div><div style="margin-top:12px"><label>Descrição</label><textarea name="description" rows="4" maxlength="1200" placeholder="Resumo do conteúdo do vídeo"></textarea></div><div class="hint">Formatos aceitos: MP4, M4V e MOV. Limite do sistema: 512 MB. O arquivo é salvo em armazenamento persistente e publicado no TV Play.</div><button class="btn">Enviar e publicar no TV Play</button></form></section>
 <section class="box" style="margin-top:16px"><h2>Produção Inteligente</h2><p class="muted">Gera até 3 sugestões com score alto e sem temas sensíveis. O envio para HeyGen só libera depois que o roteiro for salvo/aprovado.</p><p class="mini"><strong>HeyGen:</strong> <?=trim((string)($cfg['heygen_api_key']??''))!==''?'chave configurada':'sem chave'?> • <strong>Avatar:</strong> <?=tvp_h($cfg['heygen_avatar_id']??'')?> • <strong>Voz:</strong> <?=tvp_h($cfg['heygen_voice_id']??'')?></p><form method="post"><?=tvs_csrf_field()?><input type="hidden" name="action" value="suggest_top3"><button class="btn orange">Gerar Top 3 sugestões de vídeo</button></form></section>
 <div class="grid2" style="margin-top:16px"><section class="box"><h2>Produção Manual</h2><p class="muted">Use para transformar uma matéria aprovada em vídeo, mesmo fora do Top 3.</p><div class="news-list"><?php if(!$news): ?><p>Nenhuma notícia publicada ainda.</p><?php endif; ?><?php foreach($news as $n): $nid=tvp_news_id($n); $score=tvp_video_score($n); $pri=tvp_video_priority($score); ?><div class="news-item"><span class="pill <?=tvp_h($pri)?>"><?=tvp_h(strtoupper($pri))?></span><strong><?=tvp_h(tvp_news_title($n))?></strong><br><small><?=tvp_h(tvp_news_city($n).' • '.tvp_news_category($n).' • pontuação '.$score)?></small><?php if(tvp_is_sensitive_topic($n)): ?><div class="mini" style="color:#b91c1c;margin-top:4px">Revisão humana obrigatória antes de vídeo.</div><?php endif; ?><form method="post" style="margin-top:8px"><?=tvs_csrf_field()?><input type="hidden" name="action" value="create_manual"><input type="hidden" name="news_id" value="<?=tvp_h($nid)?>"><button class="btn secondary">🎬 Produzir vídeo</button></form></div><?php endforeach; ?></div></section>
 <section class="box"><h2>Fila de Produção</h2><?php if(!$active): ?><p class="muted">Nenhum vídeo na fila.</p><?php endif; ?><?php foreach($active as $j): $status=$j['status']??'fila'; $ready=!empty($j['video_url'])||!empty($j['captioned_video_url']); $hasScript=trim((string)($j['script']??''))!==''; $canSend=($status==='roteiro_aprovado' && $hasScript); ?><article class="job"><span class="pill <?=tvp_h($j['priority']??'media')?>"><?=tvp_h(strtoupper($j['priority']??'media'))?></span><span class="pill"><?=tvp_h($status)?></span><span class="pill">Score <?=tvp_h($j['score']??0)?></span><h3><?=tvp_h($j['title']??'Vídeo')?></h3><small class="muted"><?=tvp_h(($j['city']??'Região').' • '.($j['category']??'Notícia').' • '.($j['source']??''))?></small><?php if(!empty($j['presenter_profile'])): ?><div class="status-line">Apresentador: <?=tvp_h(tvp_presenter_label($j['presenter_profile']))?></div><?php endif; ?><?php if(!empty($j['heygen_session_id'])): ?><div class="mini muted">Sessão HeyGen: <?=tvp_h($j['heygen_session_id'])?> <?=isset($j['heygen_progress'])?' • '.$j['heygen_progress'].'%':''?></div><?php endif; ?><?php if(!empty($j['heygen_failure'])): ?><div class="notice error mini"><?=tvp_h($j['heygen_failure'])?></div><?php endif; ?>
