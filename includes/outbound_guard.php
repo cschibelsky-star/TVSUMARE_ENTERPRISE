@@ -20,6 +20,7 @@ function tvs_outbound_allowed_hosts(): array {
         'accounts.google.com',
         'oauth2.googleapis.com',
         'www.googleapis.com',
+        'marketing.hml.vitrineiapro.com.br',
     ];
     $extra = array_filter(array_map(
         static fn($host) => strtolower(trim((string) $host)),

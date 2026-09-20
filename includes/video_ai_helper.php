@@ -325,16 +325,44 @@ if (!function_exists('tvp_veo_config')) {
       $guard." Cena 3: encerramento visual para boletim da TV Sumaré sobre {$title}, com composição limpa, espaço seguro para identidade gráfica sobreposta depois, sem apresentador e sem fala. Contexto regional: {$city}."
     ];
   }
+  function tvp_hub_http_json($path,$payload,$timeout=60){
+    $base=rtrim((string)(getenv('MARKETING_ENGINE_URL')?:'https://marketing.hml.vitrineiapro.com.br'),'/');
+    $token=trim((string)(getenv('MARKETING_ENGINE_TOKEN')?:''));
+    if($token==='') return ['ok'=>false,'error'=>'Token do Hub IA não configurado.'];
+    $url=$base.'/'.ltrim((string)$path,'/');
+    $outbound=tvs_outbound_curl_options($url,$timeout); if($outbound===null) return ['ok'=>false,'error'=>'Hub IA bloqueado pela política de saída.'];
+    $ch=curl_init($url); curl_setopt_array($ch,$outbound+[
+      CURLOPT_RETURNTRANSFER=>true,CURLOPT_POST=>true,
+      CURLOPT_HTTPHEADER=>['Accept: application/json','Content-Type: application/json','Authorization: Bearer '.$token],
+      CURLOPT_POSTFIELDS=>json_encode($payload,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)
+    ]);
+    $res=curl_exec($ch); $err=curl_error($ch); $http=(int)curl_getinfo($ch,CURLINFO_HTTP_CODE); curl_close($ch);
+    if($res===false || $res==='') return ['ok'=>false,'http'=>$http,'error'=>'Hub IA sem resposta. '.$err];
+    $json=json_decode((string)$res,true);
+    if($http<200 || $http>=300) return ['ok'=>false,'http'=>$http,'error'=>'Hub IA HTTP '.$http.': '.substr((string)$res,0,900),'raw'=>$json?:$res];
+    return ['ok'=>true,'http'=>$http,'data'=>is_array($json)?$json:[]];
+  }
   function tvp_send_veo($job){
-    $cfg=tvp_veo_config(); $ops=[];
+    $ops=[];
     foreach(tvp_veo_scene_prompts($job) as $i=>$prompt){
-      $payload=['instances'=>[['prompt'=>$prompt]],'parameters'=>['aspectRatio'=>$cfg['aspect_ratio'],'resolution'=>$cfg['resolution'],'durationSeconds'=>$cfg['duration_seconds'],'sampleCount'=>1]];
-      $r=tvp_veo_http_json('POST','models/'.rawurlencode($cfg['model']).':predictLongRunning',$payload,60);
-      if(empty($r['ok'])) return ['ok'=>false,'error'=>'Falha ao iniciar cena '.($i+1).': '.($r['error']??'erro VEO')];
-      $op=trim((string)($r['data']['name']??'')); if($op==='') return ['ok'=>false,'error'=>'VEO não retornou operação para a cena '.($i+1).'.'];
+      $r=tvp_hub_http_json('/api/internal/marketing/media/video',[
+        'project_id'=>(string)($job['id']??'tvsumare-video'),
+        'brand'=>'TV Sumaré',
+        'idea'=>$prompt,
+        'objective'=>'informar',
+        'channel'=>'portal',
+        'format'=>'reportagem_visual',
+        'title'=>(string)($job['title']??'TV Sumaré'),
+        'caption'=>(string)($job['summary']??''),
+        'cta'=>'Acompanhe a TV Sumaré',
+        'aspect_ratio'=>'16:9',
+        'duration_seconds'=>8
+      ],60);
+      if(empty($r['ok'])) return ['ok'=>false,'error'=>'Falha no Hub IA ao iniciar cena '.($i+1).': '.($r['error']??'erro VEO')];
+      $op=trim((string)($r['data']['job_ref']??'')); if($op==='') return ['ok'=>false,'error'=>'Hub IA não retornou job_ref para a cena '.($i+1).'.'];
       $ops[]=$op;
     }
-    return ['ok'=>true,'operations'=>$ops,'status'=>'gerando'];
+    return ['ok'=>true,'operations'=>$ops,'status'=>'gerando','provider'=>'hub_veo'];
   }
   function tvp_veo_download($url,$dest){
     $cfg=tvp_veo_config(); $url=trim((string)$url);
@@ -373,11 +401,11 @@ if (!function_exists('tvp_veo_config')) {
     $ops=$job['veo_operations']??[]; if(!is_array($ops) || !$ops) return ['ok'=>false,'error'=>'Job VEO sem operações.'];
     $uris=[]; $done=0;
     foreach($ops as $op){
-      $r=tvp_veo_http_json('GET',$op,null,35); if(empty($r['ok'])) return $r; $d=$r['data']??[];
-      if(empty($d['done'])) continue;
-      if(!empty($d['error'])) return ['ok'=>false,'error'=>'VEO falhou: '.json_encode($d['error'],JSON_UNESCAPED_UNICODE)];
-      $uri=$d['response']['generateVideoResponse']['generatedSamples'][0]['video']['uri']??($d['response']['generatedVideos'][0]['video']['uri']??'');
-      if(!is_string($uri) || trim($uri)==='') return ['ok'=>false,'error'=>'VEO concluiu sem URI de vídeo.'];
+      $r=tvp_hub_http_json('/api/internal/marketing/media/video/refresh',['job_ref'=>$op],35); if(empty($r['ok'])) return $r;
+      $d=$r['data']??[]; $status=(string)($d['status']??'processing');
+      if($status==='failed') return ['ok'=>false,'error'=>'Hub IA informou falha na geração VEO.'];
+      if($status!=='completed') continue;
+      $uri=trim((string)($d['asset_url']??'')); if($uri==='') return ['ok'=>false,'error'=>'Hub IA concluiu sem URL do vídeo.'];
       $uris[]=$uri; $done++;
     }
     if($done<count($ops)) return ['ok'=>true,'status'=>'gerando','progress'=>(int)floor(($done/count($ops))*100)];
