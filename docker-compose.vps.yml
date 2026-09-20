@@ -1,3 +1,5 @@
+name: tvsumare
+
 services:
   web:
     build:
