@@ -2,8 +2,23 @@
 include 'config.php';
 require_once __DIR__.'/includes/tvs_public_helpers.php';
 $active='noticias';
-$news=tvs_json('data/noticias.json');
-$news=function_exists('tvs_prepare_public_news_v2') ? tvs_prepare_public_news_v2((is_array($news)?$news:[]), 21) : tvs_prepare_public_news(is_array($news)?$news:[], 30);
+$newsRaw=tvs_json('data/noticias.json');
+$newsRaw=is_array($newsRaw)?$newsRaw:[];
+$news=function_exists('tvs_prepare_public_news_v2') ? tvs_prepare_public_news_v2($newsRaw, 21) : tvs_prepare_public_news($newsRaw, 30);
+
+// Mantém a listagem pública coerente com a Home: amplia a janela sem ressuscitar
+// conteúdo temporal expirado quando a janela recente estiver vazia.
+if(!$news){
+  $archive=function_exists('tvs_prepare_public_news_v2') ? tvs_prepare_public_news_v2($newsRaw, 3650) : tvs_prepare_public_news($newsRaw, 3650);
+  foreach($archive as $n){
+    $age=tvs_news_age_days($n);
+    $txt=tvs_lc(($n['category']??'').' '.($n['title']??'').' '.($n['subtitle']??'').' '.($n['summary']??''));
+    $expiredSensitive=$age>21 && preg_match('~emprego|vagas|processo seletivo|recrutamento|frente fria|chuva|temporal|alerta|evento|show|festival|agenda|inscri[cç][aã]o|mutir[aã]o~iu',$txt);
+    if($expiredSensitive) continue;
+    $news[]=$n;
+  }
+  usort($news,'tvs_sort_recent');
+}
 $cat=trim($_GET['categoria']??'');
 $q=trim($_GET['q']??'');
 if($cat){ $news=array_values(array_filter($news, fn($n)=>tvs_lc($n['category']??'')===tvs_lc($cat))); }

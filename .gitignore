@@ -10,3 +10,7 @@ logs/
 # Backups locais de seguranca
 *.bak-*
 *.backup-*
+
+# Artefatos temporarios de smoke test VEO
+api/veo-e2e-*.php
+veo-e2e-*.php

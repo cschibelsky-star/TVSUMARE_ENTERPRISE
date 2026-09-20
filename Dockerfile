@@ -57,6 +57,7 @@ RUN php /var/www/html/docker/apply-radar-editorial-policy.php \
     && rm -f /var/www/html/docker/test-reporter-dedup.php \
     && rm -f /var/www/html/docker/test-youtube-integration.php \
     && rm -f /var/www/html/docker/run-homologation-smoke.php \
+    && rm -f /var/www/html/api/veo-e2e-*.php /var/www/html/veo-e2e-*.php \
     && chown -R root:root /var/www/html \
     && find /var/www/html -type d -exec chmod 0755 {} + \
     && find /var/www/html -type f -exec chmod 0644 {} +

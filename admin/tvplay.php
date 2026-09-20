@@ -50,12 +50,33 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
     if(!in_array($ext,['mp4','m4v','mov'],true)) tvp_admin_redirect(['err'=>'Extensão não permitida. Use MP4, M4V ou MOV.']);
     $uploadDir=dirname(__DIR__).'/uploads/videos';
     if(!is_dir($uploadDir) && !@mkdir($uploadDir,0775,true)) tvp_admin_redirect(['err'=>'Não foi possível preparar o diretório de vídeos.']);
-    $safeExt=$ext==='mov'?'mov':($ext==='m4v'?'m4v':'mp4');
-    $name='video_'.date('Ymd_His').'_'.bin2hex(random_bytes(5)).'.'.$safeExt;
-    $dest=$uploadDir.'/'.$name;
-    if(!move_uploaded_file($tmp,$dest)) tvp_admin_redirect(['err'=>'Não foi possível salvar o vídeo no armazenamento persistente.']);
+    $base='video_'.date('Ymd_His').'_'.bin2hex(random_bytes(5));
+    $sourceName=$base.'.'.$ext;
+    $sourcePath=$uploadDir.'/'.$sourceName;
+    if(!move_uploaded_file($tmp,$sourcePath)) tvp_admin_redirect(['err'=>'Não foi possível salvar o vídeo no armazenamento persistente.']);
+    @chmod($sourcePath,0644);
+
+    // Padroniza toda entrada para MP4 H.264/AAC para garantir reprodução consistente no portal.
+    $finalName=$base.'.mp4';
+    $dest=$uploadDir.'/'.$finalName;
+    $ffmpeg=trim((string)@shell_exec('command -v ffmpeg 2>/dev/null'));
+    if($ffmpeg===''){
+      @unlink($sourcePath);
+      tvp_admin_redirect(['err'=>'FFmpeg indisponível para normalizar o vídeo enviado.']);
+    }
+    $cmd=escapeshellarg($ffmpeg).' -hide_banner -loglevel error -y -i '.escapeshellarg($sourcePath)
+      .' -c:v libx264 -preset medium -crf 22 -pix_fmt yuv420p -c:a aac -b:a 160k -movflags +faststart '
+      .escapeshellarg($dest).' 2>&1';
+    $ffout=[]; $ffcode=0; exec($cmd,$ffout,$ffcode);
+    if($ffcode!==0 || !is_file($dest) || filesize($dest)<10240){
+      @unlink($sourcePath); @unlink($dest);
+      tvp_admin_redirect(['err'=>'Não foi possível converter o vídeo para MP4 compatível. '.substr(implode(' ',$ffout),0,240)]);
+    }
+    if($sourcePath!==$dest) @unlink($sourcePath);
     @chmod($dest,0644);
-    $relative='uploads/videos/'.$name;
+    $size=(int)filesize($dest);
+    $mime='video/mp4';
+    $relative='uploads/videos/'.$finalName;
     $videos=tvp_read_json('videos.json');
     array_unshift($videos,[
       'id'=>'upl_'.date('YmdHis').'_'.substr(hash('sha256',$name),0,8),
