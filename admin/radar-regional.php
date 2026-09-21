@@ -1916,7 +1916,7 @@ function tvs_radar_update_queue($perCity=15,$mode='normal'){
   global $cities;
   foreach($cities as $city){
     if((microtime(true)-$started)>(tvs_radar_is_volume_mode()?46:30)) break;
-    $cityCount=0; foreach($queue as $q){ if(($q['city']??'')===$city && ($q['status']??'aguardando')==='aguardando') $cityCount++; }
+    $cityCount=0; foreach($queue as $q){ if(($q['city']??'')===$city) $cityCount++; }
     if($cityCount>=$perCity) continue;
     $attempts=0;
     foreach(tvs_radar_candidates_for_city($city) as $cand){
@@ -2142,7 +2142,6 @@ $queue=tvs_queue_read();
 $byCity=[]; foreach($cities as $c) $byCity[$c]=[];
 $sensitiveQueue=[]; $imageReviewQueue=[]; $normalQueue=[];
 foreach($queue as $q){
-  if(($q['status']??'aguardando')!=='aguardando') continue;
   if(!empty($q['sensitive_review_required']) || ($q['review_level']??'')==='revisao_obrigatoria'){
     $sensitiveQueue[]=$q;
     continue;
