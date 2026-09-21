@@ -10,7 +10,7 @@ services:
     init: true
     read_only: true
     env_file:
-      - .env.runtime
+      - ../.env.runtime
     environment:
       TVSUMARE_ENV: homologation
       TVSUMARE_SITE_NAME: TV Sumare
@@ -83,7 +83,7 @@ services:
     init: true
     read_only: true
     env_file:
-      - .env.runtime
+      - ../.env.runtime
     command: ["/bin/sh", "-c", "exec su -s /bin/sh www-data -c 'while true; do php /var/www/html/admin/cron_radar.php; sleep 3600; done'"]
     environment:
       TVSUMARE_ENV: homologation

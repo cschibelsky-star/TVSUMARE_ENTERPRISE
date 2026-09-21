@@ -196,6 +196,28 @@ if (!function_exists('tvp_generate_script')) {
     }
     return tvp_clean("Boa noite. A TV Sumaré acompanha os principais fatos de {$city} e região.\n\n{$title}.\n\nSegundo informações de {$source}, o tema integra a cobertura regional da TV Sumaré e deve ser acompanhado pelos moradores.\n\nEu sou Cristian Schibelsky. Até o próximo boletim.");
   }
+  function tvp_core_generate_text($prompt){
+    $base=rtrim((string)(getenv('CENTRO_IA_URL')?:''),'/');
+    $token=trim((string)(getenv('CENTRO_IA_INTERNAL_TOKEN')?:''));
+    if($base==='' || $token==='') return ['ok'=>false,'error'=>'Core IA não configurado.'];
+    $url=$base.'/api/internal/centro-ia/execute';
+    $opts=tvs_outbound_curl_options($url,45);
+    if($opts===null) return ['ok'=>false,'error'=>'Core IA bloqueado pela política de saída.'];
+    $payload=['project_id'=>'tvsumare','capability'=>'editorial_generation','input'=>['user'=>(string)$prompt,'temperature'=>0.18]];
+    $ch=curl_init($url);
+    curl_setopt_array($ch,$opts+[
+      CURLOPT_RETURNTRANSFER=>true,
+      CURLOPT_POST=>true,
+      CURLOPT_HTTPHEADER=>['Accept: application/json','Content-Type: application/json','Authorization: Bearer '.$token,'X-Vitrine-Project: tvsumare'],
+      CURLOPT_POSTFIELDS=>json_encode($payload,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)
+    ]);
+    $res=curl_exec($ch); $err=curl_error($ch); $http=(int)curl_getinfo($ch,CURLINFO_HTTP_CODE); curl_close($ch);
+    if($res===false || $res==='') return ['ok'=>false,'http'=>$http,'error'=>'Core IA sem resposta. '.$err];
+    $json=json_decode((string)$res,true);
+    if($http<200 || $http>=300 || empty($json['ok'])) return ['ok'=>false,'http'=>$http,'error'=>'Core IA HTTP '.$http];
+    $text=trim((string)($json['output_text']??''));
+    return $text!=='' ? ['ok'=>true,'text'=>$text,'model'=>$json['model']??null] : ['ok'=>false,'error'=>'Core IA retornou texto vazio.'];
+  }
   function tvp_generate_script($job){
     $profile=$job['presenter_profile']??tvp_avatar_profile_for_category($job['category']??'');
     $presenter=tvp_presenter_label($profile);
@@ -218,7 +240,9 @@ if (!function_exists('tvp_generate_script')) {
       "Conteúdo disponível: {$body}\n\n".
       "Finalize obrigatoriamente com: 'Eu sou Cristian Schibelsky. Até o próximo boletim.'";
     $script='';
-    if(trim((string)($GLOBALS['gemini_api_key']??''))!=='' && function_exists('tvs_gemini_generate_text')){
+    $core=tvp_core_generate_text($prompt);
+    if(!empty($core['ok'])) $script=$core['text']??'';
+    if($script==='' && trim((string)($GLOBALS['gemini_api_key']??''))!=='' && function_exists('tvs_gemini_generate_text')){
       $r=tvs_gemini_generate_text($GLOBALS['gemini_api_key'],$prompt,['temperature'=>0.18,'maxOutputTokens'=>1100],35);
       if(!empty($r['ok'])) $script=$r['text']??'';
     }
