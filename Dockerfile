@@ -10,7 +10,7 @@ RUN apt-get update \
     && a2enconf tvsumare-security \
     && chmod 0755 /usr/local/bin/tvsumare-entrypoint \
     && sed -ri -e 's!AllowOverride None!AllowOverride All!g' /etc/apache2/apache2.conf \
-    && printf '%s\n' 'upload_max_filesize=512M' 'post_max_size=520M' 'max_execution_time=300' 'max_input_time=300' > /usr/local/etc/php/conf.d/tvsumare-uploads.ini
+    && printf '%s\n' 'upload_max_filesize=512M' 'post_max_size=520M' 'upload_tmp_dir=/var/www/html/uploads/.tmp' 'max_execution_time=300' 'max_input_time=300' > /usr/local/etc/php/conf.d/tvsumare-uploads.ini
 
 COPY . /var/www/html/
 

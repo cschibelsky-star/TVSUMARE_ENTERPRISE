@@ -51,7 +51,7 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
     $uploadDir=dirname(__DIR__).'/uploads/videos';
     if(!is_dir($uploadDir) && !@mkdir($uploadDir,0775,true)) tvp_admin_redirect(['err'=>'Não foi possível preparar o diretório de vídeos.']);
     $base='video_'.date('Ymd_His').'_'.bin2hex(random_bytes(5));
-    $sourceName=$base.'.'.$ext;
+    $sourceName=$base.'.source.'.$ext;
     $sourcePath=$uploadDir.'/'.$sourceName;
     if(!move_uploaded_file($tmp,$sourcePath)) tvp_admin_redirect(['err'=>'Não foi possível salvar o vídeo no armazenamento persistente.']);
     @chmod($sourcePath,0644);
@@ -79,7 +79,7 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
     $relative='uploads/videos/'.$finalName;
     $videos=tvp_read_json('videos.json');
     array_unshift($videos,[
-      'id'=>'upl_'.date('YmdHis').'_'.substr(hash('sha256',$name),0,8),
+      'id'=>'upl_'.date('YmdHis').'_'.substr(hash('sha256',$finalName.microtime(true)),0,8),
       'title'=>$title,
       'description'=>$description,
       'category'=>$category?:'Vídeo',
