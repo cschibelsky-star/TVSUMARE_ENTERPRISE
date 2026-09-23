@@ -93,7 +93,7 @@ function tvs_video_thumb_html($v){
 
   <section class="brand-strip-enterprise" aria-label="Tecnologia">
     <strong>TV Sumaré Enterprise</strong>
-    <span>Tecnologia by Vitrine AI Pro</span>
+    <span>Tecnologia by Vitrine IA Pro</span>
     <em>Sumaré • Hortolândia • Paulínia • Nova Odessa • Americana • Campinas</em>
   </section>
 

@@ -35,9 +35,23 @@ if(empty($cfg['auto_daily'])){
 }
 
 if((string)($cfg['last_auto_date']??'')===$today){
-  @file_put_contents($cronLogFile,date('c')." SKIP reason=already_ran_today date={$today}\n",FILE_APPEND|LOCK_EX);
-  echo "Radar automatico ja executado hoje ({$today}).\n";
-  exit(0);
+  $publicNews=function_exists('tvs_read_json_file') ? tvs_read_json_file($newsFile) : [];
+  $recentPublic=0;
+  if(is_array($publicNews)){
+    $cutoff=time()-(21*86400);
+    foreach($publicNews as $item){
+      if(!is_array($item)) continue;
+      $raw=(string)($item['published_at']??$item['created_at']??'');
+      $ts=$raw!=='' ? strtotime($raw) : false;
+      if($ts!==false && $ts>=$cutoff) $recentPublic++;
+    }
+  }
+  if($recentPublic>=6){
+    @file_put_contents($cronLogFile,date('c')." SKIP reason=already_ran_today date={$today} recent_public={$recentPublic}\n",FILE_APPEND|LOCK_EX);
+    echo "Radar automatico ja executado hoje ({$today}); {$recentPublic} noticia(s) publica(s) recentes.\n";
+    exit(0);
+  }
+  @file_put_contents($cronLogFile,date('c')." REFILL reason=sparse_public_news date={$today} recent_public={$recentPublic}\n",FILE_APPEND|LOCK_EX);
 }
 
 $n = function_exists('tvs_radar_update_queue')
