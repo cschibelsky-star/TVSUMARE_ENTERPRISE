@@ -100,29 +100,29 @@ function tvs_video_thumb_html($v){
     <?php if($byCity): ?><div class="section-heading spaced"><h2>Destaques por Cidade</h2><a href="noticias.php">Cobertura regional</a></div><div class="city-news-grid compact"><?php foreach($byCity as $city=>$n): ?><section class="city-news-box"><h3><?=tvs_h($city)?></h3><a href="<?=tvs_h(tvs_news_url($n))?>"><?=tvs_card_img_html($n)?><span><?=tvs_h(tvs_title($n['title']??'Sem título',78))?></span></a></section><?php endforeach; ?></div><?php endif; ?>
 
     <?php if($empresas): ?><div class="section-heading spaced"><h2>Guia Comercial em Destaque</h2><a href="guia.php">Ver guia</a></div><div class="home-business-strip"><?php foreach($empresas as $e): ?><article><?php if(!empty($e['image'])):?><img src="<?=tvs_h($e['image'])?>" onerror="this.style.display='none'" alt=""><?php endif; ?><strong><?=tvs_h($e['name']??$e['empresa']??'Empresa')?></strong><p><?=tvs_h($e['category']??$e['categoria']??'Guia Comercial')?></p><?php if(!empty($e['whatsapp'])):?><a href="https://wa.me/<?=preg_replace('/\D+/','',$e['whatsapp'])?>" target="_blank" rel="noopener">WhatsApp</a><?php endif; ?></article><?php endforeach; ?></div><?php endif; ?>
+
+    <?php if(!empty($editorialSections)): ?>
+    <section class="tvs-sections-20 tvs-sections-modern">
+      <div class="section-heading modern-heading"><div><span>Editorias</span><h2>Notícias por assunto</h2><p>Cobertura regional organizada por temas, com identidade TV Sumaré.</p></div><a href="noticias.php">Ver todas</a></div>
+      <div class="tvs-topic-grid">
+      <?php foreach($editorialSections as $secName=>$items): if(empty($items)) continue; $main=$items[0]; $img=tvs_display_image($main); if($img==='') $img='assets/tvsumare-noticia-padrao.svg'; ?>
+        <article class="tvs-topic-card">
+          <a class="tvs-topic-image" href="<?=tvs_h(tvs_news_url($main))?>"><img src="<?=tvs_h($img)?>" onerror="this.src='assets/tvsumare-noticia-padrao.svg'" alt=""></a>
+          <div class="tvs-topic-content">
+            <h3><?=tvs_h($secName)?><span>.</span></h3>
+            <a class="tvs-topic-title" href="<?=tvs_h(tvs_news_url($main))?>"><?=tvs_h(tvs_title($main['title']??'',82))?></a>
+            <?php foreach(array_slice($items,1,2) as $mini): ?>
+              <a class="tvs-topic-mini" href="<?=tvs_h(tvs_news_url($mini))?>"><?=tvs_h(tvs_title($mini['title']??'',74))?></a>
+            <?php endforeach; ?>
+          </div>
+        </article>
+      <?php endforeach; ?>
+      </div>
+    </section>
+    <?php endif; ?>
   </div>
 
   <aside class="sidebar"><div class="widget"><div class="widget-title">🔥 Mais Lidas</div><ol class="rank-list"><?php foreach($popular as $p): ?><li><a href="<?=tvs_h(tvs_news_url($p))?>"><?=tvs_h(tvs_title($p['title']??'Sem título',88))?></a></li><?php endforeach; ?></ol></div><div class="widget"><div class="widget-title">📢 Anuncie Aqui</div><p>Sua empresa pode aparecer em banners, matérias e vídeos da TV Sumaré.</p><a href="anuncie.php" class="btn btn-outline">Conheça os planos</a></div></aside>
   </section>
 </section></main>
-<?php if(!empty($editorialSections)): ?>
-<section class="container tvs-sections-20 tvs-sections-modern">
-  <div class="section-heading modern-heading"><div><span>Editorias</span><h2>Notícias por assunto</h2><p>Cobertura regional organizada por temas, com identidade TV Sumaré.</p></div><a href="noticias.php">Ver todas</a></div>
-  <div class="tvs-topic-grid">
-  <?php foreach($editorialSections as $secName=>$items): if(empty($items)) continue; $main=$items[0]; $img=tvs_display_image($main); if($img==='') $img='assets/tvsumare-noticia-padrao.svg'; ?>
-    <article class="tvs-topic-card">
-      <a class="tvs-topic-image" href="<?=tvs_h(tvs_news_url($main))?>"><img src="<?=tvs_h($img)?>" onerror="this.src='assets/tvsumare-noticia-padrao.svg'" alt=""></a>
-      <div class="tvs-topic-content">
-        <h3><?=tvs_h($secName)?><span>.</span></h3>
-        <a class="tvs-topic-title" href="<?=tvs_h(tvs_news_url($main))?>"><?=tvs_h(tvs_title($main['title']??'',82))?></a>
-        <?php foreach(array_slice($items,1,2) as $mini): ?>
-          <a class="tvs-topic-mini" href="<?=tvs_h(tvs_news_url($mini))?>"><?=tvs_h(tvs_title($mini['title']??'',74))?></a>
-        <?php endforeach; ?>
-      </div>
-    </article>
-  <?php endforeach; ?>
-  </div>
-</section>
-<?php endif; ?>
-
 <?php include 'rodape.php'; ?></body></html>
