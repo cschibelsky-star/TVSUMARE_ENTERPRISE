@@ -2,6 +2,7 @@
 require_once __DIR__.'/auth.php';
 require_login();
 require_once __DIR__.'/monitor_lib.php';
+require_once dirname(__DIR__).'/includes/tvs_public_helpers.php';
 
 $activeAdmin='drafts';
 $df=dirname(__DIR__).'/data/rascunhos.json';
@@ -61,6 +62,15 @@ function tvs_admin_invalid_draft($draft,&$reason=''){
     $reason='Conteúdo de menu, boilerplate ou página genérica detectado.';
     return true;
   }
+  if(function_exists('tvs_is_regional_news_strict') && !tvs_is_regional_news_strict($draft)){
+    $reason='Matéria fora do recorte regional da TV Sumaré ou sem cidade regional comprovada no conteúdo.';
+    return true;
+  }
+  $realImage=function_exists('tvs_real_image') ? tvs_real_image($draft) : trim((string)($draft['image']??''));
+  if($realImage===''){
+    $reason='Matéria sem imagem editorial verificável. Informe uma imagem relacionada à pauta antes de publicar.';
+    return true;
+  }
   return false;
 }
 
@@ -88,6 +98,10 @@ if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'){
     $drafts[$idx]['body']=tvs_admin_clean_field($_POST['body']??($drafts[$idx]['body']??''));
     $drafts[$idx]['category']=trim((string)($_POST['category']??($drafts[$idx]['category']??'Cidades'))) ?: 'Cidades';
     $drafts[$idx]['city']=trim((string)($_POST['city']??($drafts[$idx]['city']??'Região'))) ?: 'Região';
+    if(function_exists('tvs_region_city_detect')){
+      $detectedCity=tvs_region_city_detect($drafts[$idx]);
+      if($detectedCity!=='') $drafts[$idx]['city']=$detectedCity;
+    }
     $previousImage=trim((string)($drafts[$idx]['image']??''));
     $drafts[$idx]['image']=trim((string)($_POST['image']??$previousImage));
     $imageChanged=$drafts[$idx]['image']!==$previousImage;
@@ -183,7 +197,7 @@ $styles=['Notícia padrão','Última hora','Esporte','Política','Segurança','S
 ?>
 <!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Revisões Pendentes | TV Sumaré</title><link rel="stylesheet" href="admin.css?v=2.0.5"><style>.inline-form{display:inline}.btn.danger{background:#b42318;color:#fff}.actions{display:flex;gap:8px;flex-wrap:wrap}.textarea-large{min-height:360px}.draft-list .box{margin-bottom:16px}.review-confirm{padding:12px;border:1px solid #fed7aa;background:#fff7ed;border-radius:12px;margin:14px 0}</style></head>
 <body><div class="admin"><?php include __DIR__.'/_menu.php'; ?><main class="main">
-<div class="top"><div><span class="eyebrow">Redação</span><h1>Revisões Pendentes</h1><p class="muted">Todo rascunho deve ser aberto e conferido antes da publicação. Conteúdo genérico de agregadores é bloqueado automaticamente.</p></div><div class="actions"><a class="btn secondary" href="radar-regional.php">Aprovações</a><a class="btn secondary" href="noticias.php">Publicadas</a></div></div>
+<div class="top"><div><span class="eyebrow">Redação</span><h1>Revisões Pendentes</h1><p class="muted">Todo rascunho deve ser aberto e conferido antes da publicação. O sistema bloqueia automaticamente conteúdo fora da região, cidade inconsistente, agregadores genéricos e matéria sem imagem editorial verificável.</p></div><div class="actions"><a class="btn secondary" href="radar-regional.php">Aprovações</a><a class="btn secondary" href="noticias.php">Publicadas</a></div></div>
 <?php if($invalidCount>0): ?><div class="notice">Proteção editorial ativa: <?=htmlspecialchars((string)$invalidCount,ENT_QUOTES,'UTF-8')?> rascunho(s) inválido(s) foram ocultados desta fila sem apagar os dados.</div><?php endif; ?>
 <?php if(isset($_GET['saved'])): ?><div class="notice">Revisão salva com sucesso.</div><?php endif; ?><?php if(isset($_GET['deleted'])): ?><div class="notice">Rascunho excluído com sucesso.</div><?php endif; ?><?php if(isset($_GET['erro'])): ?><div class="notice error">Não foi possível concluir a ação: <?=htmlspecialchars((string)$_GET['erro'],ENT_QUOTES,'UTF-8')?></div><?php endif; ?>
 <?php if($edit): ?><div class="box"><h2>Revisar matéria antes de publicar</h2><?php if($editInvalid): ?><div class="notice error">Conteúdo bloqueado para publicação: <?=htmlspecialchars($editInvalidReason,ENT_QUOTES,'UTF-8')?>. Edite e salve um conteúdo jornalístico válido antes de publicar.</div><?php endif; ?><form method="post" class="form"><?=tvs_csrf_field()?><input type="hidden" name="id" value="<?=htmlspecialchars((string)($edit['id']??''),ENT_QUOTES,'UTF-8')?>"><label>Título</label><input name="title" value="<?=htmlspecialchars((string)($edit['title']??''),ENT_QUOTES,'UTF-8')?>" required><label>Subtítulo</label><input name="subtitle" value="<?=htmlspecialchars((string)($edit['subtitle']??''),ENT_QUOTES,'UTF-8')?>"><label>Resumo curto</label><textarea name="summary"><?=htmlspecialchars((string)($edit['summary']??''),ENT_QUOTES,'UTF-8')?></textarea><div class="grid2"><div><label>Cidade</label><input name="city" value="<?=htmlspecialchars((string)($edit['city']??''),ENT_QUOTES,'UTF-8')?>"></div><div><label>Categoria</label><input name="category" value="<?=htmlspecialchars((string)($edit['category']??'Cidades'),ENT_QUOTES,'UTF-8')?>"></div></div><label>Estilo editorial</label><select name="editorial_style"><?php foreach($styles as $st): ?><option value="<?=htmlspecialchars($st,ENT_QUOTES,'UTF-8')?>" <?=($edit['editorial_style']??'Notícia padrão')===$st?'selected':''?>><?=htmlspecialchars($st,ENT_QUOTES,'UTF-8')?></option><?php endforeach; ?></select><label>Imagem da matéria</label><input name="image" value="<?=htmlspecialchars((string)($edit['image']??''),ENT_QUOTES,'UTF-8')?>"><?php if(!empty($edit['image_review_required'])): ?><div class="notice error"><strong>Imagem pendente de revisão.</strong> Substitua por uma imagem adequada ou confirme explicitamente o uso da imagem atual.</div><div class="review-confirm"><label><input type="checkbox" name="image_review_confirm" value="1"> Confirmo que revisei e autorizo o uso desta imagem.</label></div><?php endif; ?><div class="grid2"><div><label>SEO title</label><input name="seo_title" value="<?=htmlspecialchars((string)($edit['seo_title']??($edit['title']??'')),ENT_QUOTES,'UTF-8')?>"></div><div><label>Meta description</label><input name="meta_description" value="<?=htmlspecialchars((string)($edit['meta_description']??''),ENT_QUOTES,'UTF-8')?>"></div></div><label>Texto completo da matéria</label><textarea class="textarea-large" name="body" required><?=htmlspecialchars((string)($edit['body']??''),ENT_QUOTES,'UTF-8')?></textarea><label>Legenda Instagram</label><textarea name="instagram_caption"><?=htmlspecialchars((string)($edit['instagram_caption']??''),ENT_QUOTES,'UTF-8')?></textarea><label>Texto WhatsApp</label><textarea name="whatsapp_text"><?=htmlspecialchars((string)($edit['whatsapp_text']??''),ENT_QUOTES,'UTF-8')?></textarea><p><small>Fonte: <?php if(!empty($edit['source_url'])): ?><a target="_blank" rel="noopener" href="<?=htmlspecialchars((string)$edit['source_url'],ENT_QUOTES,'UTF-8')?>"><?=htmlspecialchars((string)($edit['source']??'Conferir fonte'),ENT_QUOTES,'UTF-8')?></a><?php else: ?><?=htmlspecialchars((string)($edit['source']??'Fonte não informada'),ENT_QUOTES,'UTF-8')?><?php endif; ?></small></p><div class="review-confirm"><label><input type="checkbox" name="review_confirm" value="1"> Confirmo que conferi fatos, nomes, datas, fonte, imagem e texto desta matéria.</label></div><div class="actions"><button type="submit" class="btn secondary" name="action" value="save">Salvar revisão</button><button type="submit" class="btn orange" name="action" value="publish" onclick="return confirm('Publicar a matéria após a revisão?')">Aprovar e publicar</button><a class="btn secondary" href="drafts.php">Voltar</a></div></form></div><?php endif; ?>
