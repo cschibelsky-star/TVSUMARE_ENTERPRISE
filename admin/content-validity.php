@@ -15,6 +15,7 @@ function cv_limit($n){ return cv_sensitive($n)?7:30; }
 function cv_age($n){ $ts=cv_date($n); return $ts?max(0,(int)floor((time()-$ts)/86400)):null; }
 function cv_needs_review($n){ $age=cv_age($n); $limit=cv_limit($n); $checked=strtotime((string)($n['validity_checked_at']??'')); if($checked && (time()-$checked)<($limit*86400)) return false; if(($n['validity_status']??'')==='revisao_solicitada') return true; if($age===null) return true; return $age>=$limit; }
 function cv_reason($n){ $age=cv_age($n); if($age===null) return 'Data editorial não identificada.'; if(cv_sensitive($n)) return "Conteúdo temporal/serviço com {$age} dia(s): confirmar prazo, agenda ou validade."; return "Matéria publicada há {$age} dia(s): confirmar se continua atual."; }
+function cv_batch_expired($n){ $age=cv_age($n); if($age===null) return true; return cv_sensitive($n) ? $age>=14 : $age>=60; }
 function cv_sync_alerts($news){
   $alerts=[];
   foreach($news as $n){
@@ -46,12 +47,33 @@ if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'){
   tvs_verify_csrf();
   $id=(string)($_POST['id']??'');
   $action=(string)($_POST['action']??'');
-  $idx=null;
-  foreach($news as $k=>$n){ if((string)($n['id']??'')===$id){ $idx=$k; break; } }
 
-  if($idx===null){
-    $error='Matéria não encontrada.';
+  if($action==='archive_expired_batch'){
+    $trash=cv_read('lixeira_noticias.json');
+    $kept=[]; $archived=0; $now=date('c');
+    foreach($news as $item){
+      if(cv_batch_expired($item)){
+        $item['deleted_at']=$now;
+        $item['archive_reason']='Arquivamento em lote por validade editorial expirada.';
+        $trash[]=$item;
+        $log[]=['id'=>uniqid('valid_'),'news_id'=>$item['id']??'','title'=>$item['title']??'Sem título','action'=>'ARQUIVADA_LOTE','reason'=>cv_reason($item),'created_at'=>$now];
+        $archived++;
+      } else { $kept[]=$item; }
+    }
+    $news=$kept;
+    cv_write('lixeira_noticias.json',$trash);
+    cv_write('noticias.json',$news);
+    $log=array_slice($log,-500);
+    cv_write('content_validity_log.json',$log);
+    cv_sync_alerts($news);
+    $notice=$archived.' matéria(s) vencida(s) arquivada(s) com rastreabilidade.';
   } else {
+    $idx=null;
+    foreach($news as $k=>$n){ if((string)($n['id']??'')===$id){ $idx=$k; break; } }
+
+    if($idx===null){
+      $error='Matéria não encontrada.';
+    } else {
     $now=date('c');
     $title=$news[$idx]['title']??'Sem título';
 
@@ -81,6 +103,7 @@ if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'){
     $log=array_slice($log,-500);
     cv_write('content_validity_log.json',$log);
     cv_sync_alerts($news);
+    }
   }
 }
 
@@ -115,6 +138,12 @@ usort($review,function($a,$b){ return (cv_age($b)??9999)<=>(cv_age($a)??9999); }
     <div class="admin-kpi"><span>Pedem checagem</span><strong><?=count($review)?></strong></div>
     <div class="admin-kpi"><span>Registros de validade</span><strong><?=count($log)?></strong></div>
   </div>
+
+  <section class="box" style="margin-bottom:16px">
+    <h2>Limpeza do passivo editorial</h2>
+    <p class="muted">Arquiva em lote conteúdo temporal com 14 dias ou mais e demais matérias com 60 dias ou mais. Tudo vai para a Lixeira com log editorial e pode ser restaurado.</p>
+    <form method="post" onsubmit="return confirm('Arquivar em lote todo o conteúdo vencido pelos critérios definidos? Os itens serão preservados na Lixeira.');"><?=tvs_csrf_field()?><button class="btn danger" name="action" value="archive_expired_batch">Arquivar vencidas em lote</button></form>
+  </section>
 
   <section class="box">
     <h2>Fila de checagem</h2>

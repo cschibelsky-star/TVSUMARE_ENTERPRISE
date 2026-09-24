@@ -26,19 +26,7 @@ if(count($news)<6){
   usort($news,'tvs_sort_recent');
 }
 
-/* Último fallback: se a janela recente estiver vazia, mantém a área de destaque com conteúdo regional ainda editorialmente válido do acervo. */
-if(!$news){
-  $archive=function_exists('tvs_prepare_public_news_v2') ? tvs_prepare_public_news_v2($newsRaw, 3650) : tvs_prepare_public_news($newsRaw, 3650);
-  foreach($archive as $n){
-    $age=tvs_news_age_days($n);
-    $txt=tvs_lc(($n['category']??'').' '.($n['title']??'').' '.($n['subtitle']??'').' '.($n['summary']??''));
-    $expiredSensitive=$age>21 && preg_match('~emprego|vagas|processo seletivo|recrutamento|frente fria|chuva|temporal|alerta|evento|show|festival|agenda|inscri[cç][aã]o|mutir[aã]o~iu',$txt);
-    if($expiredSensitive) continue;
-    $news[]=$n;
-    if(count($news)>=12) break;
-  }
-  usort($news,'tvs_sort_recent');
-}
+/* Não ressuscita acervo antigo apenas para preencher a capa. Se não houver pauta recente, regional e com imagem validada, a Home exibe o estado editorial de atualização. */
 $used=[];
 $editorialSections=function_exists('tvs_curated_sections') ? tvs_curated_sections($news) : [];
 $heroList=tvs_pick_news($news,$used,function($n){ return !tvs_is_sensitive($n); },1);
