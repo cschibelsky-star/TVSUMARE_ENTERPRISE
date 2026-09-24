@@ -12,9 +12,9 @@ function tvs_live_admin_json($file){
 function h($s){ return htmlspecialchars((string)$s,ENT_QUOTES,'UTF-8'); }
 function tvs_admin_default_channels($settings){
   return [
-    'tvsenado'=>['name'=>'TV Senado','source'=>'Senado Federal','embed'=>'','url'=>'https://www.youtube.com/@tvsenado','enabled'=>true],
-    'tvcamara'=>['name'=>'TV Câmara','source'=>'Câmara dos Deputados','embed'=>'','url'=>'','enabled'=>true],
-    'tvalesp'=>['name'=>'TV Alesp','source'=>'Assembleia Legislativa do Estado de São Paulo','embed'=>'','url'=>'','enabled'=>true],
+    'tvsenado'=>['name'=>'TV Senado','source'=>'Senado Federal','embed'=>'<iframe width="100%" height="100%" src="https://www.youtube.com/embed/live_stream?channel=UCLgti7NuK0RuW9wty-fxPjQ&autoplay=1" title="TV Senado ao vivo" frameborder="0" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>','url'=>'https://www12.senado.leg.br/tv/programas/ao-vivo','enabled'=>true],
+    'tvcamara'=>['name'=>'TV Câmara','source'=>'Câmara dos Deputados','embed'=>'<iframe width="100%" height="100%" src="https://www.camara.leg.br/tv/aovivo/embed" title="TV Câmara ao vivo" frameborder="0" allowfullscreen></iframe>','url'=>'https://www.camara.leg.br/tv','enabled'=>true],
+    'tvalesp'=>['name'=>'TV Alesp','source'=>'Assembleia Legislativa do Estado de São Paulo','embed'=>'<iframe width="100%" height="100%" src="https://www.youtube.com/embed/live_stream?channel=UCYnRWbd-tDDYf9zgCUlwxFw&autoplay=1" title="TV Alesp ao vivo" frameborder="0" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>','url'=>'https://www.youtube.com/@AlespOficial/live','enabled'=>true],
     'tvsumare'=>['name'=>'TV Sumaré','source'=>'TV Sumaré','embed'=>(string)($settings['live_embed']??''),'url'=>(string)($settings['youtube_url']??'https://www.youtube.com/@tvsumare'),'enabled'=>true],
   ];
 }
