@@ -333,10 +333,18 @@ function tvs_radar_status_from_score($score,$sensitive=false){
   return ['review_level'=>'normal','editorial_status'=>$status,'sensitive'=>false];
 }
 function tvs_radar_can_direct_approve($m){
-  // Imagem pendente não invalida a pauta. O bloqueio visual fica para Home/Hero/redes.
+  // Aprovação direta exige matéria jornalística minimamente completa.
+  // Score alto não compensa corpo ausente/curto, fonte sem URL ou data não confirmada.
   if(!empty($m['sensitive_review_required'])) return false;
+  if(function_exists('tvs_radar_queue_item_readiness')){
+    $readiness=tvs_radar_queue_item_readiness($m);
+    if(empty($readiness['ready'])) return false;
+  }
   return ($m['review_level']??'')!=='revisao_obrigatoria'
-    && ($m['editorial_status']??'')!=='Descartar';
+    && ($m['review_level']??'')!=='precisa_revisao'
+    && ($m['editorial_status']??'')!=='Descartar'
+    && ($m['editorial_status']??'')!=='Revisão'
+    && ($m['editorial_status']??'')!=='Nota curta';
 }
 function tvs_radar_infer_queue_age_days($q){
   if(is_numeric($q['age_days']??null)) return max(0,(int)$q['age_days']);
@@ -2074,11 +2082,17 @@ function tvs_publish_from_queue($id,$post){
   foreach($queue as $item){ if(($item['id']??'')===$id) $found=$item; else $newq[]=$item; }
   if(!$found) return false;
 
-  // A imagem é independente da validade editorial. Matéria factual aprovada pode
-  // ser publicada sem foto; Home/Hero/redes usam home_eligible/image_status.
+  // A imagem é independente da validade editorial, mas o conteúdo não é.
+  // Nenhuma matéria incompleta pode ser publicada apenas porque recebeu score alto.
   $title=trim($post['title']??$found['title']??'');
   $body=trim($post['body']??$found['body']??'');
-  if($title==='' || $body==='') return false;
+  $candidate=$found;
+  $candidate['title']=$title;
+  $candidate['body']=$body;
+  if(function_exists('tvs_radar_queue_item_readiness')){
+    $readiness=tvs_radar_queue_item_readiness($candidate);
+    if(empty($readiness['ready'])) return false;
+  } elseif($title==='' || mb_strlen($body,'UTF-8')<180) return false;
   $news=tvs_read_json_file($newsFile); if(!is_array($news)) $news=[];
   $publishedImage=trim($post['image']??$found['image']??'');
   if(!tvs_is_valid_image_url($publishedImage)) $publishedImage='';
@@ -2277,6 +2291,28 @@ $radarCfg=tvs_radar_config();
 $radarStatus=tvs_radar_status();
 $queue=tvs_queue_read();
 
+// Reclassifica a fila visível por prontidão editorial. Itens incompletos permanecem
+// preservados para correção, mas nunca aparecem como publicáveis/aprováveis.
+$queueReadinessMigrated=false;
+foreach($queue as &$readinessItem){
+  if(!function_exists('tvs_radar_queue_item_readiness')) break;
+  $readiness=tvs_radar_queue_item_readiness($readinessItem);
+  if(empty($readiness['ready'])){
+    $reasons=$readiness['reasons']??[];
+    $readinessItem['queue_status']='processing';
+    $readinessItem['queue_pending_reasons']=$reasons;
+    $readinessItem['publication_eligible']=0;
+    $readinessItem['review_level']='precisa_revisao';
+    $readinessItem['editorial_status']='Conteúdo incompleto';
+    $queueReadinessMigrated=true;
+  } else {
+    $readinessItem['queue_status']='ready';
+    $readinessItem['queue_pending_reasons']=[];
+  }
+}
+unset($readinessItem);
+if($queueReadinessMigrated) tvs_queue_save($queue);
+
 /*
  * Migração defensiva de filas legadas:
  * cards antigos podiam carregar assets/cat-*.svg como se fossem imagem válida.
@@ -2331,6 +2367,6 @@ $editId=$_GET['edit']??''; $editItem=null; foreach($queue as $q){ if(($q['id']??
 <?php if($imageReviewQueue): ?><section class="city-block"><h2>Revisão de imagem <small class="muted">(<?=count($imageReviewQueue)?>)</small></h2><div class="queue-grid"><?php foreach($imageReviewQueue as $m): ?><article class="matter"><span class="badge" style="background:#fff7ed;color:#c2410c">Imagem pendente</span><h3><?=h($m['title']??'Sem título')?></h3><p><?=h($m['image_review_reason']??'Revisar imagem antes da publicação.')?></p><a class="btn orange" href="?edit=<?=h($m['id'])?>">Corrigir imagem</a></article><?php endforeach; ?></div></section><?php endif; ?>
 <form id="bulk-form" method="post" class="settings-box bulk-row" onsubmit="return confirm('Aplicar a ação nas matérias selecionadas?');"><?=tvs_csrf_field()?><label class="check"><input type="checkbox" id="select-all-radar"> Selecionar todas visíveis</label><button class="btn orange" type="submit" name="action" value="bulk_approve">Aprovar selecionadas</button><button class="btn secondary" type="submit" name="action" value="bulk_review">Enviar para revisão</button><button class="btn secondary" type="submit" name="action" value="bulk_discard">Descartar selecionadas</button><span class="muted">Use os checkboxes dos cards para operar várias matérias de uma vez.</span></form>
 <?php foreach($cities as $city): $items=array_slice($byCity[$city]??[],0,20); ?>
-<section class="city-block"><h2><?=h($city)?> <small class="muted">(<?=count($items)?>)</small></h2><?php if(!$items): ?><p class="muted">Nenhuma matéria aguardando aprovação para esta cidade.</p><?php else: ?><div class="queue-grid"><?php foreach($items as $m): ?><article class="matter"><label class="bulk-check"><input type="checkbox" class="radar-select" form="bulk-form" name="ids[]" value="<?=h($m['id'])?>"> Selecionar</label><?php if(!empty($m['image']) && empty($m['image_review_required'])): ?><img src="<?=h(tvs_admin_img($m['image'], $m['category']??'Cidade'))?>" onerror="this.closest('.matter').querySelector('.image-pending').style.display='flex';this.style.display='none';" alt=""><div class="image-pending" style="display:none;height:150px;align-items:center;justify-content:center;border-radius:14px;background:#f8fafc;border:1px dashed #cbd5e1;color:#64748b;font-weight:700;text-align:center;padding:16px">Imagem indisponível<br>revisar antes de publicar</div><?php else: ?><div class="image-pending" style="height:150px;display:flex;align-items:center;justify-content:center;border-radius:14px;background:#f8fafc;border:1px dashed #cbd5e1;color:#64748b;font-weight:700;text-align:center;padding:16px">Imagem pendente<br>selecione antes de publicar</div><?php endif; ?><?php if(!empty($m['image_credit'])): ?><small class="muted" style="display:block;margin:4px 0 8px"><?=h($m['image_credit'])?></small><?php endif; ?><span class="badge"><?=h($m['category']??'Cidade')?></span><?php if(($m['review_level']??'')==='precisa_revisao'): ?><span class="badge" style="background:#fff7ed;color:#c2410c">Precisa revisão</span><?php endif; ?><?php if(!empty($m['image_review_required'])): ?><span class="badge" title="<?=h($m['image_review_reason']??'Revisar imagem')?>" style="background:#fef2f2;color:#b91c1c">Revisar imagem</span><?php endif; ?><span class="badge"><?=h($m['editorial_status']??'Publicável')?></span><?php if(isset($m['editorial_score'])): ?><span class="badge" style="background:#ecfeff;color:#0e7490">Score <?=h($m['editorial_score'])?></span><?php endif; ?><?php if(!empty($m['radar_requested_city']) && $m['radar_requested_city']!==($m['city']??'')): ?><span class="badge" style="background:#eff6ff;color:#1d4ed8">Detectada: <?=h($m['city']??'')?> </span><?php endif; ?><span class="badge"><?=h($m['source']??'Fonte')?></span><h3><?=h($m['title']??'Sem título')?></h3><p><?=h($m['subtitle']??($m['summary']??''))?></p><div class="matter-actions"><?php if(tvs_radar_can_direct_approve($m)): ?><form method="post"><?=tvs_csrf_field()?><input type="hidden" name="action" value="approve"><input type="hidden" name="id" value="<?=h($m['id'])?>"><button class="btn orange" type="submit">Aprovar</button></form><?php else: ?><a class="btn secondary" href="?edit=<?=h($m['id'])?>">Revisar antes</a><?php endif; ?><a class="btn" href="?edit=<?=h($m['id'])?>">Editar</a><form method="post" onsubmit="return confirm('Descartar esta matéria?');"><?=tvs_csrf_field()?><input type="hidden" name="action" value="discard"><input type="hidden" name="id" value="<?=h($m['id'])?>"><button class="btn secondary" type="submit">Descartar</button></form></div></article><?php endforeach; ?></div><?php endif; ?></section>
+<section class="city-block"><h2><?=h($city)?> <small class="muted">(<?=count($items)?>)</small></h2><?php if(!$items): ?><p class="muted">Nenhuma matéria aguardando aprovação para esta cidade.</p><?php else: ?><div class="queue-grid"><?php foreach($items as $m): ?><article class="matter"><label class="bulk-check"><input type="checkbox" class="radar-select" form="bulk-form" name="ids[]" value="<?=h($m['id'])?>"> Selecionar</label><?php if(!empty($m['image']) && empty($m['image_review_required'])): ?><img src="<?=h(tvs_admin_img($m['image'], $m['category']??'Cidade'))?>" onerror="this.closest('.matter').querySelector('.image-pending').style.display='flex';this.style.display='none';" alt=""><div class="image-pending" style="display:none;height:150px;align-items:center;justify-content:center;border-radius:14px;background:#f8fafc;border:1px dashed #cbd5e1;color:#64748b;font-weight:700;text-align:center;padding:16px">Imagem indisponível<br>revisar antes de publicar</div><?php else: ?><div class="image-pending" style="height:150px;display:flex;align-items:center;justify-content:center;border-radius:14px;background:#f8fafc;border:1px dashed #cbd5e1;color:#64748b;font-weight:700;text-align:center;padding:16px">Imagem pendente<br>selecione antes de publicar</div><?php endif; ?><?php if(!empty($m['image_credit'])): ?><small class="muted" style="display:block;margin:4px 0 8px"><?=h($m['image_credit'])?></small><?php endif; ?><span class="badge"><?=h($m['category']??'Cidade')?></span><?php if(($m['review_level']??'')==='precisa_revisao'): ?><span class="badge" style="background:#fff7ed;color:#c2410c">Precisa revisão</span><?php endif; ?><?php if(!empty($m['image_review_required'])): ?><span class="badge" title="<?=h($m['image_review_reason']??'Revisar imagem')?>" style="background:#fef2f2;color:#b91c1c">Revisar imagem</span><?php endif; ?><span class="badge"><?=h($m['editorial_status']??'Publicável')?></span><?php if(!empty($m['queue_pending_reasons'])): ?><span class="badge" style="background:#fff7ed;color:#c2410c" title="<?=h(implode(' · ',$m['queue_pending_reasons']))?>">Conteúdo incompleto</span><?php endif; ?><?php if(isset($m['editorial_score'])): ?><span class="badge" style="background:#ecfeff;color:#0e7490">Score <?=h($m['editorial_score'])?></span><?php endif; ?><?php if(!empty($m['radar_requested_city']) && $m['radar_requested_city']!==($m['city']??'')): ?><span class="badge" style="background:#eff6ff;color:#1d4ed8">Detectada: <?=h($m['city']??'')?> </span><?php endif; ?><span class="badge"><?=h($m['source']??'Fonte')?></span><h3><?=h($m['title']??'Sem título')?></h3><p><?=h($m['subtitle']??($m['summary']??''))?></p><div class="matter-actions"><?php if(tvs_radar_can_direct_approve($m)): ?><form method="post"><?=tvs_csrf_field()?><input type="hidden" name="action" value="approve"><input type="hidden" name="id" value="<?=h($m['id'])?>"><button class="btn orange" type="submit">Aprovar</button></form><?php else: ?><a class="btn secondary" href="?edit=<?=h($m['id'])?>">Revisar antes</a><?php endif; ?><a class="btn" href="?edit=<?=h($m['id'])?>">Editar</a><form method="post" onsubmit="return confirm('Descartar esta matéria?');"><?=tvs_csrf_field()?><input type="hidden" name="action" value="discard"><input type="hidden" name="id" value="<?=h($m['id'])?>"><button class="btn secondary" type="submit">Descartar</button></form></div></article><?php endforeach; ?></div><?php endif; ?></section>
 <?php endforeach; ?>
 <?php endif; ?></main></div><script>document.addEventListener('DOMContentLoaded',function(){var all=document.getElementById('select-all-radar');if(!all)return;all.addEventListener('change',function(){document.querySelectorAll('.radar-select').forEach(function(cb){cb.checked=all.checked;});});});</script></body></html>
