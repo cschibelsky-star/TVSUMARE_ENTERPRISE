@@ -11,11 +11,11 @@ function cv_write($name,$rows){ return tvs_save_json_file(cv_path($name),array_v
 function cv_date($n){ foreach(['published_at','created_at','date'] as $k){ if(!empty($n[$k])){ $ts=strtotime((string)$n[$k]); if($ts) return $ts; } } return 0; }
 function cv_date_label($n){ $ts=cv_date($n); return $ts?date('d/m/Y H:i',$ts):'sem data'; }
 function cv_sensitive($n){ $t=tvs_lower(tvs_clean_text(($n['category']??'').' '.($n['title']??'').' '.($n['subtitle']??'').' '.($n['summary']??''))); return preg_match('~\b(vagas?|empregos?|processo seletivo|concurso|inscri[cç][oõ]es|edital|evento|agenda|programa[cç][aã]o|interdi[cç][aã]o|tr[aâ]nsito|vacina[cç][aã]o|campanha|prazo|atendimento|curso|matr[ií]cula|feira|show|festival)\b~iu',$t)===1; }
-function cv_limit($n){ return cv_sensitive($n)?7:30; }
+function cv_limit($n){ return cv_sensitive($n)?30:90; }
 function cv_age($n){ $ts=cv_date($n); return $ts?max(0,(int)floor((time()-$ts)/86400)):null; }
 function cv_needs_review($n){ $age=cv_age($n); $limit=cv_limit($n); $checked=strtotime((string)($n['validity_checked_at']??'')); if($checked && (time()-$checked)<($limit*86400)) return false; if(($n['validity_status']??'')==='revisao_solicitada') return true; if($age===null) return true; return $age>=$limit; }
 function cv_reason($n){ $age=cv_age($n); if($age===null) return 'Data editorial não identificada.'; if(cv_sensitive($n)) return "Conteúdo temporal/serviço com {$age} dia(s): confirmar prazo, agenda ou validade."; return "Matéria publicada há {$age} dia(s): confirmar se continua atual."; }
-function cv_batch_expired($n){ $age=cv_age($n); if($age===null) return true; return cv_sensitive($n) ? $age>=14 : $age>=60; }
+function cv_batch_expired($n){ $age=cv_age($n); if($age===null) return true; return $age>cv_limit($n); }
 function cv_sync_alerts($news){
   $alerts=[];
   foreach($news as $n){
@@ -49,19 +49,24 @@ if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'){
   $action=(string)($_POST['action']??'');
 
   if($action==='archive_expired_batch'){
-    $flagged=0; $now=date('c');
-    foreach($news as $k=>$item){
-      if(!cv_batch_expired($item)) continue;
-      $news[$k]['validity_status']='revisao_solicitada';
-      $news[$k]['validity_review_requested_at']=$now;
-      $log[]=['id'=>uniqid('valid_'),'news_id'=>$item['id']??'','title'=>$item['title']??'Sem título','action'=>'REVISAO_LOTE','reason'=>cv_reason($item),'created_at'=>$now];
-      $flagged++;
+    $trash=cv_read('lixeira_noticias.json');
+    $kept=[]; $archived=0; $now=date('c');
+    foreach($news as $item){
+      if(!cv_batch_expired($item)){ $kept[]=$item; continue; }
+      $item['deleted_at']=$now;
+      $item['status']='arquivado';
+      $item['archive_reason']='Arquivamento automático por prazo editorial: '.cv_limit($item).' dias.';
+      $trash[]=$item;
+      $log[]=['id'=>uniqid('valid_'),'news_id'=>$item['id']??'','title'=>$item['title']??'Sem título','action'=>'ARQUIVADA_LOTE','reason'=>$item['archive_reason'],'created_at'=>$now];
+      $archived++;
     }
+    $news=$kept;
     cv_write('noticias.json',$news);
+    cv_write('lixeira_noticias.json',$trash);
     $log=array_slice($log,-500);
     cv_write('content_validity_log.json',$log);
     cv_sync_alerts($news);
-    $notice=$flagged.' matéria(s) vencida(s) enviada(s) para revisão sem remover conteúdo publicado.';
+    $notice=$archived.' matéria(s) vencida(s) arquivada(s) com rastreabilidade.';
   } else {
     $idx=null;
     foreach($news as $k=>$n){ if((string)($n['id']??'')===$id){ $idx=$k; break; } }
@@ -121,7 +126,7 @@ usort($review,function($a,$b){ return (cv_age($b)??9999)<=>(cv_age($a)??9999); }
     <div>
       <span class="eyebrow">Governança Editorial</span>
       <h1>Validade das Matérias</h1>
-      <p class="muted">Conteúdo temporal entra em revisão após 7 dias; demais matérias após 30 dias. A idade é calculada pela data de publicação exibida na tabela. Nada é removido automaticamente.</p>
+      <p class="muted">Conteúdo temporal permanece ativo por até 30 dias; matérias gerais por até 90 dias. Depois do prazo, devem ser arquivadas — nunca apagadas — para dar lugar às publicações mais recentes.</p>
     </div>
   </div>
 
@@ -136,8 +141,8 @@ usort($review,function($a,$b){ return (cv_age($b)??9999)<=>(cv_age($a)??9999); }
 
   <section class="box" style="margin-bottom:16px">
     <h2>Limpeza do passivo editorial</h2>
-    <p class="muted">Conteúdo temporal com 14 dias ou mais e demais matérias com 60 dias ou mais são enviados para revisão editorial. A ação em lote não remove mais matérias publicadas.</p>
-    <form method="post" onsubmit="return confirm('Enviar o conteúdo vencido para revisão editorial sem remover as matérias publicadas?');"><?=tvs_csrf_field()?><button class="btn" name="action" value="archive_expired_batch">Enviar vencidas para revisão</button></form>
+    <p class="muted">Arquiva em lote matérias que ultrapassaram a janela editorial: 30 dias para conteúdo temporal e 90 dias para matérias gerais. Os itens vão para a Lixeira e permanecem recuperáveis.</p>
+    <form method="post" onsubmit="return confirm('Arquivar agora todas as matérias que ultrapassaram o prazo editorial? Elas continuarão disponíveis na Lixeira para recuperação.');"><?=tvs_csrf_field()?><button class="btn danger" name="action" value="archive_expired_batch">Arquivar vencidas em lote</button></form>
   </section>
 
   <section class="box">

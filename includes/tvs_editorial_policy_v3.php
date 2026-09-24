@@ -76,7 +76,7 @@ function tvs_v3_curated_sections($news){
     $id=(string)($n['id']??md5(json_encode($n)));
     if(isset($used[$id])) continue;
     $section=tvs_v3_section($n);
-    if(!isset($out[$section]) || count($out[$section])>=3) continue;
+    if(!isset($out[$section]) || count($out[$section])>=5) continue;
     $out[$section][]=$n;
     $used[$id]=1;
   }

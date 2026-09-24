@@ -264,20 +264,35 @@ function tvs_is_regional_news_strict($n){
   if($outside!=='') return false;
   return tvs_region_city_detect($n)!=='';
 }
-function tvs_prepare_public_news_v2($news,$maxDays=21){
+function tvs_public_retention_days($n){
+  $txt=tvs_lc(($n['category']??'').' '.($n['title']??'').' '.($n['subtitle']??'').' '.($n['summary']??''));
+  if(preg_match('~frente fria|chuva|temporal|alerta|interdi[cç][aã]o|tr[aâ]nsito|plant[aã]o~iu',$txt)) return 7;
+  if(preg_match('~emprego|vagas|processo seletivo|recrutamento|evento|show|festival|agenda|inscri[cç][aã]o|matr[ií]cula|curso|feira|campanha~iu',$txt)) return 30;
+  return 90;
+}
+function tvs_public_is_active($n){
+  $age=tvs_news_age_days($n);
+  if($age===null) return false;
+  return $age<=tvs_public_retention_days($n);
+}
+function tvs_prepare_public_news_v2($news,$maxDays=90){
   $prepared=[];
   foreach((array)$news as $n){
     $n=tvs_normalize_news_item($n);
     $status=tvs_lc($n['status']??'publicado');
     if(in_array($status,['lixeira','arquivado','descartado','rascunho','revisao','revisão'],true)) continue;
-    if(tvs_is_news_old($n,$maxDays)) continue;
-    if(!tvs_is_regional_news_strict($n)) continue;
-    $n['city']=tvs_region_city_detect($n) ?: ($n['city']??'Região');
+    $limit=min((int)$maxDays,tvs_public_retention_days($n));
+    if(tvs_is_news_old($n,$limit)) continue;
+    // Depois de aprovada/publicada, a matéria permanece no acervo ativo até o prazo editorial.
+    // As restrições de região, fonte, texto e imagem pertencem ao fluxo de pré-aprovação.
+    $detected=tvs_region_city_detect($n);
+    if($detected!=='') $n['city']=$detected;
     $img=tvs_real_image($n);
     $n['image_status']=$img!==''?'verified':'missing';
-    $n['home_eligible']=$img!==''?1:0;
+    $n['home_eligible']=1;
     $n['publication_eligible']=1;
     $n['editorial_state']='published';
+    $n['retention_days']=$limit;
     $prepared[]=$n;
   }
   $prepared=tvs_strict_dedupe_news($prepared);
@@ -292,13 +307,28 @@ function tvs_curated_sections($news){
     'Segurança'=>['segurança','seguranca','operação','operacao','defesa civil','polícia','policia','queimada'],
     'Cidade'=>['cidade','prefeitura','serviço','servico','obra','trânsito','transito','cultura','evento']
   ];
-  $out=[];$used=[];
+  $out=[];
   foreach($sections as $name=>$terms){
     $out[$name]=[];
     foreach($news as $n){
-      $id=(string)($n['id']??md5(json_encode($n)));
-      if(isset($used[$id])) continue;
-      if(tvs_category_match($n,$terms)){$out[$name][]=$n;$used[$id]=1; if(count($out[$name])>=3) break;}
+      if(tvs_category_match($n,$terms)){
+        $out[$name][]=$n;
+        if(count($out[$name])>=5) break;
+      }
+    }
+  }
+  return $out;
+}
+function tvs_city_sections($news,$perCity=5){
+  $cities=['Sumaré','Hortolândia','Paulínia','Nova Odessa','Americana','Campinas'];
+  $out=[];
+  foreach($cities as $city){
+    $out[$city]=[];
+    foreach($news as $n){
+      $detected=tvs_region_city_detect($n) ?: ($n['city']??'');
+      if(strcasecmp((string)$detected,$city)!==0) continue;
+      $out[$city][]=$n;
+      if(count($out[$city])>=$perCity) break;
     }
   }
   return $out;

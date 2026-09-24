@@ -168,6 +168,54 @@ $cleanup = function_exists('tvs_radar_enforce_queue_rules')
 );
 echo "BACKLOG_CLEANUP removed=".(int)($cleanup['removed']??0)." changed=".(int)($cleanup['changed']??0)." total=".(int)($cleanup['total']??0)."\n";
 
+/*
+ * Retenção editorial pós-publicação.
+ * A aprovação é a fronteira de qualidade; depois disso a matéria permanece pública
+ * até o prazo de retenção e, ao vencer, é arquivada com rastreabilidade.
+ */
+$publishedPath=dirname(__DIR__).'/data/noticias.json';
+$trashPath=dirname(__DIR__).'/data/lixeira_noticias.json';
+$validityLogPath=dirname(__DIR__).'/data/content_validity_log.json';
+$published=tvs_read_json_file($publishedPath); if(!is_array($published)) $published=[];
+$trash=tvs_read_json_file($trashPath); if(!is_array($trash)) $trash=[];
+$validityLog=tvs_read_json_file($validityLogPath); if(!is_array($validityLog)) $validityLog=[];
+$kept=[]; $archivedByRetention=0; $now=date('c');
+foreach($published as $item){
+  $title=(string)($item['title']??'');
+  $summary=(string)($item['summary']??'');
+  $subtitle=(string)($item['subtitle']??'');
+  $category=(string)($item['category']??'');
+  $txt=tvs_lower($category.' '.$title.' '.$subtitle.' '.$summary);
+  $limit=90;
+  if(preg_match('~frente fria|chuva|temporal|alerta|interdi[cç][aã]o|tr[aâ]nsito|plant[aã]o~iu',$txt)) $limit=7;
+  elseif(preg_match('~emprego|vagas|processo seletivo|recrutamento|evento|show|festival|agenda|inscri[cç][aã]o|matr[ií]cula|curso|feira|campanha~iu',$txt)) $limit=30;
+  $raw=(string)($item['published_at']??$item['created_at']??$item['date']??'');
+  $ts=$raw!=='' ? strtotime($raw) : false;
+  if($ts===false){ $kept[]=$item; continue; }
+  $age=max(0,(int)floor((time()-$ts)/86400));
+  if($age<=$limit){ $kept[]=$item; continue; }
+  $item['status']='arquivado';
+  $item['deleted_at']=$now;
+  $item['archive_reason']="Arquivamento automático por retenção editorial ({$limit} dias).";
+  $trash[]=$item;
+  $validityLog[]=[
+    'id'=>uniqid('valid_'),
+    'news_id'=>$item['id']??'',
+    'title'=>$title!==''?$title:'Sem título',
+    'action'=>'ARQUIVADA_RETENCAO',
+    'reason'=>$item['archive_reason'],
+    'created_at'=>$now
+  ];
+  $archivedByRetention++;
+}
+if($archivedByRetention>0){
+  tvs_save_json_file($publishedPath,array_values($kept));
+  tvs_save_json_file($trashPath,array_values($trash));
+  tvs_save_json_file($validityLogPath,array_slice($validityLog,-500));
+}
+@file_put_contents($cronLogFile,date('c')." RETENTION_ARCHIVE archived={$archivedByRetention} active=".count($kept)."\n",FILE_APPEND|LOCK_EX);
+echo "RETENTION_ARCHIVE archived={$archivedByRetention} active=".count($kept)."\n";
+
 $cfg = function_exists('tvs_radar_config') ? tvs_radar_config() : ['per_city'=>6,'auto_daily'=>true,'last_auto_date'=>''];
 $today=date('Y-m-d');
 
