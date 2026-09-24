@@ -13,8 +13,8 @@ function h($s){ return htmlspecialchars((string)$s,ENT_QUOTES,'UTF-8'); }
 function tvs_admin_default_channels($settings){
   return [
     'tvsenado'=>['name'=>'TV Senado','source'=>'Senado Federal','embed'=>'<iframe width="100%" height="100%" src="https://www.youtube.com/embed/live_stream?channel=UCLgti7NuK0RuW9wty-fxPjQ&autoplay=1" title="TV Senado ao vivo" frameborder="0" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>','url'=>'https://www12.senado.leg.br/tv/programas/ao-vivo','enabled'=>true],
-    'tvcamara'=>['name'=>'TV Câmara','source'=>'Câmara dos Deputados','embed'=>'<iframe width="100%" height="100%" src="https://www.camara.leg.br/tv/aovivo/embed" title="TV Câmara ao vivo" frameborder="0" allowfullscreen></iframe>','url'=>'https://www.camara.leg.br/tv','enabled'=>true],
-    'tvalesp'=>['name'=>'TV Alesp','source'=>'Assembleia Legislativa do Estado de São Paulo','embed'=>'<iframe width="100%" height="100%" src="https://www.youtube.com/embed/live_stream?channel=UCYnRWbd-tDDYf9zgCUlwxFw&autoplay=1" title="TV Alesp ao vivo" frameborder="0" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>','url'=>'https://www.youtube.com/@AlespOficial/live','enabled'=>true],
+    'tvcamara'=>['name'=>'TV Câmara','source'=>'Câmara dos Deputados','embed'=>'<iframe width="100%" height="100%" src="https://www2.camara.leg.br/camaranoticias/tv/embedAoVivo.html" title="TV Câmara ao vivo" frameborder="0" allowfullscreen></iframe>','url'=>'https://www.camara.leg.br/tv','enabled'=>true],
+    'tvalesp'=>['name'=>'TV Alesp','source'=>'Assembleia Legislativa do Estado de São Paulo','embed'=>'','url'=>'https://www.youtube.com/user/assembleiaspconteudo/live','probe_url'=>'https://www.youtube.com/user/assembleiaspconteudo/live','resolver'=>'youtube_live_page','enabled'=>true],
     'tvsumare'=>['name'=>'TV Sumaré','source'=>'TV Sumaré','embed'=>(string)($settings['live_embed']??''),'url'=>(string)($settings['youtube_url']??'https://www.youtube.com/@tvsumare'),'enabled'=>true],
   ];
 }
@@ -60,6 +60,14 @@ if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'){
   }
   $newChannels['tvsumare']['embed']=$settings['live_embed'];
   $newChannels['tvsumare']['url']=$settings['youtube_url'];
+
+  /* Mantém fontes oficiais canônicas e o resolver dinâmico da Alesp. */
+  $newChannels['tvcamara']['embed']='<iframe width="100%" height="100%" src="https://www2.camara.leg.br/camaranoticias/tv/embedAoVivo.html" title="TV Câmara ao vivo" frameborder="0" allowfullscreen></iframe>';
+  $newChannels['tvcamara']['url']='https://www.camara.leg.br/tv';
+  $newChannels['tvalesp']['embed']='';
+  $newChannels['tvalesp']['url']='https://www.youtube.com/user/assembleiaspconteudo/live';
+  $newChannels['tvalesp']['probe_url']='https://www.youtube.com/user/assembleiaspconteudo/live';
+  $newChannels['tvalesp']['resolver']='youtube_live_page';
 
   $newSchedule=[];
   for($i=0;$i<4;$i++){
