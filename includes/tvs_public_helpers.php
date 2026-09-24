@@ -133,30 +133,12 @@ function tvs_find_related_video($news){
   return null;
 }
 function tvs_expand_article_display($n,$minWords=380){
+  // Nunca completa uma matéria curta com parágrafos genéricos. A página pública
+  // exibe somente conteúdo factual efetivamente armazenado na matéria.
   $body=trim((string)($n['body']??''));
-  if(tvs_words($body)>=$minWords) return $body;
-  $title=trim((string)($n['title']??'Notícia regional'));
-  $summary=trim((string)($n['summary']??$n['subtitle']??$body));
-  $city=tvs_infer_city($n) ?: 'região';
-  $cat=trim((string)($n['category']??'Cidade'));
-  $source=trim((string)($n['source']??'fonte consultada'));
-  $paras=[];
-  $paras[]=$summary!==''?$summary:$title.'.';
-  $paras[]='A pauta envolve '.$city.' e integra a cobertura regional da TV Sumaré, com foco em informações de interesse público para moradores, trabalhadores, empresas e serviços da região.';
-  if(tvs_category_match($n,['emprego','vagas','economia','empresa','negócios','negocios'])){
-    $paras[]='Na área de empregos e negócios, a informação ganha relevância porque pode ajudar trabalhadores que buscam recolocação profissional, novas oportunidades de renda, capacitação e acompanhamento do desenvolvimento econômico local.';
-    $paras[]='Os interessados devem acompanhar os canais oficiais indicados pela fonte para confirmar prazos, documentos necessários, critérios de participação, endereço de atendimento e eventuais alterações na programação.';
-    $paras[]='Para empresas e comerciantes, pautas dessa natureza também ajudam a medir a movimentação do mercado de trabalho regional, principalmente quando envolvem vagas, processos seletivos, feirões, investimentos e ações de contratação.';
-  } elseif(tvs_category_match($n,['saúde','saude','educação','educacao','serviço','servicos','serviços','obras'])){
-    $paras[]='O tema também impacta quem depende de serviços públicos, acompanha ações municipais ou precisa de informações sobre atendimento, campanhas, obras, escolas, unidades de saúde e programas voltados à população.';
-    $paras[]='Moradores devem observar os canais oficiais para confirmar horários, locais, critérios de participação e possíveis mudanças na programação divulgada.';
-  } else {
-    $paras[]='O caso faz parte do monitoramento regional da TV Sumaré, que acompanha informações de interesse público em Sumaré, Hortolândia, Paulínia, Nova Odessa, Americana e Campinas.';
-    $paras[]='Novas informações poderão ser divulgadas por órgãos oficiais, entidades envolvidas e veículos regionais à medida que a pauta tiver desdobramentos.';
-  }
-  if($source!=='') $paras[]='Segundo as informações consultadas em '.$source.', a orientação é que o público acompanhe atualizações oficiais para detalhes complementares.';
-  $paras[]='A TV Sumaré seguirá acompanhando os principais acontecimentos da região e atualizará esta publicação sempre que houver novas informações relevantes.';
-  return trim(implode("\n\n", array_filter($paras)));
+  if($body!=='') return $body;
+  $summary=trim((string)($n['summary']??$n['subtitle']??''));
+  return $summary;
 }
 
 /* ===== TVSUMARE_ENTERPRISE_1.0_MASTER_BUILD_1.0.2 - Núcleo definitivo de notícias ===== */

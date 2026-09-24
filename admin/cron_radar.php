@@ -91,6 +91,73 @@ register_shutdown_function(function() use ($cronLogFile,$cronStarted){
 $_SERVER['REQUEST_METHOD']='CRON';
 require_once __DIR__.'/radar-regional.php';
 
+/*
+ * EDITORIAL POLICY MIGRATION 2026-09-24 — one-shot.
+ * Reclassifica o backlog sem apagar matérias publicadas:
+ * - aplica hard gates regionais/temporais;
+ * - desacopla imagem da validade editorial;
+ * - preserva backup integral da fila antes da migração.
+ */
+$policyMarker=dirname(__DIR__).'/data/editorial_policy_20260924_done.json';
+if(!is_file($policyMarker)){
+  $dataDir=dirname(__DIR__).'/data';
+  $stamp=date('Ymd_His');
+  $queuePath=$dataDir.'/materias_aprovacao.json';
+  $queueBackup=$dataDir.'/materias_aprovacao.policy-backup-'.$stamp.'.json';
+  if(is_file($queuePath)) @copy($queuePath,$queueBackup);
+
+  $before=tvs_queue_read(); if(!is_array($before)) $before=[];
+  $beforeCount=count($before);
+  $beforeImage=0;
+  foreach($before as $item){ if(!empty($item['image_review_required'])) $beforeImage++; }
+
+  $gateResult=tvs_radar_enforce_queue_rules(true);
+
+  $queue=tvs_queue_read(); if(!is_array($queue)) $queue=[];
+  $decoupled=0;
+  foreach($queue as &$item){
+    $hasImage=trim((string)($item['image']??''))!=='' && tvs_is_valid_image_url($item['image']??'');
+    $item['image_status']=$hasImage?'verified':'missing';
+    $item['home_eligible']=$hasImage?1:0;
+    $item['publication_eligible']=1;
+    $item['video_eligible']=1;
+    $item['editorial_state']='qualified';
+    $item['region_status']='confirmed';
+    $item['freshness_status']='current';
+    $item['source_status']=tvs_radar_is_google_news_url($item['source_url']??'')?'unresolved_aggregator':'original';
+
+    if(!empty($item['image_review_required'])){
+      $item['image_review_required']=0;
+      $item['image_review_reason']='Imagem ausente: publicação textual permitida; Home/Hero/redes exigem imagem confirmada.';
+      $sensitive=tvs_radar_sensitive_topic(
+        $item['title']??'',
+        ($item['subtitle']??'').' '.($item['summary']??'').' '.($item['body']??'')
+      );
+      $score=(int)($item['editorial_score']??0);
+      $state=tvs_radar_status_from_score($score,$sensitive);
+      $item['review_level']=$state['review_level'];
+      $item['editorial_status']=$state['editorial_status'];
+      $item['sensitive_review_required']=!empty($state['sensitive'])?1:0;
+      $decoupled++;
+    }
+  }
+  unset($item);
+  tvs_queue_save($queue);
+
+  $result=[
+    'executed_at'=>date('c'),
+    'backup'=>$queueBackup,
+    'before_total'=>$beforeCount,
+    'before_image_review'=>$beforeImage,
+    'hard_gate_removed'=>(int)($gateResult['removed']??0),
+    'hard_gate_changed'=>(int)($gateResult['changed']??0),
+    'after_total'=>count($queue),
+    'image_decoupled'=>$decoupled
+  ];
+  tvs_save_json_file($policyMarker,$result);
+  echo 'EDITORIAL_POLICY_MIGRATION '.json_encode($result,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n";
+}
+
 $cleanup = function_exists('tvs_radar_enforce_queue_rules')
   ? tvs_radar_enforce_queue_rules(true)
   : ['removed'=>0,'changed'=>0,'total'=>0];

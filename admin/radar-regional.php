@@ -200,12 +200,17 @@ function tvs_radar_temporal_exception($title,$text=''){
 }
 function tvs_radar_temporal_status($cand){
   $age=tvs_radar_age_days($cand);
-  if($age===null) return ['ok'=>true,'age'=>null,'label'=>'Data não identificada','force_review'=>false];
+  // Data da matéria original é um hard gate. Sem data confirmável a pauta não entra
+  // automaticamente na redação; evita reciclar conteúdo antigo como notícia nova.
+  if($age===null) return ['ok'=>false,'age'=>null,'label'=>'Data da fonte não confirmada','force_review'=>true];
+
   $isException=tvs_radar_temporal_exception($cand['title']??'', ($cand['description']??'').' '.($cand['text']??''));
-  if($isException) return ['ok'=>true,'age'=>$age,'label'=>$age<=3?'Atual':($age<=15?'Válida por serviço/evento':'Exceção temporal'),'force_review'=>$age>7];
-  if($age>15) return ['ok'=>false,'age'=>$age,'label'=>'Antiga +15 dias','force_review'=>true];
-  if($age>7) return ['ok'=>true,'age'=>$age,'label'=>'Antiga: revisar','force_review'=>true];
-  if($age>3) return ['ok'=>true,'age'=>$age,'label'=>'Esta semana','force_review'=>false];
+  if($isException){
+    if($age>7) return ['ok'=>false,'age'=>$age,'label'=>'Serviço/evento antigo: validar manualmente na fonte','force_review'=>true];
+    return ['ok'=>true,'age'=>$age,'label'=>$age<=3?'Atual':'Serviço/evento ainda dentro da janela editorial','force_review'=>$age>3];
+  }
+
+  if($age>3) return ['ok'=>false,'age'=>$age,'label'=>'Notícia fora da janela de 72 horas','force_review'=>true];
   return ['ok'=>true,'age'=>$age,'label'=>'Atual','force_review'=>false];
 }
 function tvs_radar_sensitive_topic($title,$text=''){
@@ -250,11 +255,14 @@ function tvs_radar_candidate_region_ok($cand,$requestedCity,&$reason=''){
   $fact=tvs_radar_fact_text($cand);
   if(tvs_radar_stale_event_signal($title,$desc)){ $reason='Evento antigo/sazonal detectado'; return false; }
   if(tvs_radar_has_outside_city_signal($fact)){ $reason='Fora da região monitorada'; return false; }
-  $mentionsAllowed=tvs_radar_text_mentions_allowed_city($fact);
-  // Google Notícias só entra se o título/resumo mencionar a cidade monitorada; query/source/url não contam.
-  if(tvs_is_google_news_candidate($cand) && !$mentionsAllowed){ $reason='Google News sem cidade monitorada no título/resumo'; return false; }
-  // Fonte oficial local pode entrar sem cidade explícita no título, desde que não seja Google/agregador.
-  if(!$mentionsAllowed && (tvs_is_google_news_candidate($cand) || !tvs_radar_source_matches_city($cand,$requestedCity))){ $reason='Sem cidade monitorada identificável no fato'; return false; }
+
+  // Hard gate regional canônico: cidade do feed, consulta, fonte ou URL nunca comprova
+  // que o fato pertence à cobertura da TV Sumaré. A evidência precisa estar no fato.
+  if(!tvs_radar_text_mentions_allowed_city($fact)){
+    $reason='Sem evidência regional no título/resumo/conteúdo da matéria';
+    return false;
+  }
+
   return true;
 }
 function tvs_radar_extract_vagas_number($text){
@@ -324,7 +332,7 @@ function tvs_radar_status_from_score($score,$sensitive=false){
   return ['review_level'=>'normal','editorial_status'=>$status,'sensitive'=>false];
 }
 function tvs_radar_can_direct_approve($m){
-  if(!empty($m['image_review_required'])) return false;
+  // Imagem pendente não invalida a pauta. O bloqueio visual fica para Home/Hero/redes.
   if(!empty($m['sensitive_review_required'])) return false;
   return ($m['review_level']??'')!=='revisao_obrigatoria'
     && ($m['editorial_status']??'')!=='Descartar';
@@ -1601,61 +1609,25 @@ function tvs_radar_candidates_for_city($city){
     if(tvs_is_non_news_candidate($title,$url,$it['description']??'')){ tvs_radar_log_event($title,$it['source']??'Fonte',$city,'DESCARTADA','Página institucional/menu/rodapé',$url); continue; }
     $time=tvs_radar_temporal_status($it);
 
-    $maxAgeDays=tvs_radar_is_volume_mode()?7:3;
     $age=$time['age']??null;
-
-    // Eventos, agendas, campanhas, inscrições e serviços com prazo
-    // podem continuar válidos além do corte comum de notícias.
     $temporalLabel=(string)($time['label']??'');
-    $isTemporalException=(
-      $temporalLabel!=='' &&
-      $temporalLabel!=='Atual'
-    );
 
-    $effectiveMaxAge=$isTemporalException
-      ? 15
-      : $maxAgeDays;
-
-    if(
-      !$time['ok'] ||
-      (is_numeric($age) && (int)$age>$effectiveMaxAge)
-    ){
+    if(!$time['ok']){
       tvs_radar_log_event(
         $title,
         $it['source']??'Fonte',
         $city,
         'DESCARTADA',
-        'Matéria antiga: '
-          .(is_numeric($age)?$age:'data desconhecida')
-          .' dias; limite aplicado '
-          .$effectiveMaxAge
-          .' dias'
-          .($isTemporalException?' para evento/serviço':''),
+        $temporalLabel!=='' ? $temporalLabel : 'Data/validade editorial não confirmada',
         $url
       );
       continue;
     }
 
-    if(
-      $isTemporalException &&
-      is_numeric($age) &&
-      (int)$age>$maxAgeDays
-    ){
+    $it['age_days']=is_numeric($age)?(int)$age:null;
+    if(!empty($time['force_review'])){
       $it['force_review']=true;
       $it['temporal_label']=$temporalLabel;
-      $it['age_days']=(int)$age;
-    }
-
-    if(!is_numeric($age)){
-      $it['force_review']=true;
-      $it['temporal_label']='Data não confirmada';
-      $it['age_days']=null;
-    } elseif(!empty($time['force_review'])){
-      $it['force_review']=true;
-      $it['temporal_label']=$time['label'];
-      $it['age_days']=$age;
-    } else {
-      $it['age_days']=$age;
     }
     $seen[$url]=1;
     $it['category']=tvs_category_from_text(($it['title']??'').' '.($it['description']??''));
@@ -1716,9 +1688,9 @@ function tvs_build_material_from_candidate($cand){
   $desc=tvs_normalize_article_body($cand['description']??'');
   $a=['title'=>$title,'description'=>$desc,'body'=>'','image'=>$cand['image']??''];
 
-  // Google News e alguns portais redirecionam/ bloqueiam extração; tentar abrir todos derruba o Radar por timeout.
-  // Para esses casos, usamos o RSS como pauta e deixamos a IA/ fallback editorial construir matéria revisável.
-  if(!tvs_is_google_news_candidate($cand) && $url){
+  // A URL já passou pelo resolvedor do Radar. Quando houver URL original válida,
+  // sempre tentamos abrir a matéria real: a IA não pode substituir a verificação da fonte.
+  if($url && !tvs_radar_is_google_news_url($url)){
     $ex=tvs_extract_article($url,$title);
     if(is_array($ex) && (tvs_strlen(($ex['body']??'').($ex['description']??''))>80)){
       $a=$ex;
@@ -1875,6 +1847,13 @@ function tvs_build_reviewable_article_without_ai($city,$category,$cand,$mat){
 function tvs_generate_ready_article($city,$cand){
   global $gemini_api_key;
   $requestedCity=$city;
+  // Agregador é apenas descoberta. Sem resolução para a matéria original, a pauta
+  // não entra na redação e não é completada artificialmente pela IA.
+  if(tvs_radar_is_google_news_url($cand['url']??'')){
+    tvs_radar_discard($cand,$city,'Agregador sem URL original confirmada');
+    return null;
+  }
+
   $mat=tvs_build_material_from_candidate($cand);
   // Cidade editorial = cidade do fato, não necessariamente cidade consultada no loop.
   // Ex.: Portal de Sumaré pode trazer acidente em Americana; a matéria deve cair em Americana.
@@ -1977,10 +1956,17 @@ function tvs_generate_ready_article($city,$cand){
   $result['sensitive_review_required']=!empty($st['sensitive']) ? 1 : 0;
   if(!empty($st['sensitive'])) $result['sensitive_review_reason']='Pauta sensível ou de alto impacto: revisão humana obrigatória antes da publicação.';
 
-  if(!empty($result['image_review_required'])){
-    $result['review_level']='precisa_revisao';
-    $result['editorial_status']='Revisão de imagem';
-  }
+  // Imagem é um atributo paralelo. Falta de foto não altera o estado editorial
+  // da matéria; apenas impede usos visuais que exigem imagem confirmada.
+  $result['image_status']=!empty($result['image_review_required'])?'missing':'verified';
+  $result['editorial_state']='qualified';
+  $result['region_status']='confirmed';
+  $result['freshness_status']='current';
+  $result['source_status']='original';
+  $result['duplicate_status']='unique';
+  $result['publication_eligible']=1;
+  $result['home_eligible']=!empty($result['image_review_required'])?0:1;
+  $result['video_eligible']=1;
   $result['created_at']=date('c');
   if(!tvs_radar_quality_ok($result,$reason)){
     tvs_radar_discard($cand,$city,$reason);
@@ -2031,15 +2017,15 @@ function tvs_publish_from_queue($id,$post){
   foreach($queue as $item){ if(($item['id']??'')===$id) $found=$item; else $newq[]=$item; }
   if(!$found) return false;
 
-  // Proteção real no servidor: matéria com imagem pendente não pode ser
-  // publicada até que o editor salve uma imagem válida.
-  if(!empty($found['image_review_required'])) return false;
-
+  // A imagem é independente da validade editorial. Matéria factual aprovada pode
+  // ser publicada sem foto; Home/Hero/redes usam home_eligible/image_status.
   $title=trim($post['title']??$found['title']??'');
   $body=trim($post['body']??$found['body']??'');
   if($title==='' || $body==='') return false;
   $news=tvs_read_json_file($newsFile); if(!is_array($news)) $news=[];
-  $news[]=['id'=>uniqid('news_'),'title'=>$title,'subtitle'=>trim($post['subtitle']??$found['subtitle']??''),'summary'=>trim($post['summary']??$found['summary']??''),'body'=>$body,'category'=>trim($post['category']??$found['category']??'Cidade'),'city'=>trim($post['city']??$found['city']??'Região'),'source'=>trim($post['source']??$found['source']??'Fonte consultada'),'source_url'=>trim($post['source_url']??$found['source_url']??''),'image'=>tvs_best_image('', trim($post['image']??$found['image']??''), trim($post['category']??$found['category']??'Cidade')) ,'image_credit'=>trim($post['image_credit']??$found['image_credit']??tvs_image_credit_from_source($found['source']??$post['source']??'Fonte consultada', $found['image']??$post['image']??'')),'tags'=>is_array($found['tags']??null)?$found['tags']:array_filter(array_map('trim',explode(',',(string)($post['tags']??'')))),'seo_title'=>trim($post['seo_title']??$found['seo_title']??$title),'meta_description'=>trim($post['meta_description']??$found['meta_description']??''),'slug'=>trim($post['slug']??$found['slug']??tvs_slug($title)),'instagram_caption'=>trim($post['instagram_caption']??$found['instagram_caption']??''),'whatsapp_text'=>trim($post['whatsapp_text']??$found['whatsapp_text']??''),'views'=>0,'shares'=>0,'published_at'=>date('c'),'created_at'=>date('c')];
+  $publishedImage=trim($post['image']??$found['image']??'');
+  if(!tvs_is_valid_image_url($publishedImage)) $publishedImage='';
+  $news[]=['id'=>uniqid('news_'),'title'=>$title,'subtitle'=>trim($post['subtitle']??$found['subtitle']??''),'summary'=>trim($post['summary']??$found['summary']??''),'body'=>$body,'category'=>trim($post['category']??$found['category']??'Cidade'),'city'=>trim($post['city']??$found['city']??'Região'),'source'=>trim($post['source']??$found['source']??'Fonte consultada'),'source_url'=>trim($post['source_url']??$found['source_url']??''),'image'=>$publishedImage,'image_status'=>$publishedImage!==''?'verified':'missing','home_eligible'=>$publishedImage!==''?1:0,'editorial_state'=>'published','image_credit'=>trim($post['image_credit']??$found['image_credit']??tvs_image_credit_from_source($found['source']??$post['source']??'Fonte consultada', $publishedImage)),'tags'=>is_array($found['tags']??null)?$found['tags']:array_filter(array_map('trim',explode(',',(string)($post['tags']??'')))),'seo_title'=>trim($post['seo_title']??$found['seo_title']??$title),'meta_description'=>trim($post['meta_description']??$found['meta_description']??''),'slug'=>trim($post['slug']??$found['slug']??tvs_slug($title)),'instagram_caption'=>trim($post['instagram_caption']??$found['instagram_caption']??''),'whatsapp_text'=>trim($post['whatsapp_text']??$found['whatsapp_text']??''),'views'=>0,'shares'=>0,'published_at'=>date('c'),'created_at'=>date('c')];
   tvs_save_json_file($newsFile,$news); tvs_queue_save($newq); return true;
 }
 
