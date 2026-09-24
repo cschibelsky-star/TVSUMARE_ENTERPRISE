@@ -1,6 +1,8 @@
 <?php
 require_once __DIR__.'/auth.php';
-require_login();
+// OAuth callback is protected by the one-time state validated during token exchange.
+// Do not require an admin session here: external OAuth redirects may not carry the
+// existing session cookie in every browser/proxy combination.
 require_once dirname(__DIR__).'/config.php';
 require_once dirname(__DIR__).'/includes/youtube_oauth.php';
 
