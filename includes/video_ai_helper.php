@@ -154,14 +154,15 @@ if (!function_exists('tvp_generate_script')) {
     return 'Cristian Schibelsky — Editor Responsável';
   }
   function tvp_script_opening_for_profile($profile,$cat,$job=[]){
-    if(tvp_is_employment_job($job)) return 'Boa noite. A TV Sumaré traz uma atualização sobre emprego e oportunidades de trabalho na região.';
-    if($profile==='negocios_empregos') return 'Boa noite. A TV Sumaré traz uma atualização sobre economia e desenvolvimento regional.';
-    if($profile==='servicos_publicos') return 'Boa noite. A TV Sumaré traz uma atualização de serviço público para moradores da região.';
-    return 'Boa noite. A TV Sumaré acompanha os principais fatos de Sumaré e da região.';
+    if(tvp_is_employment_job($job)) return 'A TV Sumaré traz uma atualização sobre emprego e oportunidades de trabalho na região.';
+    if($profile==='negocios_empregos') return 'A TV Sumaré traz uma atualização sobre economia e desenvolvimento regional.';
+    if($profile==='servicos_publicos') return 'A TV Sumaré traz uma atualização de serviço público para moradores da região.';
+    return 'A TV Sumaré acompanha os principais fatos de Sumaré e da região.';
   }
   function tvp_polish_script($script,$job){
     $script=tvp_clean($script);
-    // Remove aberturas artificiais típicas de IA e frases de atendimento.
+    // Roteiros são atemporais: o público pode assistir em qualquer horário.
+    $script=preg_replace('/^(?:bom\s+dia|boa\s+tarde|boa\s+noite)[,\.!:\s-]*/iu','',$script);
     $bad=[
       'É um prazer ter você conosco na TV Sumaré.',
       'E um prazer ter você conosco na TV Sumaré.',
@@ -173,12 +174,22 @@ if (!function_exists('tvp_generate_script')) {
     $script=str_replace($bad,'',$script);
     $script=preg_replace('/\s+/u',' ',trim($script));
     $profile=$job['presenter_profile']??tvp_avatar_profile_for_category($job['category']??'');
-    // Evita roteiro que começa truncado direto pelo título, como "Sumaré com duas mil vagas...".
-    if(!preg_match('/^(Boa noite|Olá|A TV Sumaré|Confira|Nesta edição)/iu',$script)){
+    if(!preg_match('/^(Olá|A TV Sumaré|Confira|Nesta edição)/iu',$script)){
       $script=tvp_script_opening_for_profile($profile,$job['category']??'',$job).' '.$script;
     }
-    if(stripos($script,'Cristian Schibelsky')===false){
-      $script.=' Edição: Cristian Schibelsky, Editor Responsável da TV Sumaré.';
+    $engine=tvp_video_engine_decide($job,$job['video_engine']??'auto');
+    if($engine==='veo'){
+      // VEO é vídeo visual institucional: nunca usa identidade ou assinatura pessoal.
+      $script=preg_replace('/\bEu\s+sou\s+Cristian\s+Schibelsky\.?/iu','',$script);
+      $script=preg_replace('/\bEdi[cç][aã]o:\s*Cristian\s+Schibelsky[^\.]*\.?/iu','',$script);
+      $script=preg_replace('/\bCristian\s+Schibelsky\b/iu','TV Sumaré',$script);
+      $script=preg_replace('/\s+/u',' ',trim($script));
+      if(!preg_match('/Acompanhe mais informa[cç][oõ]es na TV Sumar[eé]\.?$/iu',$script)){
+        $script=preg_replace('/Até o próximo boletim\.?$/iu','',$script);
+        $script=trim($script).' Acompanhe mais informações na TV Sumaré.';
+      }
+    } elseif(stripos($script,'Cristian Schibelsky')===false && $profile==='cristian_editor'){
+      $script.=' Eu sou Cristian Schibelsky. Até o próximo boletim.';
     }
     return tvp_clean($script);
   }
@@ -243,8 +254,14 @@ if (!function_exists('tvp_generate_script')) {
     $presenter=tvp_presenter_label($profile);
     $opening=tvp_script_opening_for_profile($profile,$job['category']??'',$job);
     $body=tvp_clean(($job['body']??'').' '.($job['summary']??''));
-    $prompt="Você é redator-chefe de telejornal regional da TV Sumaré. Gere APENAS o texto final que será falado pelo apresentador em vídeo, sem markdown, sem tópicos, sem rótulos e sem explicar o formato.\n\n".
-      "APRESENTADOR/ASSINATURA: {$presenter}.\n".
+    $engine=tvp_video_engine_decide($job,$job['video_engine']??'auto');
+    $identityRule=$engine==='veo'
+      ? "MOTOR VEO: vídeo visual institucional. Não use nome de apresentador, não use primeira pessoa, não cite Cristian Schibelsky e encerre de forma institucional com 'Acompanhe mais informações na TV Sumaré.'.\n"
+      : "MOTOR HEYGEN: use a identidade do apresentador somente quando o perfil configurado exigir.\n";
+    $prompt="Você é redator-chefe de telejornal regional da TV Sumaré. Gere APENAS o texto final que será falado/narrado no vídeo, sem markdown, sem tópicos, sem rótulos e sem explicar o formato.\n\n".
+      "REGRA ATEMPORAL OBRIGATÓRIA: nunca use 'bom dia', 'boa tarde' ou 'boa noite'. O vídeo pode ser assistido em qualquer horário.\n".
+      $identityRule.
+      "APRESENTADOR/ASSINATURA: ".($engine==='veo'?'TV Sumaré — institucional':$presenter).".\n".
       "ABERTURA OBRIGATÓRIA: {$opening}\n\n".
       "OBJETIVO: roteiro natural de telejornal regional, com 60 a 90 segundos, frases curtas, pausas naturais e linguagem humana.\n\n".
       "ESTRUTURA INTERNA DO TEXTO, mas sem escrever estes títulos: abertura curta, informação principal, contexto regional, serviço ao cidadão quando houver e encerramento natural. Não pronuncie domínio, URL, ponto com ou ponto br.\n\n".
@@ -258,7 +275,11 @@ if (!function_exists('tvp_generate_script')) {
       "Fonte: ".($job['source']??'')."\n".
       "URL: ".($job['source_url']??'')."\n".
       "Conteúdo disponível: {$body}\n\n".
-      "Finalize obrigatoriamente com: 'Eu sou Cristian Schibelsky. Até o próximo boletim.'";
+      ($engine==='veo'
+        ? "Finalize obrigatoriamente com: 'Acompanhe mais informações na TV Sumaré.'"
+        : ($profile==='cristian_editor'
+          ? "Finalize com: 'Eu sou Cristian Schibelsky. Até o próximo boletim.'"
+          : "Finalize de forma institucional, sem atribuir ao apresentador uma identidade que não corresponda ao perfil configurado."));
     $script='';
     $core=tvp_core_generate_text($prompt);
     if(!empty($core['ok'])) $script=$core['text']??'';
@@ -362,7 +383,10 @@ if (!function_exists('tvp_veo_config')) {
     $city=tvp_clean($job['city']??'Região');
     $cat=tvp_clean($job['category']??'Notícia');
     $context=tvp_substr(tvp_clean(($job['summary']??'').' '.($job['body']??'').' '.($job['script']??'')),0,800);
-    $guard='Conteúdo visual jornalístico ilustrativo, sem simular filmagem documental real de um fato que não foi gravado. Não mostrar pessoas públicas identificáveis, não inventar placas, documentos, declarações, números ou locais específicos. Sem apresentador falando para a câmera. Sem texto ilegível. Estética de TV regional brasileira, realista e profissional, 16:9.';
+    $context=preg_replace('/\b(?:bom\s+dia|boa\s+tarde|boa\s+noite)\b[,.!:\s-]*/iu','',$context);
+    $context=preg_replace('/\b(?:Eu\s+sou\s+)?Cristian\s+Schibelsky\b[^.]*\.?/iu','',$context);
+    $context=tvp_clean($context);
+    $guard='Conteúdo visual jornalístico ilustrativo e institucional da TV Sumaré, sem simular filmagem documental real de um fato que não foi gravado. Não mostrar pessoas públicas identificáveis, não inventar placas, documentos, declarações, números ou locais específicos. Sem apresentador falando para a câmera. Não usar nome, imagem, assinatura ou identidade pessoal de Cristian Schibelsky. Não usar saudação ligada a horário como bom dia, boa tarde ou boa noite. Sem texto ilegível. Estética de TV regional brasileira, realista e profissional, 16:9.';
     return [
       $guard." Cena 1: abertura visual contextual de {$city}, tema {$cat}. Pauta: {$title}. Contexto: {$context}. Movimento de câmera suave, plano de estabelecimento, áudio ambiente discreto.",
       $guard." Cena 2: b-roll editorial relacionado ao assunto {$title}, mostrando elementos genéricos e verificáveis do tema {$cat}, sem recriar o acontecimento como registro real. Contexto: {$context}. Cortes limpos, linguagem audiovisual jornalística.",
