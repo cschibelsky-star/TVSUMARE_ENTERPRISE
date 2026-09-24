@@ -77,6 +77,17 @@ if (!function_exists('tvp_video_score')) {
     return max(0,min(100,$score));
   }
   function tvp_video_priority($score){ if($score>=85) return 'prioridade_maxima'; if($score>=70) return 'destaque'; if($score>=50) return 'publicavel'; if($score>=30) return 'revisao'; return 'baixa'; }
+  function tvp_is_employment_job($item){
+    $txt=tvp_text_lc(($item['title']??'').' '.($item['category']??'').' '.($item['summary']??'').' '.($item['body']??''));
+    return preg_match('~\b(emprego|empregos|vaga|vagas|pat|recrutamento|processo seletivo|contrata[cç][aã]o|contrata[cç][oõ]es|oportunidade de trabalho|mercado de trabalho)\b~u',$txt)===1;
+  }
+  function tvp_job_is_expired($job,$maxDays=7){
+    if(in_array((string)($job['status']??''),['publicado','cancelado'],true)) return false;
+    $raw=tvp_value($job,['published_at','source_published_at','created_at'],'');
+    $ts=$raw?strtotime((string)$raw):0;
+    if(!$ts) return false;
+    return ((time()-$ts)/86400)>$maxDays;
+  }
   function tvp_avatar_profile_for_category($category){
     $c=tvp_text_lc($category);
     if(preg_match('~emprego|economia|negócio|negocio|empresa|investimento|comércio|comercio|indústria|industria~u',$c)) return 'negocios_empregos';
@@ -131,7 +142,7 @@ if (!function_exists('tvp_load_video_jobs')) {
     $news=tvp_read_json('noticias.json');
     usort($news,function($a,$b){ return tvp_video_score($b)<=>tvp_video_score($a); });
     $made=0; $errors=[];
-    foreach($news as $n){ if($made>=$limit) break; $score=tvp_video_score($n); if($score<75 || tvp_is_sensitive_topic($n)) continue; if(tvp_job_exists_for_news(tvp_news_id($n))) continue; $r=tvp_create_video_job($n,'sugestao_ia',true); if($r['ok']) $made++; else $errors[]=$r['error']; }
+    foreach($news as $n){ if($made>=$limit) break; if(tvp_news_age_days($n)>3) continue; $score=tvp_video_score($n); if($score<75 || tvp_is_sensitive_topic($n)) continue; if(tvp_job_exists_for_news(tvp_news_id($n))) continue; $r=tvp_create_video_job($n,'sugestao_ia',true); if($r['ok']) $made++; else $errors[]=$r['error']; }
     return ['ok'=>true,'created'=>$made,'errors'=>$errors];
   }
 }
@@ -142,8 +153,9 @@ if (!function_exists('tvp_generate_script')) {
     if($profile==='servicos_publicos') return 'Repórter 2';
     return 'Cristian Schibelsky — Editor Responsável';
   }
-  function tvp_script_opening_for_profile($profile,$cat){
-    if($profile==='negocios_empregos') return 'Boa noite. O boletim de Empregos e Negócios da TV Sumaré começa com uma oportunidade para quem busca trabalho na região.';
+  function tvp_script_opening_for_profile($profile,$cat,$job=[]){
+    if(tvp_is_employment_job($job)) return 'Boa noite. A TV Sumaré traz uma atualização sobre emprego e oportunidades de trabalho na região.';
+    if($profile==='negocios_empregos') return 'Boa noite. A TV Sumaré traz uma atualização sobre economia e desenvolvimento regional.';
     if($profile==='servicos_publicos') return 'Boa noite. A TV Sumaré traz uma atualização de serviço público para moradores da região.';
     return 'Boa noite. A TV Sumaré acompanha os principais fatos de Sumaré e da região.';
   }
@@ -163,7 +175,7 @@ if (!function_exists('tvp_generate_script')) {
     $profile=$job['presenter_profile']??tvp_avatar_profile_for_category($job['category']??'');
     // Evita roteiro que começa truncado direto pelo título, como "Sumaré com duas mil vagas...".
     if(!preg_match('/^(Boa noite|Olá|A TV Sumaré|Confira|Nesta edição)/iu',$script)){
-      $script=tvp_script_opening_for_profile($profile,$job['category']??'').' '.$script;
+      $script=tvp_script_opening_for_profile($profile,$job['category']??'',$job).' '.$script;
     }
     if(stripos($script,'Cristian Schibelsky')===false){
       $script.=' Edição: Cristian Schibelsky, Editor Responsável da TV Sumaré.';
@@ -178,12 +190,20 @@ if (!function_exists('tvp_generate_script')) {
     $profile=$job['presenter_profile']??tvp_avatar_profile_for_category($cat);
     $txt=tvp_text_lc($title.' '.$cat.' '.($job['body']??'').' '.($job['summary']??''));
     if($profile==='negocios_empregos'){
-      $script="Boa noite. A TV Sumaré traz uma notícia importante para quem procura uma oportunidade no mercado de trabalho.\n\n".
-        "{$title}.\n\n".
-        "A informação envolve {$city} e reforça o movimento de geração de emprego, renda e desenvolvimento regional.\n\n".
-        "Segundo informações de {$source}, os interessados devem acompanhar os canais oficiais para confirmar prazos, requisitos, documentos e formas de atendimento.\n\n".
-        "A TV Sumaré segue acompanhando as oportunidades de emprego e negócios em toda a região.\n\n".
-        "Eu sou Cristian Schibelsky. Até o próximo boletim.";
+      if(tvp_is_employment_job($job)){
+        $script="Boa noite. A TV Sumaré traz uma atualização sobre emprego e oportunidades de trabalho na região.\n\n".
+          "{$title}.\n\n".
+          "A informação envolve {$city} e tem relação direta com o mercado de trabalho regional.\n\n".
+          "Segundo informações de {$source}, os interessados devem acompanhar os canais oficiais para confirmar prazos, requisitos, documentos e formas de atendimento.\n\n".
+          "A TV Sumaré segue acompanhando as oportunidades de emprego em toda a região.\n\n".
+          "Eu sou Cristian Schibelsky. Até o próximo boletim.";
+      } else {
+        $script="Boa noite. A TV Sumaré traz uma atualização sobre economia e desenvolvimento regional.\n\n".
+          "{$title}.\n\n".
+          "A informação envolve {$city} e integra a cobertura econômica da região.\n\n".
+          "Segundo informações de {$source}, a TV Sumaré acompanha os dados e os próximos desdobramentos relacionados ao tema.\n\n".
+          "Eu sou Cristian Schibelsky. Até o próximo boletim.";
+      }
       return tvp_clean($script);
     }
     if($profile==='servicos_publicos'){
@@ -221,7 +241,7 @@ if (!function_exists('tvp_generate_script')) {
   function tvp_generate_script($job){
     $profile=$job['presenter_profile']??tvp_avatar_profile_for_category($job['category']??'');
     $presenter=tvp_presenter_label($profile);
-    $opening=tvp_script_opening_for_profile($profile,$job['category']??'');
+    $opening=tvp_script_opening_for_profile($profile,$job['category']??'',$job);
     $body=tvp_clean(($job['body']??'').' '.($job['summary']??''));
     $prompt="Você é redator-chefe de telejornal regional da TV Sumaré. Gere APENAS o texto final que será falado pelo apresentador em vídeo, sem markdown, sem tópicos, sem rótulos e sem explicar o formato.\n\n".
       "APRESENTADOR/ASSINATURA: {$presenter}.\n".

@@ -83,7 +83,15 @@ function tvs_category_match($n,$terms){
 function tvs_news_category($n){ return trim((string)($n['category']??'Notícia')); }
 function tvs_video_url($v){ return trim((string)($v['url']??$v['video_url']??$v['captioned_video_url']??$v['videoUrl']??'')); }
 function tvs_video_thumb($v){ $img=trim((string)($v['thumb']??$v['thumbnail']??$v['image']??'')); return tvs_is_category_asset($img)?'':$img; }
-function tvs_load_real_videos($limit=0){
+function tvs_video_title($v){
+  $title=trim((string)($v['title']??'Vídeo TV Sumaré'));
+  return preg_replace('~\bSumare\b~u','Sumaré',$title);
+}
+function tvs_video_age_days($v){
+  $ts=tvs_date_ts($v);
+  return max(0,(int)floor((time()-$ts)/86400));
+}
+function tvs_load_real_videos($limit=0,$maxDays=30){
   $raw=[];
   foreach(['data/videos.json','data/videos_ia.json'] as $file){
     $arr=tvs_json($file);
@@ -91,6 +99,7 @@ function tvs_load_real_videos($limit=0){
       $url=tvs_video_url($v);
       $status=tvs_lc($v['status']??'active');
       if($url==='' || in_array($status,['erro','error','failed','paused','rascunho','sugerido','roteiro','roteiro_revisao','aprovado_video','gerando','fila','pendente'],true)) continue;
+      if($maxDays>0 && tvs_video_age_days($v)>$maxDays) continue;
       $raw[]=$v;
     }
   }
