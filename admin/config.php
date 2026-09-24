@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+date_default_timezone_set('America/Sao_Paulo');
+
 $admin_user = (string) (getenv('TVSUMARE_ADMIN_USER') ?: '');
 $admin_pass = '';
 $admin_pass_hash = (string) (getenv('TVSUMARE_ADMIN_PASS_HASH') ?: '');

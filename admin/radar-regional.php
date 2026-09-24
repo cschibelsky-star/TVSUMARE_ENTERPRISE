@@ -332,7 +332,7 @@ function tvs_radar_can_direct_approve($m){
 function tvs_radar_infer_queue_age_days($q){
   if(is_numeric($q['age_days']??null)) return max(0,(int)$q['age_days']);
 
-  foreach(['published_at','pubDate','date','data','source_published_at'] as $k){
+  foreach(['published_at','pubDate','date','data','source_published_at','created_at'] as $k){
     $raw=trim((string)($q[$k]??''));
     if($raw==='') continue;
     $ts=strtotime($raw);
@@ -1999,12 +1999,18 @@ function tvs_radar_update_queue($perCity=15,$mode='normal'){
   $TVS_RADAR_MODE=$mode==='volume'?'volume':'normal';
   @set_time_limit(tvs_radar_is_volume_mode()?55:38);
   $started=microtime(true);
+  tvs_radar_enforce_queue_rules(true);
   $queue=tvs_queue_read(); $seen=[]; $count=0;
   foreach($queue as $q){ if(!empty($q['source_url'])) $seen[$q['source_url']]=1; }
   global $cities;
   foreach($cities as $city){
     if((microtime(true)-$started)>(tvs_radar_is_volume_mode()?46:30)) break;
-    $cityCount=0; foreach($queue as $q){ if(($q['city']??'')===$city) $cityCount++; }
+    $cityCount=0;
+    foreach($queue as $q){
+      if(($q['city']??'')!==$city) continue;
+      if(!empty($q['image_review_required'])) continue;
+      $cityCount++;
+    }
     if($cityCount>=$perCity) continue;
     $attempts=0;
     foreach(tvs_radar_candidates_for_city($city) as $cand){
@@ -2134,9 +2140,9 @@ if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'){
     $cfg=tvs_radar_config();
     $perCity=max(1,min(40,(int)($cfg['per_city']??20)));
     $n=tvs_radar_update_queue($perCity,'normal');
-    $st=['last_run'=>date('c'),'last_mode'=>'manual','last_generated'=>$n,'last_message'=>$n>0?"{$n} matéria(s) pronta(s) para aprovação.":'Nenhuma matéria entrou na fila agora.'];
+    $st=['last_run'=>date('c'),'last_mode'=>'manual','last_generated'=>$n,'last_message'=>$n>0?"{$n} matéria(s) nova(s) pronta(s) para aprovação.":'Atualização concluída; nenhuma pauta nova elegível foi encontrada neste ciclo.'];
     tvs_radar_save_status($st);
-    $notice=$n>0 ? "Radar atualizado manualmente: {$n} matéria(s) pronta(s) para aprovação." : 'Radar atualizado manualmente. Nenhuma matéria entrou na fila agora. Verifique fontes, chave Gemini e pautas descartadas para os motivos.';
+    $notice=$n>0 ? "Radar atualizado manualmente: {$n} matéria(s) nova(s) pronta(s) para aprovação." : 'Radar atualizado. Nenhuma pauta nova elegível foi encontrada neste ciclo; itens antigos, duplicados ou sem validade editorial não retornam à fila.';
   } elseif($action==='update_radar_volume'){
     $cfg=tvs_radar_config();
     $perCity=max(25,min(60,(int)($cfg['per_city']??25)));
