@@ -409,10 +409,52 @@ function tvs_parse_rss($rssUrl, $src){
     $link='';
     if(isset($it->link['href'])) $link=(string)$it->link['href'];
     else $link=(string)($it->link ?? '');
-    $desc=tvs_clean_text((string)($it->description ?? $it->summary ?? $it->content ?? ''));
+
+    $rawDesc=(string)($it->description ?? $it->summary ?? $it->content ?? '');
+    $desc=tvs_clean_text($rawDesc);
     $pub=(string)($it->pubDate ?? $it->published ?? $it->updated ?? '');
+    $image='';
+
+    $media=$it->children('media', true);
+    if($media){
+      if(isset($media->content)){
+        foreach($media->content as $mediaContent){
+          $attrs=$mediaContent->attributes();
+          $candidate=trim((string)($attrs['url']??''));
+          $type=tvs_lower((string)($attrs['type']??''));
+          if($candidate!=='' && ($type==='' || strpos($type,'image/')===0) && tvs_is_valid_image_url($candidate)){
+            $image=$candidate;
+            break;
+          }
+        }
+      }
+      if($image==='' && isset($media->thumbnail)){
+        $attrs=$media->thumbnail->attributes();
+        $candidate=trim((string)($attrs['url']??''));
+        if(tvs_is_valid_image_url($candidate)) $image=$candidate;
+      }
+    }
+
+    if($image==='' && isset($it->enclosure)){
+      $attrs=$it->enclosure->attributes();
+      $candidate=trim((string)($attrs['url']??''));
+      $type=tvs_lower((string)($attrs['type']??''));
+      if($candidate!=='' && strpos($type,'image/')===0 && tvs_is_valid_image_url($candidate)) $image=$candidate;
+    }
+
+    if($image==='') $image=tvs_extract_image_from_rss_description($link,$rawDesc);
+
     if(!$title || !$link) continue;
-    $items[]=['title'=>$title,'url'=>$link,'description'=>$desc,'published_at'=>$pub,'source'=>$src['name']??'', 'city'=>$src['city']??'Região'];
+    $items[]=[
+      'title'=>$title,
+      'url'=>$link,
+      'description'=>$desc,
+      'published_at'=>$pub,
+      'source'=>$src['name']??'',
+      'city'=>$src['city']??'Região',
+      'image'=>$image,
+      'image_source_type'=>$image!==''?'rss:source':''
+    ];
     if(count($items)>=5) break;
   }
   return $items;
@@ -479,7 +521,8 @@ if(!function_exists('tvs_is_valid_image_url')){
     $img = trim((string)$img);
     if($img==='') return false;
     if(preg_match('~^(data:|javascript:)~i',$img)) return false;
-    if(preg_match('~(logo|icone|icon|avatar|sprite|placeholder|whatsapp|facebook|instagram|youtube|twitter|linkedin)~i',$img)) return false;
+    if(preg_match('~(logo|icone|icon|avatar|sprite|placeholder|whatsapp|facebook|instagram|youtube|twitter|linkedin|favicon|blank|default-image|no-image)~i',$img)) return false;
+    if(preg_match('~\.svg(?:\?|$)~i',$img)) return false;
     return true;
   }
 }
