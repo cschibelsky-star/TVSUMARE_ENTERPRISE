@@ -329,6 +329,40 @@ function tvs_radar_can_direct_approve($m){
   return ($m['review_level']??'')!=='revisao_obrigatoria'
     && ($m['editorial_status']??'')!=='Descartar';
 }
+function tvs_radar_infer_queue_age_days($q){
+  if(is_numeric($q['age_days']??null)) return max(0,(int)$q['age_days']);
+
+  foreach(['published_at','pubDate','date','data','source_published_at'] as $k){
+    $raw=trim((string)($q[$k]??''));
+    if($raw==='') continue;
+    $ts=strtotime($raw);
+    if($ts!==false && $ts<=time()+86400) return max(0,(int)floor((time()-$ts)/86400));
+  }
+
+  $text=tvs_clean_text(
+    ($q['title']??'').' '.
+    ($q['subtitle']??'').' '.
+    ($q['summary']??'').' '.
+    ($q['body']??'')
+  );
+
+  if(preg_match_all('~\\b([0-3]?\\d)[/\\-]([01]?\\d)(?:[/\\-](20\\d{2}))?\\b~u',$text,$m,PREG_SET_ORDER)){
+    $best=null;
+    $now=time();
+    foreach($m as $hit){
+      $day=(int)$hit[1]; $month=(int)$hit[2]; $year=!empty($hit[3])?(int)$hit[3]:(int)date('Y');
+      if(!checkdate($month,$day,$year)) continue;
+      $ts=mktime(12,0,0,$month,$day,$year);
+      if($ts>$now+86400) continue;
+      $age=max(0,(int)floor(($now-$ts)/86400));
+      if($best===null || $age<$best) $best=$age;
+    }
+    if($best!==null) return $best;
+  }
+
+  return null;
+}
+
 function tvs_radar_enforce_queue_rules($save=true){
   $queue=tvs_queue_read(); $new=[]; $removed=0; $changed=0;
   foreach($queue as $q){
@@ -337,18 +371,24 @@ function tvs_radar_enforce_queue_rules($save=true){
     $city=$q['city']??'';
     if(!in_array($city,tvs_radar_allowed_cities(),true)){ $removed++; tvs_radar_log_event($q['title']??'', $q['source']??'', $city, 'DESCARTADA', 'Cidade fora da lista monitorada', $q['source_url']??''); continue; }
     if(!tvs_radar_candidate_region_ok($cand,$city,$reason)){ $removed++; tvs_radar_log_event($q['title']??'', $q['source']??'', $city, 'DESCARTADA', $reason, $q['source_url']??''); continue; }
-    $age=$q['age_days']??null;
+    $age=tvs_radar_infer_queue_age_days($q);
     $queueText=($q['subtitle']??'').' '.($q['summary']??'').' '.($q['body']??'');
     $isTemporalException=tvs_radar_temporal_exception($q['title']??'', $queueText);
-    if(is_numeric($age) && (int)$age>($isTemporalException?15:7)){
+    if(is_numeric($age) && (int)$age>15){
       $removed++;
-      tvs_radar_log_event(
-        $q['title']??'',
-        $q['source']??'',
+      tvs_radar_discard(
+        $q,
         $city,
-        'ARQUIVADA',
-        'Pauta expirada na fila editorial: '.(int)$age.' dias',
-        $q['source_url']??''
+        'Expirada no backlog editorial: '.(int)$age.' dias'
+      );
+      continue;
+    }
+    if(is_numeric($age) && (int)$age>7 && !$isTemporalException){
+      $removed++;
+      tvs_radar_discard(
+        $q,
+        $city,
+        'Expirada no backlog editorial: '.(int)$age.' dias'
       );
       continue;
     }

@@ -25,6 +25,16 @@ register_shutdown_function(function() use ($cronLogFile,$cronStarted){
 $_SERVER['REQUEST_METHOD']='CRON';
 require_once __DIR__.'/radar-regional.php';
 
+$cleanup = function_exists('tvs_radar_enforce_queue_rules')
+  ? tvs_radar_enforce_queue_rules(true)
+  : ['removed'=>0,'changed'=>0,'total'=>0];
+@file_put_contents(
+  $cronLogFile,
+  date('c')." BACKLOG_CLEANUP removed=".(int)($cleanup['removed']??0)." changed=".(int)($cleanup['changed']??0)." total=".(int)($cleanup['total']??0)."\n",
+  FILE_APPEND|LOCK_EX
+);
+echo "BACKLOG_CLEANUP removed=".(int)($cleanup['removed']??0)." changed=".(int)($cleanup['changed']??0)." total=".(int)($cleanup['total']??0)."\n";
+
 $cfg = function_exists('tvs_radar_config') ? tvs_radar_config() : ['per_city'=>6,'auto_daily'=>true,'last_auto_date'=>''];
 $today=date('Y-m-d');
 
