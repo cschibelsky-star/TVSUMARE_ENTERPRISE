@@ -268,9 +268,16 @@ function tvs_prepare_public_news_v2($news,$maxDays=21){
   $prepared=[];
   foreach((array)$news as $n){
     $n=tvs_normalize_news_item($n);
+    $status=tvs_lc($n['status']??'publicado');
+    if(in_array($status,['lixeira','arquivado','descartado','rascunho','revisao','revisão'],true)) continue;
     if(tvs_is_news_old($n,$maxDays)) continue;
     if(!tvs_is_regional_news_strict($n)) continue;
     $n['city']=tvs_region_city_detect($n) ?: ($n['city']??'Região');
+    $img=tvs_real_image($n);
+    $n['image_status']=$img!==''?'verified':'missing';
+    $n['home_eligible']=$img!==''?1:0;
+    $n['publication_eligible']=1;
+    $n['editorial_state']='published';
     $prepared[]=$n;
   }
   $prepared=tvs_strict_dedupe_news($prepared);

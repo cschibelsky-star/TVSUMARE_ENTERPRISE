@@ -6,7 +6,7 @@ $newsRaw=tvs_json('data/noticias.json');
 $newsRaw=is_array($newsRaw)?$newsRaw:[];
 $news=function_exists('tvs_prepare_public_news_v2') ? tvs_prepare_public_news_v2($newsRaw, 60) : tvs_prepare_public_news($newsRaw, 60);
 
-// A listagem pública não ressuscita acervo antigo. Só entram conteúdos recentes, regionais e com imagem editorial validada.
+// A listagem pública usa o estado editorial canônico. Matéria publicada e regional pode aparecer mesmo sem foto; imagem é requisito apenas para superfícies visuais de destaque.
 $cat=trim($_GET['categoria']??'');
 $q=trim($_GET['q']??'');
 if($cat){ $news=array_values(array_filter($news, fn($n)=>tvs_lc($n['category']??'')===tvs_lc($cat))); }

@@ -8,6 +8,7 @@ if(!$TVS_RADAR_IS_CLI_CRON){
 require_once dirname(__DIR__).'/config.php';
 require_once __DIR__.'/gemini.php';
 require_once __DIR__.'/monitor_lib.php';
+require_once __DIR__.'/radar_queue_rules.php';
 $activeAdmin='radar';
 if($TVS_RADAR_IS_CLI_CRON){
   $notice='';
@@ -375,42 +376,98 @@ function tvs_radar_enforce_queue_rules($save=true){
   $queue=tvs_queue_read(); $new=[]; $removed=0; $changed=0;
   foreach($queue as $q){
     $reason='';
-    $cand=['title'=>$q['title']??'','description'=>($q['subtitle']??'').' '.($q['summary']??'').' '.($q['body']??''),'url'=>$q['source_url']??'','source'=>$q['source']??'','source_type'=>$q['source']??'','city'=>$q['city']??''];
+    $cand=[
+      'title'=>$q['title']??'',
+      'description'=>($q['subtitle']??'').' '.($q['summary']??'').' '.($q['body']??''),
+      'url'=>$q['source_url']??'',
+      'source'=>$q['source']??'',
+      'source_type'=>$q['source']??'',
+      'city'=>$q['city']??''
+    ];
     $city=$q['city']??'';
-    if(!in_array($city,tvs_radar_allowed_cities(),true)){ $removed++; tvs_radar_log_event($q['title']??'', $q['source']??'', $city, 'DESCARTADA', 'Cidade fora da lista monitorada', $q['source_url']??''); continue; }
-    if(!tvs_radar_candidate_region_ok($cand,$city,$reason)){ $removed++; tvs_radar_log_event($q['title']??'', $q['source']??'', $city, 'DESCARTADA', $reason, $q['source_url']??''); continue; }
+
+    if(!in_array($city,tvs_radar_allowed_cities(),true)){
+      $removed++;
+      tvs_radar_log_event($q['title']??'', $q['source']??'', $city, 'DESCARTADA', 'Cidade fora da lista monitorada', $q['source_url']??'');
+      continue;
+    }
+
+    if(!tvs_radar_candidate_region_ok($cand,$city,$reason)){
+      $removed++;
+      tvs_radar_log_event($q['title']??'', $q['source']??'', $city, 'DESCARTADA', $reason, $q['source_url']??'');
+      continue;
+    }
+
+    $sourceUrl=trim((string)($q['source_url']??''));
+    if($sourceUrl==='' || tvs_radar_is_google_news_url($sourceUrl)){
+      $removed++;
+      tvs_radar_log_event($q['title']??'', $q['source']??'', $city, 'DESCARTADA', 'Fonte original não confirmada', $sourceUrl);
+      continue;
+    }
+
     $age=tvs_radar_infer_queue_age_days($q);
     $queueText=($q['subtitle']??'').' '.($q['summary']??'').' '.($q['body']??'');
     $isTemporalException=tvs_radar_temporal_exception($q['title']??'', $queueText);
-    if(is_numeric($age) && (int)$age>15){
+
+    if(!is_numeric($age)){
       $removed++;
-      tvs_radar_discard(
-        $q,
-        $city,
-        'Expirada no backlog editorial: '.(int)$age.' dias'
-      );
+      tvs_radar_discard($q,$city,'Data da matéria original não confirmada');
       continue;
     }
-    if(is_numeric($age) && (int)$age>7 && !$isTemporalException){
+
+    $maxAge=$isTemporalException?7:3;
+    if((int)$age>$maxAge){
       $removed++;
-      tvs_radar_discard(
-        $q,
-        $city,
-        'Expirada no backlog editorial: '.(int)$age.' dias'
-      );
+      tvs_radar_discard($q,$city,'Fora da janela editorial: '.(int)$age.' dias; limite '.$maxAge.' dias');
       continue;
     }
-    $score=tvs_radar_editorial_score($q['title']??'', $city, $q['category']??'', $q['source']??'', $queueText, $q['source_url']??'', is_numeric($age)?(int)$age:null);
-    $sensitive=tvs_radar_sensitive_topic($q['title']??'', ($q['subtitle']??'').' '.($q['summary']??'').' '.($q['body']??''));
+
+    $score=tvs_radar_editorial_score(
+      $q['title']??'',
+      $city,
+      $q['category']??'',
+      $q['source']??'',
+      $queueText,
+      $sourceUrl,
+      (int)$age
+    );
+    $sensitive=tvs_radar_sensitive_topic($q['title']??'', $queueText);
     $st=tvs_radar_status_from_score($score,$sensitive);
-    if($st['review_level']==='descartar'){ $removed++; tvs_radar_log_event($q['title']??'', $q['source']??'', $city, 'DESCARTADA', 'Score editorial insuficiente: '.$score, $q['source_url']??''); continue; }
+
+    if($st['review_level']==='descartar'){
+      $removed++;
+      tvs_radar_log_event($q['title']??'', $q['source']??'', $city, 'DESCARTADA', 'Score editorial insuficiente: '.$score, $sourceUrl);
+      continue;
+    }
+
     if(($q['editorial_score']??null)!==$score || ($q['editorial_status']??'')!==$st['editorial_status']) $changed++;
-    $q['editorial_score']=$score; $q['review_level']=$st['review_level']; $q['editorial_status']=$st['editorial_status'];
+
+    $image=trim((string)($q['image']??''));
+    $hasImage=$image!=='' && tvs_is_valid_image_url($image);
+
+    $q['editorial_score']=$score;
+    $q['review_level']=$st['review_level'];
+    $q['editorial_status']=$st['editorial_status'];
+    $q['editorial_state']='qualified';
+    $q['region_status']='confirmed';
+    $q['freshness_status']='current';
+    $q['source_status']='original';
+    $q['duplicate_status']='unique';
+    $q['publication_eligible']=1;
+    $q['video_eligible']=1;
+    $q['image_status']=$hasImage?'verified':'missing';
+    $q['home_eligible']=$hasImage?1:0;
+    $q['image_review_required']=0;
     $q['sensitive_review_required']=!empty($st['sensitive']) ? 1 : 0;
+
     if(!empty($st['sensitive'])) $q['sensitive_review_reason']='Pauta sensível ou de alto impacto: revisão humana obrigatória antes da publicação.';
     elseif(isset($q['sensitive_review_reason'])) $q['sensitive_review_reason']='';
+
     $new[]=$q;
   }
+
+  $new=tvs_radar_normalize_queue_by_rules($new);
+
   if($save) tvs_queue_save($new);
   return ['removed'=>$removed,'changed'=>$changed,'total'=>count($new)];
 }
@@ -1929,8 +1986,8 @@ function tvs_generate_ready_article($city,$cand){
   }
   if(!$hasVerifiedSourceImage){
     $result['image']='';
-    $result['image_review_required']=1;
-    $result['image_review_reason']='Imagem jornalística da matéria não foi confirmada; selecione uma imagem válida antes de publicar.';
+    $result['image_review_required']=0;
+    $result['image_review_reason']='Imagem jornalística não confirmada. A matéria pode ser publicada; Home, Hero e redes exigem imagem válida.';
     if($result['image_source_type']==='') $result['image_source_type']='missing:source';
   }
 

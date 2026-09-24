@@ -181,25 +181,9 @@ function tvs_radar_normalize_queue_by_rules(array $items): array
 
             $counts[$key] = $current + 1;
         } else {
-            $scope = trim((string)(
-                $item['global_scope']
-                ?? $item['city']
-                ?? 'Brasil'
-            ));
-
-            if (!isset($globalCaps[$scope])) {
-                $scope = 'Brasil';
-            }
-
-            $key = 'GLOBAL|' . $scope;
-            $current = $counts[$key] ?? 0;
-
-            if ($current >= $globalCaps[$scope]) {
-                continue;
-            }
-
-            $counts[$key] = $current + 1;
-            $item['global_scope'] = $scope;
+            // TV Sumaré opera com recorte regional explícito. Conteúdo nacional,
+            // estadual ou genérico não entra automaticamente na fila do Radar.
+            continue;
         }
 
         $item['category'] = $category;
@@ -270,20 +254,8 @@ if (!function_exists('tvs_radar_queue_item_readiness')) {
             }
         }
 
-        if (
-            $image === ''
-            || preg_match(
-                '~(^|/)assets/cat-|placeholder|logo-tv-sumare|'
-                .'googleusercontent\.com|gstatic\.com~i',
-                $image
-            )
-        ) {
-            $reasons[] = 'Imagem jornalística não resolvida';
-        }
-
-        if (!empty($item['image_review_required'])) {
-            $reasons[] = 'Imagem exige revisão';
-        }
+        // Imagem não define prontidão editorial. Ela é tratada separadamente
+        // por image_status/home_eligible para Hero, Home e redes sociais.
 
         if (!empty($item['url_resolution_required'])) {
             $reasons[] = 'URL exige resolução';
