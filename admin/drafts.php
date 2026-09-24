@@ -2,9 +2,25 @@
 require_once __DIR__.'/auth.php';
 require_login();
 require_once __DIR__.'/monitor_lib.php';
-require_once dirname(__DIR__).'/includes/tvs_public_helpers.php';
 
 $activeAdmin='drafts';
+
+function tvs_admin_region_city_detect($n){
+  $txt=tvs_lower(($n['city']??'').' '.($n['title']??'').' '.($n['subtitle']??'').' '.($n['summary']??'').' '.($n['body']??''));
+  $map=['sumaré'=>'Sumaré','sumare'=>'Sumaré','hortolândia'=>'Hortolândia','hortolandia'=>'Hortolândia','paulínia'=>'Paulínia','paulinia'=>'Paulínia','nova odessa'=>'Nova Odessa','americana'=>'Americana','campinas'=>'Campinas'];
+  foreach($map as $k=>$v){ if(strpos($txt,$k)!==false) return $v; }
+  return '';
+}
+function tvs_admin_real_image($n){
+  foreach(['image','og_image','rss_image','media','media_url','thumbnail','thumb','featured_image','image_url'] as $k){
+    $img=trim((string)($n[$k]??''));
+    if($img==='' || preg_match('~(^|/)assets/cat-|placeholder|sprite|icon|icone|logo-tv-sumare|sem-imagem|default~i',$img)) continue;
+    return $img;
+  }
+  return '';
+}
+
+
 $df=dirname(__DIR__).'/data/rascunhos.json';
 $nf=dirname(__DIR__).'/data/noticias.json';
 
@@ -62,11 +78,11 @@ function tvs_admin_invalid_draft($draft,&$reason=''){
     $reason='Conteúdo de menu, boilerplate ou página genérica detectado.';
     return true;
   }
-  if(function_exists('tvs_is_regional_news_strict') && !tvs_is_regional_news_strict($draft)){
+  if(tvs_admin_region_city_detect($draft)===''){
     $reason='Matéria fora do recorte regional da TV Sumaré ou sem cidade regional comprovada no conteúdo.';
     return true;
   }
-  $realImage=function_exists('tvs_real_image') ? tvs_real_image($draft) : trim((string)($draft['image']??''));
+  $realImage=tvs_admin_real_image($draft);
   if($realImage===''){
     $reason='Matéria sem imagem editorial verificável. Informe uma imagem relacionada à pauta antes de publicar.';
     return true;
@@ -98,10 +114,8 @@ if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'){
     $drafts[$idx]['body']=tvs_admin_clean_field($_POST['body']??($drafts[$idx]['body']??''));
     $drafts[$idx]['category']=trim((string)($_POST['category']??($drafts[$idx]['category']??'Cidades'))) ?: 'Cidades';
     $drafts[$idx]['city']=trim((string)($_POST['city']??($drafts[$idx]['city']??'Região'))) ?: 'Região';
-    if(function_exists('tvs_region_city_detect')){
-      $detectedCity=tvs_region_city_detect($drafts[$idx]);
-      if($detectedCity!=='') $drafts[$idx]['city']=$detectedCity;
-    }
+    $detectedCity=tvs_admin_region_city_detect($drafts[$idx]);
+    if($detectedCity!=='') $drafts[$idx]['city']=$detectedCity;
     $previousImage=trim((string)($drafts[$idx]['image']??''));
     $drafts[$idx]['image']=trim((string)($_POST['image']??$previousImage));
     $imageChanged=$drafts[$idx]['image']!==$previousImage;

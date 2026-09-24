@@ -4,7 +4,7 @@ require_once __DIR__.'/includes/tvs_public_helpers.php';
 $active='noticias';
 $newsRaw=tvs_json('data/noticias.json');
 $newsRaw=is_array($newsRaw)?$newsRaw:[];
-$news=function_exists('tvs_prepare_public_news_v2') ? tvs_prepare_public_news_v2($newsRaw, 21) : tvs_prepare_public_news($newsRaw, 30);
+$news=function_exists('tvs_prepare_public_news_v2') ? tvs_prepare_public_news_v2($newsRaw, 60) : tvs_prepare_public_news($newsRaw, 60);
 
 // A listagem pública não ressuscita acervo antigo. Só entram conteúdos recentes, regionais e com imagem editorial validada.
 $cat=trim($_GET['categoria']??'');

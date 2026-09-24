@@ -288,8 +288,6 @@ function tvs_prepare_public_news_v2($news,$maxDays=21){
     $n=tvs_normalize_news_item($n);
     if(tvs_is_news_old($n,$maxDays)) continue;
     if(!tvs_is_regional_news_strict($n)) continue;
-    if(!empty($n['image_review_required'])) continue;
-    if(tvs_real_image($n)==='') continue;
     $n['city']=tvs_region_city_detect($n) ?: ($n['city']??'Região');
     $prepared[]=$n;
   }

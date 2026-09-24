@@ -7,6 +7,72 @@ require_once dirname(__DIR__).'/config.php';
 require_once __DIR__.'/gemini.php';
 require_once __DIR__.'/monitor_lib.php';
 
+/*
+ * RECOVERY 2026-09-24 — one-shot.
+ * Preserva o estado atual dos JSONs e restaura matérias removidas
+ * exclusivamente pelo módulo de validade editorial.
+ */
+$recoveryMarker=dirname(__DIR__).'/data/recovery_20260924_done.json';
+if(!is_file($recoveryMarker)){
+  $dataDir=dirname(__DIR__).'/data';
+  $stamp=date('Ymd_His');
+  $backupDir=$dataDir.'/recovery_backup_'.$stamp;
+  @mkdir($backupDir,0775,true);
+  $backupFiles=['noticias.json','lixeira_noticias.json','materias_aprovacao.json','pautas_descartadas.json','videos.json','videos_ia.json','radar_log.json','radar_status.json','content_validity_log.json'];
+  foreach($backupFiles as $bf){
+    $src=$dataDir.'/'.$bf;
+    if(is_file($src)) @copy($src,$backupDir.'/'.$bf);
+  }
+
+  $news=tvs_read_json_file($dataDir.'/noticias.json'); if(!is_array($news)) $news=[];
+  $trash=tvs_read_json_file($dataDir.'/lixeira_noticias.json'); if(!is_array($trash)) $trash=[];
+  $existing=[];
+  foreach($news as $n){
+    $id=(string)($n['id']??'');
+    if($id!=='') $existing[$id]=1;
+  }
+
+  $restored=0; $keptTrash=[];
+  foreach($trash as $item){
+    $reason=(string)($item['archive_reason']??'');
+    $isValidityArchive=
+      stripos($reason,'validade editorial')!==false ||
+      stripos($reason,'Conteúdo perdeu validade')!==false;
+    $id=(string)($item['id']??'');
+    if($isValidityArchive && $id!=='' && empty($existing[$id])){
+      unset($item['deleted_at'],$item['archive_reason']);
+      $item['status']='publicado';
+      $item['recovered_at']=date('c');
+      $item['recovered_reason']='Restauração controlada após auditoria editorial de 24/09/2026.';
+      $item['validity_status']='revisao_solicitada';
+      $news[]=$item;
+      $existing[$id]=1;
+      $restored++;
+      continue;
+    }
+    $keptTrash[]=$item;
+  }
+
+  if($restored>0){
+    usort($news,function($a,$b){
+      $ta=strtotime((string)($a['published_at']??$a['created_at']??''))?:0;
+      $tb=strtotime((string)($b['published_at']??$b['created_at']??''))?:0;
+      return $tb<=>$ta;
+    });
+    tvs_save_json_file($dataDir.'/noticias.json',array_values($news));
+    tvs_save_json_file($dataDir.'/lixeira_noticias.json',array_values($keptTrash));
+  }
+
+  tvs_save_json_file($recoveryMarker,[
+    'executed_at'=>date('c'),
+    'backup_dir'=>$backupDir,
+    'restored'=>$restored,
+    'published_total'=>count($news),
+    'trash_remaining'=>count($keptTrash)
+  ]);
+  echo "RECOVERY_20260924 restored={$restored} published_total=".count($news)." trash_remaining=".count($keptTrash)." backup={$backupDir}\n";
+}
+
 $cronStarted=microtime(true);
 $homeLogDir=dirname(dirname(__DIR__)).'/logs';
 $appLogDir=dirname(__DIR__).'/logs';

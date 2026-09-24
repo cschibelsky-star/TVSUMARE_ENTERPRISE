@@ -49,24 +49,19 @@ if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'){
   $action=(string)($_POST['action']??'');
 
   if($action==='archive_expired_batch'){
-    $trash=cv_read('lixeira_noticias.json');
-    $kept=[]; $archived=0; $now=date('c');
-    foreach($news as $item){
-      if(cv_batch_expired($item)){
-        $item['deleted_at']=$now;
-        $item['archive_reason']='Arquivamento em lote por validade editorial expirada.';
-        $trash[]=$item;
-        $log[]=['id'=>uniqid('valid_'),'news_id'=>$item['id']??'','title'=>$item['title']??'Sem título','action'=>'ARQUIVADA_LOTE','reason'=>cv_reason($item),'created_at'=>$now];
-        $archived++;
-      } else { $kept[]=$item; }
+    $flagged=0; $now=date('c');
+    foreach($news as $k=>$item){
+      if(!cv_batch_expired($item)) continue;
+      $news[$k]['validity_status']='revisao_solicitada';
+      $news[$k]['validity_review_requested_at']=$now;
+      $log[]=['id'=>uniqid('valid_'),'news_id'=>$item['id']??'','title'=>$item['title']??'Sem título','action'=>'REVISAO_LOTE','reason'=>cv_reason($item),'created_at'=>$now];
+      $flagged++;
     }
-    $news=$kept;
-    cv_write('lixeira_noticias.json',$trash);
     cv_write('noticias.json',$news);
     $log=array_slice($log,-500);
     cv_write('content_validity_log.json',$log);
     cv_sync_alerts($news);
-    $notice=$archived.' matéria(s) vencida(s) arquivada(s) com rastreabilidade.';
+    $notice=$flagged.' matéria(s) vencida(s) enviada(s) para revisão sem remover conteúdo publicado.';
   } else {
     $idx=null;
     foreach($news as $k=>$n){ if((string)($n['id']??'')===$id){ $idx=$k; break; } }
@@ -141,8 +136,8 @@ usort($review,function($a,$b){ return (cv_age($b)??9999)<=>(cv_age($a)??9999); }
 
   <section class="box" style="margin-bottom:16px">
     <h2>Limpeza do passivo editorial</h2>
-    <p class="muted">Arquiva em lote conteúdo temporal com 14 dias ou mais e demais matérias com 60 dias ou mais. Tudo vai para a Lixeira com log editorial e pode ser restaurado.</p>
-    <form method="post" onsubmit="return confirm('Arquivar em lote todo o conteúdo vencido pelos critérios definidos? Os itens serão preservados na Lixeira.');"><?=tvs_csrf_field()?><button class="btn danger" name="action" value="archive_expired_batch">Arquivar vencidas em lote</button></form>
+    <p class="muted">Conteúdo temporal com 14 dias ou mais e demais matérias com 60 dias ou mais são enviados para revisão editorial. A ação em lote não remove mais matérias publicadas.</p>
+    <form method="post" onsubmit="return confirm('Enviar o conteúdo vencido para revisão editorial sem remover as matérias publicadas?');"><?=tvs_csrf_field()?><button class="btn" name="action" value="archive_expired_batch">Enviar vencidas para revisão</button></form>
   </section>
 
   <section class="box">
