@@ -5,30 +5,13 @@ $active='home';
 $siteSettings=tvs_json('data/site_settings.json');
 $newsRaw=tvs_json('data/noticias.json');
 $newsRaw=is_array($newsRaw)?$newsRaw:[];
-$news=function_exists('tvs_prepare_public_news_v2') ? tvs_prepare_public_news_v2($newsRaw, 21) : tvs_prepare_public_news($newsRaw, 30);
+$news=function_exists('tvs_prepare_public_news_v2') ? tvs_prepare_public_news_v2($newsRaw, 90) : tvs_prepare_public_news($newsRaw, 90);
 
-/* Fallback editorial da home: mantém a capa viva sem transformar notícia vencida em destaque. */
-if(count($news)<6){
-  $fallback=function_exists('tvs_prepare_public_news_v2') ? tvs_prepare_public_news_v2($newsRaw, 60) : tvs_prepare_public_news($newsRaw, 60);
-  $seen=[];
-  foreach($news as $n){ $seen[(string)($n['id']??md5($n['title']??''))]=1; }
-  foreach($fallback as $n){
-    $age=tvs_news_age_days($n);
-    $txt=tvs_lc(($n['category']??'').' '.($n['title']??'').' '.($n['subtitle']??'').' '.($n['summary']??''));
-    $timeSensitive=preg_match('~emprego|vagas|processo seletivo|recrutamento|frente fria|chuva|temporal|alerta|evento|show|festival|agenda|inscri[cç][aã]o|mutir[aã]o~iu',$txt);
-    if($age>21 && $timeSensitive) continue;
-    $id=(string)($n['id']??md5($n['title']??''));
-    if(isset($seen[$id])) continue;
-    $seen[$id]=1;
-    $news[]=$n;
-    if(count($news)>=18) break;
-  }
-  usort($news,'tvs_sort_recent');
-}
-
-/* Não ressuscita acervo antigo apenas para preencher a capa. Se não houver pauta recente, regional e com imagem validada, a Home exibe o estado editorial de atualização. */
+/* A aprovação é a fronteira editorial. Depois de publicada, a matéria permanece ativa
+ * pelo prazo de retenção (até 90 dias; conteúdos temporais têm janela menor). */
 $used=[];
 $editorialSections=function_exists('tvs_curated_sections') ? tvs_curated_sections($news) : [];
+$citySections=function_exists('tvs_city_sections') ? tvs_city_sections($news,5) : [];
 $heroList=tvs_pick_news($news,$used,function($n){ return !tvs_is_sensitive($n); },1);
 $hero=$heroList[0]??($news[0]??null); if($hero){ $used[(string)($hero['id']??md5($hero['title']??''))]=1; }
 $secondary=[]; $sideCats=[];
@@ -101,17 +84,17 @@ function tvs_video_thumb_html($v){
 
     <?php if($empresas): ?><div class="section-heading spaced"><h2>Guia Comercial em Destaque</h2><a href="guia.php">Ver guia</a></div><div class="home-business-strip"><?php foreach($empresas as $e): ?><article><?php if(!empty($e['image'])):?><img src="<?=tvs_h($e['image'])?>" onerror="this.style.display='none'" alt=""><?php endif; ?><strong><?=tvs_h($e['name']??$e['empresa']??'Empresa')?></strong><p><?=tvs_h($e['category']??$e['categoria']??'Guia Comercial')?></p><?php if(!empty($e['whatsapp'])):?><a href="https://wa.me/<?=preg_replace('/\D+/','',$e['whatsapp'])?>" target="_blank" rel="noopener">WhatsApp</a><?php endif; ?></article><?php endforeach; ?></div><?php endif; ?>
 
-    <?php if(!empty($editorialSections)): ?>
+    <?php if(!empty($citySections)): ?>
     <section class="tvs-sections-20 tvs-sections-modern">
-      <div class="section-heading modern-heading"><div><span>Editorias</span><h2>Notícias por assunto</h2><p>Cobertura regional organizada por temas, com identidade TV Sumaré.</p></div><a href="noticias.php">Ver todas</a></div>
+      <div class="section-heading modern-heading"><div><span>Cobertura regional</span><h2>Notícias por cidade</h2><p>Até 5 matérias aprovadas e ativas de cada cidade, sempre priorizando as mais recentes.</p></div><a href="noticias.php">Ver todas</a></div>
       <div class="tvs-topic-grid">
-      <?php foreach($editorialSections as $secName=>$items): if(empty($items)) continue; $main=$items[0]; $img=tvs_display_image($main); if($img==='') $img='assets/tvsumare-noticia-padrao.svg'; ?>
+      <?php foreach($citySections as $cityName=>$items): if(empty($items)) continue; $main=$items[0]; $img=tvs_display_image($main); if($img==='') $img='assets/tvsumare-noticia-padrao.svg'; ?>
         <article class="tvs-topic-card">
           <a class="tvs-topic-image" href="<?=tvs_h(tvs_news_url($main))?>"><img src="<?=tvs_h($img)?>" onerror="this.src='assets/tvsumare-noticia-padrao.svg'" alt=""></a>
           <div class="tvs-topic-content">
-            <h3><?=tvs_h($secName)?><span>.</span></h3>
+            <h3><?=tvs_h($cityName)?><span>.</span></h3>
             <a class="tvs-topic-title" href="<?=tvs_h(tvs_news_url($main))?>"><?=tvs_h(tvs_title($main['title']??'',82))?></a>
-            <?php foreach(array_slice($items,1,2) as $mini): ?>
+            <?php foreach(array_slice($items,1,4) as $mini): ?>
               <a class="tvs-topic-mini" href="<?=tvs_h(tvs_news_url($mini))?>"><?=tvs_h(tvs_title($mini['title']??'',74))?></a>
             <?php endforeach; ?>
           </div>
