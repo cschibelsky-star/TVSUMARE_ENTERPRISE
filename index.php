@@ -71,7 +71,14 @@ function tvs_video_thumb_html($v){
   <div class="ad-banner clean"><span>ANUNCIE NA TV SUMARÉ</span><strong>Sua marca em destaque para Sumaré, Hortolândia, Nova Odessa, Paulínia, Americana e Campinas</strong><a href="anuncie.php">Conheça os planos</a></div>
 
   <section class="home-live-video-grid">
-    <div class="home-live-card"><div class="section-kicker">🔴 Ao Vivo</div><h2><?=tvs_h($siteSettings['live_title']??'TV Sumaré Ao Vivo')?></h2><?php $embed=trim((string)($siteSettings['live_embed']??'')); if($embed && stripos($embed,'<iframe')!==false): ?><div class="home-live-embed"><?=$embed?></div><?php else: ?><div class="home-live-placeholder"><span class="pulse-dot"></span><strong>Nenhuma transmissão programada</strong><p>Assista aos últimos boletins da TV Sumaré Play enquanto a próxima transmissão é preparada.</p></div><?php endif; ?><p><?=tvs_h($siteSettings['live_description']??'Acompanhe boletins, entrevistas e transmissões especiais da TV Sumaré.')?></p><div class="home-actions"><a class="btn btn-primary" href="aovivo.php">Ver programação</a><a class="btn btn-outline" href="videos.php">Últimos vídeos</a></div></div>
+    <?php
+      $sumareOwnEmbed=trim((string)($siteSettings['live_embed']??''));
+      $sumareOwnOnline=strtolower((string)($siteSettings['live_status']??'offline'))==='online' && $sumareOwnEmbed!=='' && stripos($sumareOwnEmbed,'<iframe')!==false;
+      $homeLiveTitle=$sumareOwnOnline ? ($siteSettings['live_title']??'TV Sumaré Ao Vivo') : 'TV Cultura — Ao Vivo';
+      $homeLiveEmbed=$sumareOwnOnline ? $sumareOwnEmbed : '<iframe width="100%" height="100%" src="https://culturaplay.tvcultura.com.br/channels/14/embed" title="TV Cultura ao vivo" frameborder="0" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>';
+      $homeLiveDescription=$sumareOwnOnline ? ($siteSettings['live_description']??'Acompanhe boletins, entrevistas e transmissões especiais da TV Sumaré.') : 'Programação da TV Cultura exibida pelo player oficial do Cultura Play. A TV Sumaré assume este espaço quando iniciar uma transmissão própria.';
+    ?>
+    <div class="home-live-card"><div class="section-kicker">🔴 Ao Vivo</div><h2><?=tvs_h($homeLiveTitle)?></h2><div class="home-live-embed"><?=$homeLiveEmbed?></div><p><?=tvs_h($homeLiveDescription)?></p><div class="home-actions"><a class="btn btn-primary" href="aovivo.php">Ver programação</a><a class="btn btn-outline" href="videos.php">Últimos vídeos</a></div></div>
     <?php if($videos): ?><div class="home-videos-card"><div class="section-heading compact"><h2>🎥 TV Sumaré Play</h2><a href="videos.php">Ver todos</a></div><div class="home-video-list"><?php foreach($videos as $v): ?><a class="home-video-item" href="videos.php"><span><?=tvs_video_thumb_html($v)?></span><div><span><?=tvs_h(($v['city']??'Região').' • '.($v['category']??'Vídeo'))?></span><strong><?=tvs_h(tvs_title($v['title']??'Vídeo TV Sumaré',82))?></strong><p><?=tvs_h(tvs_excerpt($v['description']??'Conteúdo em vídeo da TV Sumaré.',105))?></p></div></a><?php endforeach; ?></div></div><?php endif; ?>
   </section>
 
