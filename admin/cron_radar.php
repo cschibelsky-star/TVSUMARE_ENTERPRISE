@@ -503,12 +503,17 @@ $cfg['last_auto_date']=$today;
 if(function_exists('tvs_radar_save_config')) tvs_radar_save_config($cfg);
 
 if(function_exists('tvs_radar_save_status')){
-  tvs_radar_save_status([
+  $pipelineStatus=function_exists('tvs_radar_status') ? tvs_radar_status() : [];
+  $pipelineStatus=array_merge($pipelineStatus,[
     'last_run'=>date('c'),
     'last_mode'=>'cron_daily',
     'last_generated'=>$n,
     'last_message'=>$n>0?"{$n} matéria(s) gerada(s) pela atualização diária.":'Nenhuma matéria nova gerada na atualização diária.'
   ]);
+  tvs_radar_save_status($pipelineStatus);
+  echo "PIPELINE discovered=".(int)($pipelineStatus['pipeline_discovered_last_cycle']??0)
+    ." pending=".(int)($pipelineStatus['pipeline_pending']??0)
+    ." generated=".(int)($pipelineStatus['pipeline_generated_last_cycle']??$n)."\n";
 }
 
 $queue=function_exists('tvs_queue_read') ? tvs_queue_read() : [];
