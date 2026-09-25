@@ -11,8 +11,18 @@ function tvs_live_h($s){ return htmlspecialchars((string)$s,ENT_QUOTES,'UTF-8');
 function tvs_live_embed_safe($html){
   $html=trim((string)$html);
   if($html==='' || stripos($html,'<iframe')===false) return '';
-  if(preg_match('~src=["\']https://(www\.)?(youtube\.com|youtu\.be|www\.youtube-nocookie\.com)/[^"\']+["\']~i',$html)) return $html;
-  return '';
+  if(!preg_match('~src=["\'](https://[^"\']+)["\']~i',$html,$m)) return '';
+  $host=strtolower((string)parse_url($m[1],PHP_URL_HOST));
+  $allowed=[
+    'youtube.com',
+    'www.youtube.com',
+    'youtu.be',
+    'youtube-nocookie.com',
+    'www.youtube-nocookie.com',
+    'camara.leg.br',
+    'www.camara.leg.br',
+  ];
+  return in_array($host,$allowed,true)?$html:'';
 }
 function tvs_live_minutes($hhmm){
   if(!preg_match('/^(\d{2}):(\d{2})$/',(string)$hhmm,$m)) return null;
