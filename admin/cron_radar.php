@@ -188,6 +188,69 @@ if(!is_file($qualityMarker)){
 }
 
 /*
+ * QUALITY DRAFT RECOVERY 2026-09-25 — one-shot.
+ * Preserva para revisão humana as matérias retiradas do ar pela auditoria,
+ * sem deixá-las sujeitas à limpeza automática da fila do Radar.
+ */
+$qualityDraftMarker=dirname(__DIR__).'/data/published_quality_draft_recovery_20260925_done.json';
+if(!is_file($qualityDraftMarker)){
+  $dataDir=dirname(__DIR__).'/data';
+  $meta=tvs_read_json_file($qualityMarker); if(!is_array($meta)) $meta=[];
+  $stamp=trim((string)($meta['backup_stamp']??''));
+  $backup=$stamp!=='' ? $dataDir.'/noticias.quality-backup-'.$stamp.'.json' : '';
+  $sourceNews=$backup!=='' ? tvs_read_json_file($backup) : [];
+  if(!is_array($sourceNews)) $sourceNews=[];
+  $draftPath=$dataDir.'/rascunhos.json';
+  $drafts=tvs_read_json_file($draftPath); if(!is_array($drafts)) $drafts=[];
+  $seen=[];
+  foreach($drafts as $d){
+    $u=trim((string)($d['source_url']??$d['url']??''));
+    if($u!=='') $seen['u:'.$u]=1;
+    $t=tvs_lower(tvs_clean_text((string)($d['title']??'')));
+    if($t!=='') $seen['t:'.$t]=1;
+  }
+  $added=0;
+  foreach($sourceNews as $item){
+    if(!is_array($item)) continue;
+    $source=(string)($item['source']??'');
+    $item['title']=function_exists('tvs_editorial_clean_title')
+      ? tvs_editorial_clean_title($item['title']??'',$source)
+      : trim((string)($item['title']??''));
+    $body=(string)($item['body']??$item['content']??'');
+    $url=trim((string)($item['source_url']??$item['url']??''));
+    $thin=function_exists('tvs_editorial_body_is_thin')
+      ? tvs_editorial_body_is_thin($item['title']??'',$body,$source)
+      : tvs_strlen(tvs_clean_text($body))<300;
+    $unresolvedGoogle=$url!=='' && preg_match('~news\.google\.com~i',$url);
+    if(!$thin && !$unresolvedGoogle) continue;
+    $uKey=$url!==''?'u:'.$url:'';
+    $tKey='t:'.tvs_lower(tvs_clean_text((string)($item['title']??'')));
+    if(($uKey!=='' && isset($seen[$uKey])) || isset($seen[$tKey])) continue;
+    $item['old_news_id']=$item['id']??'';
+    $item['id']=uniqid('draft_quality_');
+    $item['status']='rascunho';
+    $item['editorial_state']='needs_review';
+    $item['review_level']='precisa_revisao';
+    $item['editorial_status']='Correção obrigatória';
+    $item['publication_eligible']=0;
+    $item['home_eligible']=0;
+    $item['quality_repair_reason']=$thin
+      ? 'Texto jornalístico insuficiente ou repetição da manchete.'
+      : 'URL do agregador Google News ainda não resolvida.';
+    $item['created_at']=$item['created_at']??date('c');
+    $item['updated_at']=date('c');
+    $drafts[]=$item;
+    if($uKey!=='') $seen[$uKey]=1;
+    $seen[$tKey]=1;
+    $added++;
+  }
+  tvs_save_json_file($draftPath,array_values($drafts));
+  $draftResult=['executed_at'=>date('c'),'backup'=>$backup,'added_to_drafts'=>$added,'drafts_after'=>count($drafts)];
+  tvs_save_json_file($qualityDraftMarker,$draftResult);
+  echo 'PUBLISHED_QUALITY_DRAFT_RECOVERY '.json_encode($draftResult,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n";
+}
+
+/*
  * EDITORIAL POLICY MIGRATION 2026-09-24 — one-shot.
  * Reclassifica o backlog sem apagar matérias publicadas:
  * - aplica hard gates regionais/temporais;

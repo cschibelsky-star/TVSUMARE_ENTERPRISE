@@ -86,11 +86,8 @@ function tvs_admin_invalid_draft($draft,&$reason=''){
     $reason='Matéria fora do recorte regional da TV Sumaré ou sem cidade regional comprovada no conteúdo.';
     return true;
   }
-  $realImage=tvs_admin_real_image($draft);
-  if($realImage===''){
-    $reason='Matéria sem imagem editorial verificável. Informe uma imagem relacionada à pauta antes de publicar.';
-    return true;
-  }
+  // A falta de imagem não bloqueia a revisão textual. O portal usa thumbnail
+  // editorial por categoria quando a matéria não possui foto oficial válida.
   return false;
 }
 
