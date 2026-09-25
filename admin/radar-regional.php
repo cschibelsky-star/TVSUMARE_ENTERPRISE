@@ -26,6 +26,8 @@ $fontesFile=dirname(__DIR__).'/data/fontes.json';
 $radarConfigFile=dirname(__DIR__).'/data/radar_config.json';
 $radarStatusFile=dirname(__DIR__).'/data/radar_status.json';
 $radarLogFile=dirname(__DIR__).'/data/radar_log.json';
+$radarDiscoveryFile=dirname(__DIR__).'/data/radar_discovery_queue.json';
+$radarCursorFile=dirname(__DIR__).'/data/radar_processing_cursor.json';
 $cities=['Sumaré','Hortolândia','Paulínia','Nova Odessa','Americana','Campinas'];
 $categories=['Cidade','Política','Saúde','Segurança','Educação','Esportes','Cultura','Empregos','Economia','Brasil'];
 
@@ -333,8 +335,9 @@ function tvs_radar_status_from_score($score,$sensitive=false){
   return ['review_level'=>'normal','editorial_status'=>$status,'sensitive'=>false];
 }
 function tvs_radar_can_direct_approve($m){
-  // Aprovação direta exige matéria jornalística minimamente completa.
-  // Score alto não compensa corpo ausente/curto, fonte sem URL ou data não confirmada.
+  // Aprovação direta exige matéria jornalística minimamente completa
+  // e passagem confirmada pelo Editor de Matéria IA.
+  if(empty($m['ai_editor_processed'])) return false;
   if(!empty($m['sensitive_review_required'])) return false;
   if(function_exists('tvs_radar_queue_item_readiness')){
     $readiness=tvs_radar_queue_item_readiness($m);
@@ -1947,25 +1950,50 @@ function tvs_generate_ready_article($city,$cand){
   $facts=tvs_extract_facts_block($mat['title']??($cand['title']??''),$city,$category,$mat['text']??'',($cand['source']??'Fonte consultada'),($cand['url']??''));
   $material="CIDADE: {$city}\nCATEGORIA: {$category}\nFONTE: ".($cand['source']??'Fonte consultada')."\nURL: ".($cand['url']??'')."\nTÍTULO ORIGINAL: ".($mat['title']??'')."\n\n".$facts."\n\nCONTEÚDO COMPLETO COLETADO:\n".tvs_substr($mat['text']??'',0,10000);
 
-  // Modo produtivo: itens do Google News com texto curto entram como nota revisável,
-  // sem gastar chamada Gemini em cada manchete. Isso aumenta volume sem causar 504.
+  // Toda pauta precisa atravessar o Editor de Matéria IA antes de poder ser publicada.
+  // O Repórter IA pode montar uma primeira versão, mas ela não recebe elegibilidade
+  // de publicação enquanto a etapa editorial obrigatória não for concluída.
   $isGoogle = function_exists('tvs_is_google_news_candidate') ? tvs_is_google_news_candidate($cand) : false;
   if($isGoogle && tvs_strlen($mat['text']??'') < 320){
-    $result=tvs_build_reviewable_article_without_ai($city,$category,$cand,$mat);
+    $baseline=tvs_build_reviewable_article_without_ai($city,$category,$cand,$mat);
   } else {
-    $result=gemini_reporter_article($gemini_api_key??'', $material, ['city'=>$city,'theme'=>$category,'category'=>$category]);
-    if(!$result){
-      // Se a IA falhar, entra em revisão quando houver material real suficiente.
-      $result=tvs_build_reviewable_article_without_ai($city,$category,$cand,$mat);
-    }
+    $baseline=gemini_reporter_article($gemini_api_key??'', $material, ['city'=>$city,'theme'=>$category,'category'=>$category]);
+    if(!$baseline) $baseline=tvs_build_reviewable_article_without_ai($city,$category,$cand,$mat);
   }
-  if(!$result){
-    $result=tvs_build_reviewable_article_without_ai($city,$category,$cand,$mat);
-  }
-  if(!$result){
-    tvs_radar_log_event($cand['title']??'', $cand['source']??'Fonte consultada', $city, 'REVISÃO', 'IA indisponível: enviado para revisão quando houver pauta mínima', $cand['url']??'');
+  if(!$baseline) $baseline=tvs_build_reviewable_article_without_ai($city,$category,$cand,$mat);
+  if(!$baseline){
+    tvs_radar_log_event($cand['title']??'', $cand['source']??'Fonte consultada', $city, 'REVISÃO', 'Material insuficiente para o Editor de Matéria IA', $cand['url']??'');
     return null;
   }
+
+  $baseline['city']=$city;
+  $baseline['category']=$baseline['category']??$category;
+  $baseline['source']=$cand['source']??'Fonte consultada';
+  $baseline['source_url']=$cand['url']??'';
+  $baseline['editorial_origin']='radar';
+
+  $edited=function_exists('tvs_ai_editor_process_article')
+    ? tvs_ai_editor_process_article($gemini_api_key??'',$baseline,[
+        'city'=>$city,
+        'category'=>$category,
+        'source'=>$cand['source']??'Fonte consultada',
+        'source_url'=>$cand['url']??'',
+        'origin'=>'radar'
+      ])
+    : null;
+
+  if($edited){
+    $result=$edited;
+  } else {
+    // Falha do Editor IA nunca vira atalho para publicação.
+    $result=$baseline;
+    $result['ai_editor_processed']=0;
+    $result['ai_editor_stage']='pending';
+    $result['review_level']='precisa_revisao';
+    $result['editorial_status']='Aguardando Editor IA';
+    $result['publication_eligible']=0;
+  }
+
   $result=tvs_sanitize_ai_article($result,['city'=>$city,'name'=>$cand['source']??'Fonte consultada'],['title'=>$cand['title']??'','description'=>$cand['description']??'','body'=>$mat['text']??'','url'=>$cand['url']??'']);
   if(tvs_is_non_news_candidate($result['title']??'', $cand['url']??'', ($result['subtitle']??'').' '.($result['body']??''))){
     tvs_radar_discard($cand,$city,'Texto institucional detectado, não é matéria jornalística');
@@ -2021,15 +2049,22 @@ function tvs_generate_ready_article($city,$cand){
   $result['sensitive_review_required']=!empty($st['sensitive']) ? 1 : 0;
   if(!empty($st['sensitive'])) $result['sensitive_review_reason']='Pauta sensível ou de alto impacto: revisão humana obrigatória antes da publicação.';
 
-  // Imagem é um atributo paralelo. Falta de foto não altera o estado editorial
-  // da matéria; apenas impede usos visuais que exigem imagem confirmada.
+  $editorProcessed=!empty($result['ai_editor_processed']);
+  if(!$editorProcessed){
+    $result['review_level']='precisa_revisao';
+    $result['editorial_status']='Aguardando Editor IA';
+    $result['ai_editor_stage']='pending';
+  }
+
+  // Imagem é um atributo paralelo. Falta de foto não altera o estado editorial.
+  // A passagem pelo Editor IA, porém, é obrigatória para publicação.
   $result['image_status']=!empty($result['image_review_required'])?'missing':'verified';
-  $result['editorial_state']='qualified';
+  $result['editorial_state']=$editorProcessed?'qualified':'needs_ai_editor';
   $result['region_status']='confirmed';
   $result['freshness_status']='current';
   $result['source_status']='original';
   $result['duplicate_status']='unique';
-  $result['publication_eligible']=1;
+  $result['publication_eligible']=$editorProcessed?1:0;
   $result['home_eligible']=!empty($result['image_review_required'])?0:1;
   $result['video_eligible']=1;
   $result['created_at']=date('c');
@@ -2042,49 +2077,161 @@ function tvs_generate_ready_article($city,$cand){
 function tvs_category_image($category){
   return tvs_category_image_path($category);
 }
+function tvs_radar_discovery_read(){
+  global $radarDiscoveryFile;
+  $items=tvs_read_json_file($radarDiscoveryFile);
+  return is_array($items)?array_values($items):[];
+}
+function tvs_radar_discovery_save($items){
+  global $radarDiscoveryFile;
+  tvs_save_json_file($radarDiscoveryFile,array_slice(array_values($items),-300));
+}
+function tvs_radar_discovery_key($item){
+  $url=trim((string)($item['url']??$item['source_url']??''));
+  if($url!=='') return 'url:'.$url;
+  return 'title:'.md5(tvs_lower(trim((string)($item['city']??'').'|'.(string)($item['title']??''))));
+}
+function tvs_radar_collect_discovery($mode='normal',$perCity=12){
+  global $cities,$newsFile;
+  $discovery=tvs_radar_discovery_read();
+  $approval=tvs_queue_read();
+  $news=tvs_read_json_file($newsFile); if(!is_array($news)) $news=[];
+  $seen=[];
+  foreach(array_merge($discovery,$approval,$news) as $row){
+    $key=tvs_radar_discovery_key($row);
+    if($key!=='title:'.md5('')) $seen[$key]=1;
+  }
+
+  $added=0;
+  foreach($cities as $city){
+    $cityAdded=0;
+    foreach(tvs_radar_candidates_for_city($city) as $cand){
+      if($cityAdded>=$perCity) break;
+      $key=tvs_radar_discovery_key($cand);
+      if(isset($seen[$key])) continue;
+      $cand['id']=$cand['id']??uniqid('pauta_');
+      $cand['city']=$cand['city']??$city;
+      $cand['radar_requested_city']=$city;
+      $cand['pipeline_stage']='pauta_encontrada';
+      $cand['pipeline_attempts']=0;
+      $cand['pipeline_created_at']=date('c');
+      $cand['pipeline_updated_at']=date('c');
+      $discovery[]=$cand;
+      $seen[$key]=1;
+      $cityAdded++;
+      $added++;
+    }
+  }
+  tvs_radar_discovery_save($discovery);
+  return $added;
+}
+function tvs_radar_ready_count_by_city($queue){
+  global $cities;
+  $counts=array_fill_keys($cities,0);
+  foreach((array)$queue as $q){
+    $city=(string)($q['city']??'');
+    if(!isset($counts[$city])) continue;
+    if(!empty($q['ai_editor_processed']) && ($q['publication_eligible']??0)) $counts[$city]++;
+  }
+  return $counts;
+}
+function tvs_radar_process_discovery($mode='normal',$targetPerCity=5){
+  global $cities;
+  $discovery=tvs_radar_discovery_read();
+  if(!$discovery) return 0;
+
+  $approval=tvs_queue_read();
+  $ready=tvs_radar_ready_count_by_city($approval);
+  $processedKeys=[]; $generated=0;
+  $maxPerCycle=tvs_radar_is_volume_mode($mode)?12:6;
+
+  // Rodízio: no máximo uma pauta por cidade a cada passagem.
+  foreach($cities as $city){
+    if($generated>=$maxPerCycle) break;
+    if(($ready[$city]??0)>=$targetPerCity) continue;
+
+    $pick=null;
+    foreach($discovery as $idx=>$cand){
+      if(isset($processedKeys[$idx])) continue;
+      $requested=(string)($cand['radar_requested_city']??$cand['city']??'');
+      if($requested!==$city) continue;
+      $pick=$idx; break;
+    }
+    if($pick===null) continue;
+
+    $cand=$discovery[$pick];
+    $processedKeys[$pick]=1;
+    $cand['pipeline_attempts']=(int)($cand['pipeline_attempts']??0)+1;
+    $cand['pipeline_updated_at']=date('c');
+
+    // Enriquecimento obrigatório antes de acionar Repórter IA + Editor IA.
+    $mat=tvs_build_material_from_candidate($cand);
+    $sourceWords=tvs_radar_word_count($mat['text']??'');
+    if($sourceWords<120){
+      $cand['pipeline_stage']='aguardando_enriquecimento';
+      $cand['pipeline_reason']='Material-base insuficiente: '.$sourceWords.' palavra(s).';
+      $discovery[$pick]=$cand;
+      tvs_radar_log_event($cand['title']??'', $cand['source']??'Fonte', $city, 'AGUARDANDO_ENRIQUECIMENTO', $cand['pipeline_reason'], $cand['url']??'');
+      continue;
+    }
+
+    $cand['pipeline_stage']='pronta_para_redacao';
+    $article=tvs_generate_ready_article($city,$cand);
+    if(is_array($article) && !empty($article['title']) && !empty($article['body'])){
+      $approval[]=$article;
+      unset($discovery[$pick]);
+      $generated++;
+      $ready[$city]=($ready[$city]??0)+1;
+      tvs_radar_log_event($article['title']??'', $article['source']??($cand['source']??'Fonte'), $city, ($article['editorial_status']??'REVISÃO'), 'Repórter IA + Editor IA concluídos; matéria entrou na fila editorial.', $cand['url']??'');
+    } else {
+      $cand['pipeline_stage']='aguardando_enriquecimento';
+      $cand['pipeline_reason']='Não foi possível concluir uma matéria completa e segura neste ciclo.';
+      $discovery[$pick]=$cand;
+    }
+  }
+
+  tvs_queue_save($approval);
+  tvs_radar_discovery_save(array_values($discovery));
+  tvs_radar_enforce_queue_rules(true);
+  return $generated;
+}
 function tvs_radar_update_queue($perCity=15,$mode='normal'){
-  // HostGator/nginx pode retornar 504 quando uma requisição fica muito tempo processando.
-  // O Radar agora processa em micro-lotes curtos. Clique em Atualizar Agora mais de uma vez se quiser abastecer mais.
   global $TVS_RADAR_MODE;
   $oldMode=$TVS_RADAR_MODE ?? 'normal';
   $TVS_RADAR_MODE=$mode==='volume'?'volume':'normal';
-  @set_time_limit(tvs_radar_is_volume_mode()?55:38);
-  $started=microtime(true);
+
+  // O tempo deixa de ser regra editorial. Cada ciclo primeiro abastece todas as cidades,
+  // salva a fila persistente e depois processa em rodízio. Se o ciclo terminar, o próximo
+  // continua da fila salva sem reiniciar por Sumaré nem abandonar as demais cidades.
+  if(PHP_SAPI==='cli') @set_time_limit(0);
+  else @set_time_limit(tvs_radar_is_volume_mode()?120:90);
+
   tvs_radar_enforce_queue_rules(true);
-  $queue=tvs_queue_read(); $seen=[]; $count=0;
-  foreach($queue as $q){ if(!empty($q['source_url'])) $seen[$q['source_url']]=1; }
-  global $cities;
-  foreach($cities as $city){
-    if((microtime(true)-$started)>(tvs_radar_is_volume_mode()?46:30)) break;
-    $cityCount=0;
-    foreach($queue as $q){
-      if(($q['city']??'')!==$city) continue;
-      if(!empty($q['image_review_required'])) continue;
-      $cityCount++;
-    }
-    if($cityCount>=$perCity) continue;
-    $attempts=0;
-    foreach(tvs_radar_candidates_for_city($city) as $cand){
-      $attempts++;
-      if($attempts>(tvs_radar_is_volume_mode()?54:24)) break;
-      if($cityCount>=$perCity) break;
-      $url=$cand['url']??''; if(!$url || isset($seen[$url])) continue;
-      $article=tvs_generate_ready_article($city,$cand);
-      if(is_array($article) && !empty($article['title']) && !empty($article['body'])){ $queue[]=$article; tvs_radar_log_event($article['title']??'', $article['source']??($cand['source']??'Fonte'), $city, ($article['editorial_status']??'APROVADA'), 'Entrou na fila editorial', $url); $seen[$url]=1; $cityCount++; $count++; } else { $seen[$url]=1; }
-      if($count>=(tvs_radar_is_volume_mode()?72:36) || (microtime(true)-$started)>(tvs_radar_is_volume_mode()?49:32)) break 2; // proteção contra timeout em hospedagem compartilhada
-    }
-  }
-  tvs_queue_save($queue); tvs_radar_enforce_queue_rules(true); $TVS_RADAR_MODE=$oldMode; return $count;
+  $discoveryAdded=tvs_radar_collect_discovery($mode,tvs_radar_is_volume_mode()?20:12);
+  $target=max(5,min(10,(int)$perCity));
+  $generated=tvs_radar_process_discovery($mode,$target);
+
+  $st=tvs_radar_status();
+  $st['pipeline_discovered_last_cycle']=$discoveryAdded;
+  $st['pipeline_generated_last_cycle']=$generated;
+  $st['pipeline_pending']=count(tvs_radar_discovery_read());
+  $st['pipeline_updated_at']=date('c');
+  tvs_radar_save_status($st);
+
+  $TVS_RADAR_MODE=$oldMode;
+  return $generated;
 }
 function tvs_publish_from_queue($id,$post){
   global $newsFile;
   $queue=tvs_queue_read(); $found=null; $newq=[];
   foreach($queue as $item){ if(($item['id']??'')===$id) $found=$item; else $newq[]=$item; }
   if(!$found) return false;
+  if(empty($found['ai_editor_processed'])) return false;
 
   // A imagem é independente da validade editorial, mas o conteúdo não é.
   // Nenhuma matéria incompleta pode ser publicada apenas porque recebeu score alto.
   $title=trim($post['title']??$found['title']??'');
+  if(function_exists('tvs_editorial_clean_title')) $title=tvs_editorial_clean_title($title,$post['source']??$found['source']??'');
   $body=trim($post['body']??$found['body']??'');
   $candidate=$found;
   $candidate['title']=$title;
@@ -2197,16 +2344,22 @@ if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'){
     $cfg=tvs_radar_config();
     $perCity=max(1,min(40,(int)($cfg['per_city']??20)));
     $n=tvs_radar_update_queue($perCity,'normal');
-    $st=['last_run'=>date('c'),'last_mode'=>'manual','last_generated'=>$n,'last_message'=>$n>0?"{$n} matéria(s) nova(s) pronta(s) para aprovação.":'Atualização concluída; nenhuma pauta nova elegível foi encontrada neste ciclo.'];
+    $pipeline=tvs_radar_status();
+    $pending=(int)($pipeline['pipeline_pending']??0);
+    $found=(int)($pipeline['pipeline_discovered_last_cycle']??0);
+    $st=array_merge($pipeline,['last_run'=>date('c'),'last_mode'=>'manual','last_generated'=>$n,'last_message'=>"{$n} matéria(s) pronta(s); {$pending} pauta(s) no pipeline; {$found} descoberta(s) neste ciclo."]);
     tvs_radar_save_status($st);
-    $notice=$n>0 ? "Radar atualizado manualmente: {$n} matéria(s) nova(s) pronta(s) para aprovação." : 'Radar atualizado. Nenhuma pauta nova elegível foi encontrada neste ciclo; itens antigos, duplicados ou sem validade editorial não retornam à fila.';
+    $notice="Radar atualizado: {$n} matéria(s) pronta(s) para aprovação, {$pending} pauta(s) em processamento/enriquecimento e {$found} nova(s) pauta(s) descoberta(s).";
   } elseif($action==='update_radar_volume'){
     $cfg=tvs_radar_config();
     $perCity=max(25,min(60,(int)($cfg['per_city']??25)));
     $n=tvs_radar_update_queue($perCity,'volume');
-    $st=['last_run'=>date('c'),'last_mode'=>'volume_maximo','last_generated'=>$n,'last_message'=>$n>0?"{$n} pauta(s) entraram em revisão no Modo Volume Máximo.":'Nenhuma nova pauta entrou no Modo Volume Máximo.'];
+    $pipeline=tvs_radar_status();
+    $pending=(int)($pipeline['pipeline_pending']??0);
+    $found=(int)($pipeline['pipeline_discovered_last_cycle']??0);
+    $st=array_merge($pipeline,['last_run'=>date('c'),'last_mode'=>'volume_maximo','last_generated'=>$n,'last_message'=>"{$n} matéria(s) pronta(s); {$pending} pauta(s) no pipeline; {$found} descoberta(s) neste ciclo."]);
     tvs_radar_save_status($st);
-    $notice=$n>0 ? "Modo Volume Máximo executado: {$n} pauta(s) enviada(s) para revisão." : 'Modo Volume Máximo executado. Nenhuma nova pauta entrou agora.';
+    $notice="Modo Volume Máximo: {$n} matéria(s) pronta(s), {$pending} pauta(s) no pipeline e {$found} nova(s) pauta(s) descoberta(s).";
   } elseif($action==='save_settings'){
     $cfg=tvs_radar_config();
     $cfg['auto_daily']=!empty($_POST['auto_daily']);
