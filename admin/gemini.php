@@ -200,6 +200,56 @@ function gemini_rewrite($apiKey, $input, $options=[]){
     return $data;
 }
 
+function tvs_ai_editor_process_article($apiKey,$article,$options=[]){
+    if(!is_array($article)) return null;
+    $city=trim((string)($options['city']??$article['city']??'Região')) ?: 'Região';
+    $source=trim((string)($options['source']??$article['source']??'Fonte consultada')) ?: 'Fonte consultada';
+    $sourceUrl=trim((string)($options['source_url']??$article['source_url']??''));
+    $category=trim((string)($options['category']??$article['category']??'Cidade')) ?: 'Cidade';
+    $rawTitle=trim((string)($article['title']??''));
+    if(function_exists('tvs_editorial_clean_title')) $rawTitle=tvs_editorial_clean_title($rawTitle,$source);
+    $input=
+      "TÍTULO BASE: ".$rawTitle."\n".
+      "SUBTÍTULO BASE: ".trim((string)($article['subtitle']??''))."\n".
+      "RESUMO BASE: ".trim((string)($article['summary']??''))."\n".
+      "CIDADE: ".$city."\n".
+      "CATEGORIA: ".$category."\n".
+      "FONTE: ".$source."\n".
+      "URL DA FONTE: ".$sourceUrl."\n\n".
+      "TEXTO BASE:\n".trim((string)($article['body']??''));
+
+    $edited=gemini_rewrite($apiKey,$input,[
+      'style'=>'Jornalístico profissional',
+      'approach'=>'Informativa',
+      'size'=>'Média',
+      'city'=>$city,
+      'source'=>$source,
+      'source_url'=>$sourceUrl,
+      'mode'=>'article'
+    ]);
+    if(!is_array($edited)) return null;
+
+    $edited['title']=function_exists('tvs_editorial_clean_title')
+      ? tvs_editorial_clean_title($edited['title']??$rawTitle,$source)
+      : trim((string)($edited['title']??$rawTitle));
+    $edited['city']=$city;
+    $edited['category']=trim((string)($edited['category']??$category)) ?: $category;
+    $edited['source']=$source;
+    $edited['source_url']=$sourceUrl;
+    foreach(['image','image_source_type','image_review_required','image_review_reason','image_credit'] as $k){
+      if(array_key_exists($k,$article)) $edited[$k]=$article[$k];
+    }
+    if(function_exists('tvs_editorial_body_is_thin') && tvs_editorial_body_is_thin($edited['title']??'',$edited['body']??'',$source)){
+      tvs_ai_log('Editor IA rejeitou matéria: texto insuficiente após edição.');
+      return null;
+    }
+    $edited['ai_editor_processed']=1;
+    $edited['ai_editor_processed_at']=date('c');
+    $edited['ai_editor_stage']='editor_materia_ia';
+    $edited['editorial_origin']=$options['origin']??($article['editorial_origin']??'unknown');
+    return $edited;
+}
+
 function gemini_reporter_article($apiKey, $material, $options=[]){
     $apiKey = trim((string)$apiKey);
     if($apiKey === '') return null;
