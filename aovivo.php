@@ -40,7 +40,7 @@ function tvs_live_default_channels($settings){
     'tvcamara'=>[
       'name'=>'TV Câmara',
       'source'=>'Câmara dos Deputados',
-      'embed'=>'<iframe width="100%" height="100%" src="https://www.camara.leg.br/tv/aovivo/embed" title="TV Câmara ao vivo" frameborder="0" allowfullscreen></iframe>',
+      'embed'=>'<iframe width="100%" height="100%" src="https://www.youtube.com/embed/live_stream?channel=UC-ZkSRh-7UEuwXJQ9UMCFJA&autoplay=1" title="TV Câmara ao vivo" frameborder="0" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>',
       'url'=>'https://www.camara.leg.br/tv',
       'enabled'=>true,
     ],
