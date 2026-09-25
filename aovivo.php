@@ -51,6 +51,13 @@ function tvs_live_default_channels($settings){
       'url'=>'https://www.youtube.com/@AlespOficial/live',
       'enabled'=>true,
     ],
+    'tvjustica'=>[
+      'name'=>'TV Justiça',
+      'source'=>'Supremo Tribunal Federal',
+      'embed'=>'<iframe width="100%" height="100%" src="https://www.youtube.com/embed/live_stream?channel=UCsW4QSB1USsu9ouuFUWe4Iw&autoplay=1" title="TV Justiça ao vivo" frameborder="0" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>',
+      'url'=>'https://www.youtube.com/@STF_Oficial',
+      'enabled'=>true,
+    ],
     'tvsumare'=>[
       'name'=>'TV Sumaré',
       'source'=>'TV Sumaré',
@@ -62,9 +69,10 @@ function tvs_live_default_channels($settings){
 }
 function tvs_live_default_schedule(){
   return [
-    ['start'=>'00:00','end'=>'06:00','channel'=>'tvsenado'],
-    ['start'=>'06:00','end'=>'12:00','channel'=>'tvcamara'],
-    ['start'=>'12:00','end'=>'18:00','channel'=>'tvalesp'],
+    ['start'=>'00:00','end'=>'05:00','channel'=>'tvsenado'],
+    ['start'=>'05:00','end'=>'10:00','channel'=>'tvcamara'],
+    ['start'=>'10:00','end'=>'14:00','channel'=>'tvjustica'],
+    ['start'=>'14:00','end'=>'18:00','channel'=>'tvalesp'],
     ['start'=>'18:00','end'=>'24:00','channel'=>'tvsumare'],
   ];
 }
