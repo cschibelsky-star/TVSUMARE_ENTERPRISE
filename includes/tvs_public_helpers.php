@@ -275,23 +275,45 @@ function tvs_public_is_active($n){
   if($age===null) return false;
   return $age<=tvs_public_retention_days($n);
 }
+function tvs_public_status_allowed($n){
+  $status=tvs_lc(trim((string)($n['status']??'')));
+  if($status==='') return true; // compatibilidade com acervo legado já publicado
+  $allowed=['publicado','publicada','published','aprovado','aprovada','approved','ativo','ativa','active'];
+  return in_array($status,$allowed,true);
+}
 function tvs_prepare_public_news_v2($news,$maxDays=90){
   $prepared=[];
   foreach((array)$news as $n){
     $n=tvs_normalize_news_item($n);
-    $status=tvs_lc($n['status']??'publicado');
-    if(in_array($status,['lixeira','arquivado','descartado','rascunho','revisao','revisão'],true)) continue;
+    if(!tvs_public_status_allowed($n)) continue;
     $limit=min((int)$maxDays,tvs_public_retention_days($n));
     if(tvs_is_news_old($n,$limit)) continue;
-    // Depois de aprovada/publicada, a matéria permanece no acervo ativo até o prazo editorial.
-    // As restrições de região, fonte, texto e imagem pertencem ao fluxo de pré-aprovação.
+    // A aprovação/publicação é a fronteira editorial. Depois disso, a matéria
+    // permanece ativa até sua janela de retenção, sem ser retirada por novas entradas.
     $detected=tvs_region_city_detect($n);
     if($detected!=='') $n['city']=$detected;
     $img=tvs_real_image($n);
     $n['image_status']=$img!==''?'verified':'missing';
-    $n['home_eligible']=1;
+    $n['home_eligible']=$img!=='' ? 1 : 0;
     $n['publication_eligible']=1;
     $n['editorial_state']='published';
+    $n['retention_days']=$limit;
+    $prepared[]=$n;
+  }
+  $prepared=tvs_strict_dedupe_news($prepared);
+  usort($prepared,'tvs_sort_recent');
+  return $prepared;
+}
+function tvs_prepare_archived_news_v2($news){
+  $prepared=[];
+  foreach((array)$news as $n){
+    $n=tvs_normalize_news_item($n);
+    if(!tvs_public_status_allowed($n)) continue;
+    $limit=tvs_public_retention_days($n);
+    if(!tvs_is_news_old($n,$limit)) continue;
+    $detected=tvs_region_city_detect($n);
+    if($detected!=='') $n['city']=$detected;
+    $n['editorial_state']='archived';
     $n['retention_days']=$limit;
     $prepared[]=$n;
   }

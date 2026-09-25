@@ -12,10 +12,11 @@ $news=function_exists('tvs_prepare_public_news_v2') ? tvs_prepare_public_news_v2
 $used=[];
 $editorialSections=function_exists('tvs_curated_sections') ? tvs_curated_sections($news) : [];
 $citySections=function_exists('tvs_city_sections') ? tvs_city_sections($news,5) : [];
-$heroList=tvs_pick_news($news,$used,function($n){ return !tvs_is_sensitive($n); },1);
+$homeNews=array_values(array_filter($news,function($n){ return (int)($n['home_eligible']??0)===1; }));
+$heroList=tvs_pick_news($homeNews,$used,function($n){ return !tvs_is_sensitive($n); },1);
 $hero=$heroList[0]??($news[0]??null); if($hero){ $used[(string)($hero['id']??md5($hero['title']??''))]=1; }
 $secondary=[]; $sideCats=[];
-foreach($news as $cand){
+foreach($homeNews as $cand){
   $cat=tvs_news_category($cand);
   $id=(string)($cand['id']??md5($cand['title']??json_encode($cand))); $tk='t:'.substr(tvs_norm_key($cand['title']??''),0,86);
   if(isset($used[$id])||isset($used[$tk])||tvs_is_sensitive($cand)) continue;
