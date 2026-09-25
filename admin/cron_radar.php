@@ -92,6 +92,225 @@ $_SERVER['REQUEST_METHOD']='CRON';
 require_once __DIR__.'/radar-regional.php';
 
 /*
+ * QUALITY REPAIR 2026-09-25 — one-shot.
+ * Retira do ar matérias antigas que chegaram publicadas apenas com manchete/RSS,
+ * limpa sufixos de fonte do título e devolve itens incompletos para revisão.
+ */
+$qualityMarker=dirname(__DIR__).'/data/published_quality_repair_20260925_done.json';
+if(!is_file($qualityMarker)){
+  $dataDir=dirname(__DIR__).'/data';
+  $stamp=date('Ymd_His');
+  $newsPath=$dataDir.'/noticias.json';
+  $queuePath=$dataDir.'/materias_aprovacao.json';
+  if(is_file($newsPath)) @copy($newsPath,$dataDir.'/noticias.quality-backup-'.$stamp.'.json');
+  if(is_file($queuePath)) @copy($queuePath,$dataDir.'/materias_aprovacao.quality-backup-'.$stamp.'.json');
+
+  $news=tvs_read_json_file($newsPath); if(!is_array($news)) $news=[];
+  $queue=tvs_read_json_file($queuePath); if(!is_array($queue)) $queue=[];
+  $seen=[];
+  foreach($queue as $q){
+    $u=trim((string)($q['source_url']??$q['url']??''));
+    if($u!=='') $seen['u:'.$u]=1;
+    $tk=tvs_lower(tvs_clean_text((string)($q['title']??'')));
+    if($tk!=='') $seen['t:'.$tk]=1;
+  }
+
+  $kept=[]; $moved=0; $titlesCleaned=0; $duplicateSkipped=0;
+  foreach($news as $item){
+    if(!is_array($item)) continue;
+    $source=(string)($item['source']??'');
+    $oldTitle=(string)($item['title']??'');
+    $cleanTitle=function_exists('tvs_editorial_clean_title')
+      ? tvs_editorial_clean_title($oldTitle,$source)
+      : trim($oldTitle);
+    if($cleanTitle!=='' && $cleanTitle!==$oldTitle){
+      $item['title']=$cleanTitle;
+      if(empty($item['seo_title']) || trim((string)$item['seo_title'])===$oldTitle) $item['seo_title']=$cleanTitle;
+      $titlesCleaned++;
+    }
+
+    $body=(string)($item['body']??$item['content']??'');
+    $url=trim((string)($item['source_url']??$item['url']??''));
+    $thin=function_exists('tvs_editorial_body_is_thin')
+      ? tvs_editorial_body_is_thin($item['title']??'',$body,$source)
+      : tvs_strlen(tvs_clean_text($body))<300;
+    $unresolvedGoogle=$url!=='' && preg_match('~news\.google\.com~i',$url);
+
+    if($thin || $unresolvedGoogle){
+      $reason=$thin
+        ? 'Matéria publicada com texto jornalístico insuficiente ou repetição da manchete.'
+        : 'Matéria publicada com URL do agregador Google News ainda não resolvida.';
+      $oldId=(string)($item['id']??'');
+      $item['old_news_id']=$oldId;
+      $item['id']=uniqid('rework_');
+      $item['status']='aguardando';
+      $item['editorial_state']='needs_review';
+      $item['review_level']='precisa_revisao';
+      $item['editorial_status']='Correção obrigatória';
+      $item['publication_eligible']=0;
+      $item['home_eligible']=0;
+      $item['queue_status']='processing';
+      $item['queue_pending_reasons']=[$reason];
+      $item['quality_repair_reason']=$reason;
+      $item['unpublished_at']=date('c');
+      $item['previously_published_at']=$item['published_at']??'';
+
+      $uKey=$url!==''?'u:'.$url:'';
+      $tKey='t:'.tvs_lower(tvs_clean_text((string)($item['title']??'')));
+      if(($uKey!=='' && isset($seen[$uKey])) || isset($seen[$tKey])){
+        $duplicateSkipped++;
+      } else {
+        $queue[]=$item;
+        if($uKey!=='') $seen[$uKey]=1;
+        $seen[$tKey]=1;
+      }
+      $moved++;
+      continue;
+    }
+
+    $kept[]=$item;
+  }
+
+  tvs_save_json_file($newsPath,array_values($kept));
+  tvs_save_json_file($queuePath,array_values($queue));
+  $result=[
+    'executed_at'=>date('c'),
+    'backup_stamp'=>$stamp,
+    'published_before'=>count($news),
+    'published_after'=>count($kept),
+    'moved_to_review'=>$moved,
+    'titles_cleaned'=>$titlesCleaned,
+    'queue_duplicates_skipped'=>$duplicateSkipped,
+    'queue_after'=>count($queue)
+  ];
+  tvs_save_json_file($qualityMarker,$result);
+  echo 'PUBLISHED_QUALITY_REPAIR '.json_encode($result,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n";
+}
+
+/*
+ * QUALITY DRAFT RECOVERY 2026-09-25 — one-shot.
+ * Preserva para revisão humana as matérias retiradas do ar pela auditoria,
+ * sem deixá-las sujeitas à limpeza automática da fila do Radar.
+ */
+$qualityDraftMarker=dirname(__DIR__).'/data/published_quality_draft_recovery_20260925_done.json';
+if(!is_file($qualityDraftMarker)){
+  $dataDir=dirname(__DIR__).'/data';
+  $meta=tvs_read_json_file($qualityMarker); if(!is_array($meta)) $meta=[];
+  $stamp=trim((string)($meta['backup_stamp']??''));
+  $backup=$stamp!=='' ? $dataDir.'/noticias.quality-backup-'.$stamp.'.json' : '';
+  $sourceNews=$backup!=='' ? tvs_read_json_file($backup) : [];
+  if(!is_array($sourceNews)) $sourceNews=[];
+  $draftPath=$dataDir.'/rascunhos.json';
+  $drafts=tvs_read_json_file($draftPath); if(!is_array($drafts)) $drafts=[];
+  $seen=[];
+  foreach($drafts as $d){
+    $u=trim((string)($d['source_url']??$d['url']??''));
+    if($u!=='') $seen['u:'.$u]=1;
+    $t=tvs_lower(tvs_clean_text((string)($d['title']??'')));
+    if($t!=='') $seen['t:'.$t]=1;
+  }
+  $added=0;
+  foreach($sourceNews as $item){
+    if(!is_array($item)) continue;
+    $source=(string)($item['source']??'');
+    $item['title']=function_exists('tvs_editorial_clean_title')
+      ? tvs_editorial_clean_title($item['title']??'',$source)
+      : trim((string)($item['title']??''));
+    $body=(string)($item['body']??$item['content']??'');
+    $url=trim((string)($item['source_url']??$item['url']??''));
+    $thin=function_exists('tvs_editorial_body_is_thin')
+      ? tvs_editorial_body_is_thin($item['title']??'',$body,$source)
+      : tvs_strlen(tvs_clean_text($body))<300;
+    $unresolvedGoogle=$url!=='' && preg_match('~news\.google\.com~i',$url);
+    if(!$thin && !$unresolvedGoogle) continue;
+    $uKey=$url!==''?'u:'.$url:'';
+    $tKey='t:'.tvs_lower(tvs_clean_text((string)($item['title']??'')));
+    if(($uKey!=='' && isset($seen[$uKey])) || isset($seen[$tKey])) continue;
+    $item['old_news_id']=$item['id']??'';
+    $item['id']=uniqid('draft_quality_');
+    $item['status']='rascunho';
+    $item['editorial_state']='needs_review';
+    $item['review_level']='precisa_revisao';
+    $item['editorial_status']='Correção obrigatória';
+    $item['publication_eligible']=0;
+    $item['home_eligible']=0;
+    $item['quality_repair_reason']=$thin
+      ? 'Texto jornalístico insuficiente ou repetição da manchete.'
+      : 'URL do agregador Google News ainda não resolvida.';
+    $item['created_at']=$item['created_at']??date('c');
+    $item['updated_at']=date('c');
+    $drafts[]=$item;
+    if($uKey!=='') $seen[$uKey]=1;
+    $seen[$tKey]=1;
+    $added++;
+  }
+  tvs_save_json_file($draftPath,array_values($drafts));
+  $draftResult=['executed_at'=>date('c'),'backup'=>$backup,'added_to_drafts'=>$added,'drafts_after'=>count($drafts)];
+  tvs_save_json_file($qualityDraftMarker,$draftResult);
+  echo 'PUBLISHED_QUALITY_DRAFT_RECOVERY '.json_encode($draftResult,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n";
+}
+
+/*
+ * QUALITY DRAFT RECOVERY V2 2026-09-25 — fallback determinístico.
+ * Usa o backup confirmado pela primeira auditoria quando o marcador legado
+ * não expõe o carimbo de backup no runtime.
+ */
+$qualityDraftMarkerV2=dirname(__DIR__).'/data/published_quality_draft_recovery_v2_20260925_done.json';
+if(!is_file($qualityDraftMarkerV2)){
+  $dataDir=dirname(__DIR__).'/data';
+  $backup=$dataDir.'/noticias.quality-backup-20260925_180838.json';
+  $sourceNews=is_file($backup)?tvs_read_json_file($backup):[];
+  if(!is_array($sourceNews)) $sourceNews=[];
+  $draftPath=$dataDir.'/rascunhos.json';
+  $drafts=tvs_read_json_file($draftPath); if(!is_array($drafts)) $drafts=[];
+  $seen=[];
+  foreach($drafts as $d){
+    $u=trim((string)($d['source_url']??$d['url']??''));
+    if($u!=='') $seen['u:'.$u]=1;
+    $t=tvs_lower(tvs_clean_text((string)($d['title']??'')));
+    if($t!=='') $seen['t:'.$t]=1;
+  }
+  $added=0;
+  foreach($sourceNews as $item){
+    if(!is_array($item)) continue;
+    $source=(string)($item['source']??'');
+    $item['title']=function_exists('tvs_editorial_clean_title')
+      ? tvs_editorial_clean_title($item['title']??'',$source)
+      : trim((string)($item['title']??''));
+    $body=(string)($item['body']??$item['content']??'');
+    $url=trim((string)($item['source_url']??$item['url']??''));
+    $thin=function_exists('tvs_editorial_body_is_thin')
+      ? tvs_editorial_body_is_thin($item['title']??'',$body,$source)
+      : tvs_strlen(tvs_clean_text($body))<300;
+    $unresolvedGoogle=$url!=='' && preg_match('~news\.google\.com~i',$url);
+    if(!$thin && !$unresolvedGoogle) continue;
+    $uKey=$url!==''?'u:'.$url:'';
+    $tKey='t:'.tvs_lower(tvs_clean_text((string)($item['title']??'')));
+    if(($uKey!=='' && isset($seen[$uKey])) || isset($seen[$tKey])) continue;
+    $item['old_news_id']=$item['id']??'';
+    $item['id']=uniqid('draft_quality_');
+    $item['status']='rascunho';
+    $item['editorial_state']='needs_review';
+    $item['review_level']='precisa_revisao';
+    $item['editorial_status']='Correção obrigatória';
+    $item['publication_eligible']=0;
+    $item['home_eligible']=0;
+    $item['quality_repair_reason']=$thin
+      ? 'Texto jornalístico insuficiente ou repetição da manchete.'
+      : 'URL do agregador Google News ainda não resolvida.';
+    $item['updated_at']=date('c');
+    $drafts[]=$item;
+    if($uKey!=='') $seen[$uKey]=1;
+    $seen[$tKey]=1;
+    $added++;
+  }
+  tvs_save_json_file($draftPath,array_values($drafts));
+  $res=['executed_at'=>date('c'),'backup'=>$backup,'backup_exists'=>is_file($backup),'source_count'=>count($sourceNews),'added_to_drafts'=>$added,'drafts_after'=>count($drafts)];
+  tvs_save_json_file($qualityDraftMarkerV2,$res);
+  echo 'PUBLISHED_QUALITY_DRAFT_RECOVERY_V2 '.json_encode($res,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n";
+}
+
+/*
  * EDITORIAL POLICY MIGRATION 2026-09-24 — one-shot.
  * Reclassifica o backlog sem apagar matérias publicadas:
  * - aplica hard gates regionais/temporais;
@@ -167,6 +386,54 @@ $cleanup = function_exists('tvs_radar_enforce_queue_rules')
   FILE_APPEND|LOCK_EX
 );
 echo "BACKLOG_CLEANUP removed=".(int)($cleanup['removed']??0)." changed=".(int)($cleanup['changed']??0)." total=".(int)($cleanup['total']??0)."\n";
+
+/*
+ * Retenção editorial pós-publicação.
+ * A aprovação é a fronteira de qualidade; depois disso a matéria permanece pública
+ * até o prazo de retenção e, ao vencer, é arquivada com rastreabilidade.
+ */
+$publishedPath=dirname(__DIR__).'/data/noticias.json';
+$trashPath=dirname(__DIR__).'/data/lixeira_noticias.json';
+$validityLogPath=dirname(__DIR__).'/data/content_validity_log.json';
+$published=tvs_read_json_file($publishedPath); if(!is_array($published)) $published=[];
+$trash=tvs_read_json_file($trashPath); if(!is_array($trash)) $trash=[];
+$validityLog=tvs_read_json_file($validityLogPath); if(!is_array($validityLog)) $validityLog=[];
+$kept=[]; $archivedByRetention=0; $now=date('c');
+foreach($published as $item){
+  $title=(string)($item['title']??'');
+  $summary=(string)($item['summary']??'');
+  $subtitle=(string)($item['subtitle']??'');
+  $category=(string)($item['category']??'');
+  $txt=tvs_lower($category.' '.$title.' '.$subtitle.' '.$summary);
+  $limit=90;
+  if(preg_match('~frente fria|chuva|temporal|alerta|interdi[cç][aã]o|tr[aâ]nsito|plant[aã]o~iu',$txt)) $limit=7;
+  elseif(preg_match('~emprego|vagas|processo seletivo|recrutamento|evento|show|festival|agenda|inscri[cç][aã]o|matr[ií]cula|curso|feira|campanha~iu',$txt)) $limit=30;
+  $raw=(string)($item['published_at']??$item['created_at']??$item['date']??'');
+  $ts=$raw!=='' ? strtotime($raw) : false;
+  if($ts===false){ $kept[]=$item; continue; }
+  $age=max(0,(int)floor((time()-$ts)/86400));
+  if($age<=$limit){ $kept[]=$item; continue; }
+  $item['status']='arquivado';
+  $item['deleted_at']=$now;
+  $item['archive_reason']="Arquivamento automático por retenção editorial ({$limit} dias).";
+  $trash[]=$item;
+  $validityLog[]=[
+    'id'=>uniqid('valid_'),
+    'news_id'=>$item['id']??'',
+    'title'=>$title!==''?$title:'Sem título',
+    'action'=>'ARQUIVADA_RETENCAO',
+    'reason'=>$item['archive_reason'],
+    'created_at'=>$now
+  ];
+  $archivedByRetention++;
+}
+if($archivedByRetention>0){
+  tvs_save_json_file($publishedPath,array_values($kept));
+  tvs_save_json_file($trashPath,array_values($trash));
+  tvs_save_json_file($validityLogPath,array_slice($validityLog,-500));
+}
+@file_put_contents($cronLogFile,date('c')." RETENTION_ARCHIVE archived={$archivedByRetention} active=".count($kept)."\n",FILE_APPEND|LOCK_EX);
+echo "RETENTION_ARCHIVE archived={$archivedByRetention} active=".count($kept)."\n";
 
 $cfg = function_exists('tvs_radar_config') ? tvs_radar_config() : ['per_city'=>6,'auto_daily'=>true,'last_auto_date'=>''];
 $today=date('Y-m-d');
