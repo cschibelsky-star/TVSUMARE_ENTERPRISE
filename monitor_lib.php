@@ -42,8 +42,8 @@ function tvs_editorial_body_is_thin($title,$body,$source=''){
     return trim(preg_replace('/\s+/u',' ',$s));
   };
   $nt=$norm($title); $nb=$norm($bodyWithoutSource);
-  if($nt!=='' && ($nb===$nt || strpos($nb,$nt)===0 && str_word_count($bodyWithoutSource,'0..9áàâãéèêíïóôõöúçñÁÀÂÃÉÈÊÍÏÓÔÕÖÚÇÑ')<35)) return true;
   $words=preg_split('/\s+/u',trim($bodyWithoutSource),-1,PREG_SPLIT_NO_EMPTY);
+  if($nt!=='' && ($nb===$nt || (strpos($nb,$nt)===0 && count($words)<35))) return true;
   if(count($words)<55) return true;
   if(tvs_strlen($bodyWithoutSource)<300) return true;
   return false;
