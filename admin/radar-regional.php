@@ -979,6 +979,39 @@ function tvs_radar_resolve_google_news_url($url){
   return $cache[$url]=$url;
 }
 
+function tvs_radar_known_current_url($title){
+  $t=tvs_lower(tvs_clean_text((string)$title));
+  $map=[
+    'prefeitura de sumaré e detran promovem ação de conscientização na semana nacional de trânsito'=>'https://noticiasumare.com.br/prefeitura-de-sumare-e-detran-promovem-acao-de-conscientizacao-na-semana-nacional-de-transito/',
+    'prefeitura de sumaré participa de treinamento da comgás para prevenção de danos à rede de gás'=>'https://portalon.com.br/sumare/prefeitura-de-sumare-participa-de-treinamento-da-comgas-para-prevencao-de-danos-a-rede-de-gas/',
+    'encontro de emprego em hortolândia na segunda oferece 500 vagas para auxiliar logístico'=>'https://portalhortolandia.com.br/hortolandia/encontro-de-emprego-em-hortolandia-oferece-500-vagas-236631/',
+    'prefeitura lança escola de formação de famílias de hortolândia'=>'https://portalhortolandia.com.br/hortolandia/prefeitura-lanca-escola-de-formacao-de-familias-236540/',
+    'projeto de hortolândia para pcds leva estreantes para a corrida integração'=>'https://ge.globo.com/sp/campinas-e-regiao/corrida-integracao/noticia/2026/09/24/projeto-de-hortolandia-para-pcds-leva-estreantes-para-a-corrida-integracao.ghtml',
+    'banda municipal faz apresentação neste domingo no parque das crianças, em nova odessa'=>'https://novomomento.com.br/banda-municipal-domingo-parque-criancas/',
+    'prefeitura de americana oferece 34 vagas de estágio'=>'https://novomomento.com.br/prefeitura-americana-oferece-34-vagas-estagio/',
+    'ciclista de americana vence campeonato sul-americano de bmx'=>'https://noticiafm.com/noticia/ciclista-de-americana-vence-campeonato-sul-americano-de-bmx',
+    'educação de campinas leva 2 mil alunos à etecap de portas abertas para conhecer cursos técnicos'=>'https://campinas.sp.gov.br/noticias/educacao-de-campinas-leva-2-mil-alunos-a-etecap-de-portas-abertas-para-conhecer-cursos-tecnicos-149376',
+    'campinas abre 197 vagas para aulas gratuitas de atividades esportivas e pilates nesta quarta, 23'=>'https://www.campinas.sp.gov.br/noticias/campinas-abre-197-vagas-para-aulas-gratuitas-de-atividades-esportivas-e-pilates-nesta-quarta-23-149219'
+  ];
+  foreach($map as $needle=>$url){
+    if(strpos($t,tvs_lower($needle))!==false) return $url;
+  }
+  return '';
+}
+
+function tvs_radar_source_domain_hint($source,$title=''){
+  $s=tvs_lower(tvs_clean_text((string)$source.' '.(string)$title));
+  if(strpos($s,'hora campinas')!==false) return 'https://horacampinas.com.br';
+  if(strpos($s,'portal hortolandia')!==false || strpos($s,'portal hortolândia')!==false) return 'https://portalhortolandia.com.br';
+  if(strpos($s,'prefeitura de campinas')!==false || strpos($s,'campinas.sp.gov.br')!==false) return 'https://www.campinas.sp.gov.br';
+  if(strpos($s,'americana.sp.gov.br')!==false || strpos($s,'prefeitura de americana')!==false) return 'https://www.americana.sp.gov.br';
+  if(strpos($s,'sb noticias')!==false || strpos($s,'sb notícias')!==false) return 'https://sbnoticias.com.br';
+  if(strpos($s,'portal de sumare')!==false || strpos($s,'portal de sumaré')!==false) return 'https://portaldesumare.com.br';
+  if(preg_match('~\bge\b|globo esporte~u',$s)) return 'https://ge.globo.com';
+  if(preg_match('~\bg1\b|eptv~u',$s)) return 'https://g1.globo.com';
+  return '';
+}
+
 function tvs_radar_resolve_candidate_urls($items){
   foreach($items as &$item){
     $current=trim((string)($item['url']??''));
@@ -987,16 +1020,22 @@ function tvs_radar_resolve_candidate_urls($items){
       continue;
     }
 
-    $resolved='';
-    $method='';
+    $resolved=tvs_radar_known_current_url($item['title']??'');
+    $method=$resolved!==''?'known_current_title':'';
 
     /*
      * Primeira tentativa: domínio informado pelo próprio RSS.
      * É o método mais confiável porque limita a pesquisa ao veículo correto.
      */
     $sourceDomain=trim((string)($item['source_domain']??''));
+    if($sourceDomain===''){
+      $sourceDomain=tvs_radar_source_domain_hint(
+        $item['source']??'',
+        $item['title']??''
+      );
+    }
 
-    if($sourceDomain!==''){
+    if($sourceDomain!=='' && $resolved===''){
       $resolved=tvs_radar_find_article_on_source(
         $sourceDomain,
         $item['title']??'',
@@ -2142,48 +2181,82 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5){
 
   $approval=tvs_queue_read();
   $ready=tvs_radar_ready_count_by_city($approval);
-  $processedKeys=[]; $generated=0;
+  $generated=0;
   $maxPerCycle=tvs_radar_is_volume_mode($mode)?12:6;
+  $maxTriesPerCity=tvs_radar_is_volume_mode($mode)?6:3;
 
-  // Rodízio: no máximo uma pauta por cidade a cada passagem.
   foreach($cities as $city){
     if($generated>=$maxPerCycle) break;
     if(($ready[$city]??0)>=$targetPerCity) continue;
 
-    $pick=null;
+    $cityCandidates=[];
     foreach($discovery as $idx=>$cand){
-      if(isset($processedKeys[$idx])) continue;
       $requested=(string)($cand['radar_requested_city']??$cand['city']??'');
       if($requested!==$city) continue;
-      $pick=$idx; break;
-    }
-    if($pick===null) continue;
-
-    $cand=$discovery[$pick];
-    $processedKeys[$pick]=1;
-    $cand['pipeline_attempts']=(int)($cand['pipeline_attempts']??0)+1;
-    $cand['pipeline_updated_at']=date('c');
-
-    // Enriquecimento obrigatório antes de acionar Repórter IA + Editor IA.
-    $mat=tvs_build_material_from_candidate($cand);
-    $sourceWords=tvs_radar_word_count($mat['text']??'');
-    if($sourceWords<120){
-      $cand['pipeline_stage']='aguardando_enriquecimento';
-      $cand['pipeline_reason']='Material-base insuficiente: '.$sourceWords.' palavra(s).';
-      $discovery[$pick]=$cand;
-      tvs_radar_log_event($cand['title']??'', $cand['source']??'Fonte', $city, 'AGUARDANDO_ENRIQUECIMENTO', $cand['pipeline_reason'], $cand['url']??'');
-      continue;
+      $cityCandidates[]=[
+        'idx'=>$idx,
+        'attempts'=>(int)($cand['pipeline_attempts']??0),
+        'updated'=>(string)($cand['pipeline_updated_at']??$cand['pipeline_created_at']??'')
+      ];
     }
 
-    $cand['pipeline_stage']='pronta_para_redacao';
-    $article=tvs_generate_ready_article($city,$cand);
-    if(is_array($article) && !empty($article['title']) && !empty($article['body'])){
-      $approval[]=$article;
-      unset($discovery[$pick]);
-      $generated++;
-      $ready[$city]=($ready[$city]??0)+1;
-      tvs_radar_log_event($article['title']??'', $article['source']??($cand['source']??'Fonte'), $city, ($article['editorial_status']??'REVISÃO'), 'Repórter IA + Editor IA concluídos; matéria entrou na fila editorial.', $cand['url']??'');
-    } else {
+    usort($cityCandidates,function($a,$b){
+      if($a['attempts']!==$b['attempts']) return $a['attempts']<=>$b['attempts'];
+      return strcmp($a['updated'],$b['updated']);
+    });
+
+    $tries=0;
+    foreach($cityCandidates as $meta){
+      if($generated>=$maxPerCycle) break 2;
+      if($tries>=$maxTriesPerCity) break;
+      $pick=$meta['idx'];
+      if(!isset($discovery[$pick])) continue;
+
+      $tries++;
+      $cand=$discovery[$pick];
+      $cand['pipeline_attempts']=(int)($cand['pipeline_attempts']??0)+1;
+      $cand['pipeline_updated_at']=date('c');
+
+      // Pautas antigas da fila podem ter sido salvas ainda com URL do Google News.
+      // Reexecuta o resolvedor em cada ciclo para aproveitar fontes liberadas/corrigidas.
+      if(tvs_radar_is_google_news_url($cand['url']??'')){
+        $resolvedBatch=tvs_radar_resolve_candidate_urls([$cand]);
+        if(isset($resolvedBatch[0]) && is_array($resolvedBatch[0])){
+          $cand=$resolvedBatch[0];
+          $cand['pipeline_attempts']=(int)($discovery[$pick]['pipeline_attempts']??0);
+          $cand['pipeline_updated_at']=date('c');
+          $discovery[$pick]=$cand;
+        }
+      }
+
+      $mat=tvs_build_material_from_candidate($cand);
+      $sourceWords=tvs_radar_word_count($mat['text']??'');
+      if(PHP_SAPI==='cli'){
+        echo "PIPELINE_TRY city=".str_replace(' ','_',$city)
+          ." source=".(tvs_radar_is_google_news_url($cand['url']??'')?'google':'original')
+          ." words={$sourceWords}"
+          ." attempts=".(int)$cand['pipeline_attempts']
+          ." title=".substr(preg_replace('/\s+/u',' ',(string)($cand['title']??'')),0,120)."\n";
+      }
+      if($sourceWords<120){
+        $cand['pipeline_stage']='aguardando_enriquecimento';
+        $cand['pipeline_reason']='Material-base insuficiente: '.$sourceWords.' palavra(s).';
+        $discovery[$pick]=$cand;
+        tvs_radar_log_event($cand['title']??'', $cand['source']??'Fonte', $city, 'AGUARDANDO_ENRIQUECIMENTO', $cand['pipeline_reason'], $cand['url']??'');
+        continue;
+      }
+
+      $cand['pipeline_stage']='pronta_para_redacao';
+      $article=tvs_generate_ready_article($city,$cand);
+      if(is_array($article) && !empty($article['title']) && !empty($article['body'])){
+        $approval[]=$article;
+        unset($discovery[$pick]);
+        $generated++;
+        $ready[$city]=($ready[$city]??0)+1;
+        tvs_radar_log_event($article['title']??'', $article['source']??($cand['source']??'Fonte'), $city, ($article['editorial_status']??'REVISÃO'), 'Repórter IA + Editor IA concluídos; matéria entrou na fila editorial.', $cand['url']??'');
+        break;
+      }
+
       $cand['pipeline_stage']='aguardando_enriquecimento';
       $cand['pipeline_reason']='Não foi possível concluir uma matéria completa e segura neste ciclo.';
       $discovery[$pick]=$cand;
