@@ -109,6 +109,10 @@ if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'){
           'slug'=>trim((string)($enriched['slug']??'')),
           'instagram_caption'=>trim((string)($enriched['instagram_caption']??'')),
           'whatsapp_text'=>trim((string)($enriched['whatsapp_text']??'')),
+          'ai_editor_processed'=>1,
+          'ai_editor_processed_at'=>date('c'),
+          'ai_editor_stage'=>'editor_materia_ia',
+          'editorial_origin'=>'noticia_rapida',
         ];
         $_SESSION['tvs_quick_news_draft']=$draft;
         $notice=$imageMeta['image_source_type']==='source_og'
@@ -129,6 +133,8 @@ if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'){
       $body=tvs_quick_post('body');
       if($title==='' || $body===''){
         $error='Título e texto são obrigatórios para publicação.';
+      } elseif(empty($sessionDraft['ai_editor_processed'])){
+        $error='A matéria ainda não passou pelo Editor de Matéria IA.';
       } elseif(function_exists('tvs_editorial_body_is_thin') && tvs_editorial_body_is_thin($title,$body,tvs_quick_post('source','Redação TV Sumaré'))){
         $error='O texto ainda está curto ou repete a manchete. Enriqueça e revise a matéria antes de publicar.';
       } else {
@@ -171,6 +177,10 @@ if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'){
           'instagram_caption'=>tvs_quick_post('instagram_caption'),
           'whatsapp_text'=>tvs_quick_post('whatsapp_text'),
           'editorial_mode'=>'NOTICIA_RAPIDA_ENRIQUECIDA',
+          'ai_editor_processed'=>(int)($sessionDraft['ai_editor_processed']??0),
+          'ai_editor_processed_at'=>$sessionDraft['ai_editor_processed_at']??$now,
+          'ai_editor_stage'=>$sessionDraft['ai_editor_stage']??'pending',
+          'editorial_origin'=>$sessionDraft['editorial_origin']??'noticia_rapida',
           'enriched_at'=>$sessionDraft['enriched_at']??$now,
           'views'=>0,
           'shares'=>0,

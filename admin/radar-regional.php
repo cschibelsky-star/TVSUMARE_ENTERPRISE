@@ -333,8 +333,9 @@ function tvs_radar_status_from_score($score,$sensitive=false){
   return ['review_level'=>'normal','editorial_status'=>$status,'sensitive'=>false];
 }
 function tvs_radar_can_direct_approve($m){
-  // Aprovação direta exige matéria jornalística minimamente completa.
-  // Score alto não compensa corpo ausente/curto, fonte sem URL ou data não confirmada.
+  // Aprovação direta exige matéria jornalística minimamente completa
+  // e passagem confirmada pelo Editor de Matéria IA.
+  if(empty($m['ai_editor_processed'])) return false;
   if(!empty($m['sensitive_review_required'])) return false;
   if(function_exists('tvs_radar_queue_item_readiness')){
     $readiness=tvs_radar_queue_item_readiness($m);
@@ -1947,25 +1948,50 @@ function tvs_generate_ready_article($city,$cand){
   $facts=tvs_extract_facts_block($mat['title']??($cand['title']??''),$city,$category,$mat['text']??'',($cand['source']??'Fonte consultada'),($cand['url']??''));
   $material="CIDADE: {$city}\nCATEGORIA: {$category}\nFONTE: ".($cand['source']??'Fonte consultada')."\nURL: ".($cand['url']??'')."\nTÍTULO ORIGINAL: ".($mat['title']??'')."\n\n".$facts."\n\nCONTEÚDO COMPLETO COLETADO:\n".tvs_substr($mat['text']??'',0,10000);
 
-  // Modo produtivo: itens do Google News com texto curto entram como nota revisável,
-  // sem gastar chamada Gemini em cada manchete. Isso aumenta volume sem causar 504.
+  // Toda pauta precisa atravessar o Editor de Matéria IA antes de poder ser publicada.
+  // O Repórter IA pode montar uma primeira versão, mas ela não recebe elegibilidade
+  // de publicação enquanto a etapa editorial obrigatória não for concluída.
   $isGoogle = function_exists('tvs_is_google_news_candidate') ? tvs_is_google_news_candidate($cand) : false;
   if($isGoogle && tvs_strlen($mat['text']??'') < 320){
-    $result=tvs_build_reviewable_article_without_ai($city,$category,$cand,$mat);
+    $baseline=tvs_build_reviewable_article_without_ai($city,$category,$cand,$mat);
   } else {
-    $result=gemini_reporter_article($gemini_api_key??'', $material, ['city'=>$city,'theme'=>$category,'category'=>$category]);
-    if(!$result){
-      // Se a IA falhar, entra em revisão quando houver material real suficiente.
-      $result=tvs_build_reviewable_article_without_ai($city,$category,$cand,$mat);
-    }
+    $baseline=gemini_reporter_article($gemini_api_key??'', $material, ['city'=>$city,'theme'=>$category,'category'=>$category]);
+    if(!$baseline) $baseline=tvs_build_reviewable_article_without_ai($city,$category,$cand,$mat);
   }
-  if(!$result){
-    $result=tvs_build_reviewable_article_without_ai($city,$category,$cand,$mat);
-  }
-  if(!$result){
-    tvs_radar_log_event($cand['title']??'', $cand['source']??'Fonte consultada', $city, 'REVISÃO', 'IA indisponível: enviado para revisão quando houver pauta mínima', $cand['url']??'');
+  if(!$baseline) $baseline=tvs_build_reviewable_article_without_ai($city,$category,$cand,$mat);
+  if(!$baseline){
+    tvs_radar_log_event($cand['title']??'', $cand['source']??'Fonte consultada', $city, 'REVISÃO', 'Material insuficiente para o Editor de Matéria IA', $cand['url']??'');
     return null;
   }
+
+  $baseline['city']=$city;
+  $baseline['category']=$baseline['category']??$category;
+  $baseline['source']=$cand['source']??'Fonte consultada';
+  $baseline['source_url']=$cand['url']??'';
+  $baseline['editorial_origin']='radar';
+
+  $edited=function_exists('tvs_ai_editor_process_article')
+    ? tvs_ai_editor_process_article($gemini_api_key??'',$baseline,[
+        'city'=>$city,
+        'category'=>$category,
+        'source'=>$cand['source']??'Fonte consultada',
+        'source_url'=>$cand['url']??'',
+        'origin'=>'radar'
+      ])
+    : null;
+
+  if($edited){
+    $result=$edited;
+  } else {
+    // Falha do Editor IA nunca vira atalho para publicação.
+    $result=$baseline;
+    $result['ai_editor_processed']=0;
+    $result['ai_editor_stage']='pending';
+    $result['review_level']='precisa_revisao';
+    $result['editorial_status']='Aguardando Editor IA';
+    $result['publication_eligible']=0;
+  }
+
   $result=tvs_sanitize_ai_article($result,['city'=>$city,'name'=>$cand['source']??'Fonte consultada'],['title'=>$cand['title']??'','description'=>$cand['description']??'','body'=>$mat['text']??'','url'=>$cand['url']??'']);
   if(tvs_is_non_news_candidate($result['title']??'', $cand['url']??'', ($result['subtitle']??'').' '.($result['body']??''))){
     tvs_radar_discard($cand,$city,'Texto institucional detectado, não é matéria jornalística');
@@ -2021,15 +2047,22 @@ function tvs_generate_ready_article($city,$cand){
   $result['sensitive_review_required']=!empty($st['sensitive']) ? 1 : 0;
   if(!empty($st['sensitive'])) $result['sensitive_review_reason']='Pauta sensível ou de alto impacto: revisão humana obrigatória antes da publicação.';
 
-  // Imagem é um atributo paralelo. Falta de foto não altera o estado editorial
-  // da matéria; apenas impede usos visuais que exigem imagem confirmada.
+  $editorProcessed=!empty($result['ai_editor_processed']);
+  if(!$editorProcessed){
+    $result['review_level']='precisa_revisao';
+    $result['editorial_status']='Aguardando Editor IA';
+    $result['ai_editor_stage']='pending';
+  }
+
+  // Imagem é um atributo paralelo. Falta de foto não altera o estado editorial.
+  // A passagem pelo Editor IA, porém, é obrigatória para publicação.
   $result['image_status']=!empty($result['image_review_required'])?'missing':'verified';
-  $result['editorial_state']='qualified';
+  $result['editorial_state']=$editorProcessed?'qualified':'needs_ai_editor';
   $result['region_status']='confirmed';
   $result['freshness_status']='current';
   $result['source_status']='original';
   $result['duplicate_status']='unique';
-  $result['publication_eligible']=1;
+  $result['publication_eligible']=$editorProcessed?1:0;
   $result['home_eligible']=!empty($result['image_review_required'])?0:1;
   $result['video_eligible']=1;
   $result['created_at']=date('c');
@@ -2081,6 +2114,7 @@ function tvs_publish_from_queue($id,$post){
   $queue=tvs_queue_read(); $found=null; $newq=[];
   foreach($queue as $item){ if(($item['id']??'')===$id) $found=$item; else $newq[]=$item; }
   if(!$found) return false;
+  if(empty($found['ai_editor_processed'])) return false;
 
   // A imagem é independente da validade editorial, mas o conteúdo não é.
   // Nenhuma matéria incompleta pode ser publicada apenas porque recebeu score alto.
