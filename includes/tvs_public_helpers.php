@@ -33,7 +33,16 @@ function tvs_real_image($n){
 }
 function tvs_category_asset($n){
   $category=tvs_lc(trim((string)($n['category']??'Cidade')));
-  $map=[
+  $editorial=[
+    'política'=>'assets/thumb-politica.jpg','politica'=>'assets/thumb-politica.jpg',
+    'saúde'=>'assets/thumb-saude.jpg','saude'=>'assets/thumb-saude.jpg',
+    'educação'=>'assets/thumb-educacao.jpg','educacao'=>'assets/thumb-educacao.jpg',
+    'esportes'=>'assets/thumb-esportes.jpg','esporte'=>'assets/thumb-esportes.jpg',
+    'segurança'=>'assets/thumb-seguranca.jpg','seguranca'=>'assets/thumb-seguranca.jpg',
+    'infraestrutura'=>'assets/thumb-infraestrutura.jpg','obras'=>'assets/thumb-infraestrutura.jpg'
+  ];
+  if(isset($editorial[$category]) && file_exists(__DIR__.'/../'.$editorial[$category])) return $editorial[$category];
+  $fallback=[
     'cidade'=>'assets/cat-cidade.svg',
     'política'=>'assets/cat-politica.svg','politica'=>'assets/cat-politica.svg',
     'saúde'=>'assets/cat-saude.svg','saude'=>'assets/cat-saude.svg',
@@ -44,7 +53,7 @@ function tvs_category_asset($n){
     'segurança'=>'assets/cat-seguranca.svg','seguranca'=>'assets/cat-seguranca.svg',
     'economia'=>'assets/cat-economia.svg'
   ];
-  return $map[$category]??'assets/cat-cidade.svg';
+  return $fallback[$category]??'assets/cat-cidade.svg';
 }
 function tvs_display_image($n){
   $img=tvs_real_image($n);
