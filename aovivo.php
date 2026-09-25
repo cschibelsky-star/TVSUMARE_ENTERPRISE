@@ -21,6 +21,7 @@ function tvs_live_embed_safe($html){
     'www.youtube-nocookie.com',
     'camara.leg.br',
     'www.camara.leg.br',
+    'culturaplay.tvcultura.com.br',
   ];
   return in_array($host,$allowed,true)?$html:'';
 }
@@ -58,6 +59,13 @@ function tvs_live_default_channels($settings){
       'url'=>'https://www.youtube.com/@STF_Oficial',
       'enabled'=>true,
     ],
+    'tvcultura'=>[
+      'name'=>'TV Cultura',
+      'source'=>'Fundação Padre Anchieta / Cultura Play',
+      'embed'=>'<iframe width="100%" height="100%" src="https://culturaplay.tvcultura.com.br/channels/14/embed" title="TV Cultura ao vivo" frameborder="0" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>',
+      'url'=>'https://culturaplay.tvcultura.com.br/channels/14-01-tv-cultura-ao-vivo',
+      'enabled'=>true,
+    ],
     'tvsumare'=>[
       'name'=>'TV Sumaré',
       'source'=>'TV Sumaré',
@@ -69,11 +77,7 @@ function tvs_live_default_channels($settings){
 }
 function tvs_live_default_schedule(){
   return [
-    ['start'=>'00:00','end'=>'05:00','channel'=>'tvsenado'],
-    ['start'=>'05:00','end'=>'10:00','channel'=>'tvcamara'],
-    ['start'=>'10:00','end'=>'14:00','channel'=>'tvjustica'],
-    ['start'=>'14:00','end'=>'18:00','channel'=>'tvalesp'],
-    ['start'=>'18:00','end'=>'24:00','channel'=>'tvsumare'],
+    ['start'=>'00:00','end'=>'24:00','channel'=>'tvcultura'],
   ];
 }
 function tvs_live_pick_schedule($schedule,$nowMinutes){
