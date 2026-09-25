@@ -262,10 +262,14 @@ if (!function_exists('tvs_radar_queue_item_readiness')) {
         }
 
         /*
-         * Corpo é obrigatório apenas quando o item já deveria estar pronto
-         * para edição/publicação. Evita matéria vazia na fila editorial.
+         * Corpo precisa conter conteúdo jornalístico real, e não apenas a
+         * manchete repetida, o nome do veículo ou um resumo de RSS curto.
          */
-        if ($body === '' || mb_strlen($body, 'UTF-8') < 180) {
+        if (function_exists('tvs_editorial_body_is_thin')) {
+            if (tvs_editorial_body_is_thin($title,$body,$item['source']??'')) {
+                $reasons[] = 'Texto jornalístico insuficiente ou duplicado';
+            }
+        } elseif ($body === '' || mb_strlen($body, 'UTF-8') < 300) {
             $reasons[] = 'Texto jornalístico insuficiente';
         }
 
