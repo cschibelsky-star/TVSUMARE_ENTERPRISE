@@ -31,9 +31,24 @@ function tvs_real_image($n){
   foreach($candidates as $img){ $img=trim((string)$img); if($img!=='' && !tvs_is_category_asset($img)) return $img; }
   return '';
 }
+function tvs_category_asset($n){
+  $category=tvs_lc(trim((string)($n['category']??'Cidade')));
+  $map=[
+    'cidade'=>'assets/cat-cidade.svg',
+    'política'=>'assets/cat-politica.svg','politica'=>'assets/cat-politica.svg',
+    'saúde'=>'assets/cat-saude.svg','saude'=>'assets/cat-saude.svg',
+    'educação'=>'assets/cat-educacao.svg','educacao'=>'assets/cat-educacao.svg',
+    'empregos'=>'assets/cat-empregos.svg','emprego'=>'assets/cat-empregos.svg',
+    'esportes'=>'assets/cat-esportes.svg','esporte'=>'assets/cat-esportes.svg',
+    'cultura'=>'assets/cat-cultura.svg',
+    'segurança'=>'assets/cat-seguranca.svg','seguranca'=>'assets/cat-seguranca.svg',
+    'economia'=>'assets/cat-economia.svg'
+  ];
+  return $map[$category]??'assets/cat-cidade.svg';
+}
 function tvs_display_image($n){
   $img=tvs_real_image($n);
-  return $img!=='' ? $img : 'assets/tvsumare-noticia-padrao.svg';
+  return $img!=='' ? $img : tvs_category_asset($n);
 }
 function tvs_clean_text($text){
   $text=trim(preg_replace('/\s+/',' ',strip_tags((string)$text)));
@@ -208,7 +223,7 @@ function tvs_normalize_news_item($n){
   if(isset($n['body'])) $n['body']=trim((string)$n['body']);
   if(empty($n['city'])) $n['city']=tvs_infer_city($n);
   $img=tvs_real_image($n);
-  $n['display_image']=$img!==''?$img:'assets/tvsumare-noticia-padrao.svg';
+  $n['display_image']=$img!==''?$img:tvs_category_asset($n);
   return $n;
 }
 function tvs_prepare_public_news($news,$maxDays=30){

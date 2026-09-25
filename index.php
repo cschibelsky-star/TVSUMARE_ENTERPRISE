@@ -36,7 +36,8 @@ $popularUsed=[]; $popular=array_values(array_filter($popular,function($n)use(&$p
 $empresas=tvs_json('data/empresas.json'); $empresas=is_array($empresas)?array_slice(array_reverse($empresas),0,4):[];
 function tvs_card_img_html($n,$class=''){
   $img=tvs_display_image($n);
-  return '<img class="'.tvs_h($class).'" src="'.tvs_h($img).'" onerror="this.src=\'assets/tvsumare-noticia-padrao.svg\'" alt="">';
+  $fallback=tvs_category_asset($n);
+  return '<img class="'.tvs_h($class).'" src="'.tvs_h($img).'" onerror="this.onerror=null;this.src=\''.tvs_h($fallback).'\'" alt="">';
 }
 function tvs_video_thumb_html($v){
   $thumb=tvs_video_thumb($v);
@@ -98,7 +99,7 @@ function tvs_video_thumb_html($v){
       <div class="tvs-topic-grid">
       <?php foreach($citySections as $cityName=>$items): if(empty($items)) continue; $main=$items[0]; $img=tvs_display_image($main); if($img==='') $img='assets/tvsumare-noticia-padrao.svg'; ?>
         <article class="tvs-topic-card">
-          <a class="tvs-topic-image" href="<?=tvs_h(tvs_news_url($main))?>"><img src="<?=tvs_h($img)?>" onerror="this.src='assets/tvsumare-noticia-padrao.svg'" alt=""></a>
+          <a class="tvs-topic-image" href="<?=tvs_h(tvs_news_url($main))?>"><img src="<?=tvs_h($img)?>" onerror="this.onerror=null;this.src='<?=tvs_h(tvs_category_asset($main))?>'" alt=""></a>
           <div class="tvs-topic-content">
             <h3><?=tvs_h($cityName)?><span>.</span></h3>
             <a class="tvs-topic-title" href="<?=tvs_h(tvs_news_url($main))?>"><?=tvs_h(tvs_title($main['title']??'',82))?></a>
