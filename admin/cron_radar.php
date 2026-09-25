@@ -403,31 +403,62 @@ foreach($published as $item){
   $title=(string)($item['title']??'');
   $summary=(string)($item['summary']??'');
   $subtitle=(string)($item['subtitle']??'');
+  $body=(string)($item['body']??'');
   $category=(string)($item['category']??'');
-  $txt=tvs_lower($category.' '.$title.' '.$subtitle.' '.$summary);
-  $limit=90;
-  if(preg_match('~frente fria|chuva|temporal|alerta|interdi[cç][aã]o|tr[aâ]nsito|plant[aã]o~iu',$txt)) $limit=7;
-  elseif(preg_match('~emprego|vagas|processo seletivo|recrutamento|evento|show|festival|agenda|inscri[cç][aã]o|matr[ií]cula|curso|feira|campanha~iu',$txt)) $limit=30;
+  $sourceUrl=(string)($item['source_url']??'');
+  $txt=tvs_lower($category.' '.$title.' '.$subtitle.' '.$summary.' '.$body);
+
+  $invalidInstitutional=false;
+  if(function_exists('tvs_is_non_news_candidate')){
+    $invalidInstitutional=tvs_is_non_news_candidate($title,$sourceUrl,$subtitle.' '.$summary.' '.$body);
+  }
+  if(!$invalidInstitutional && function_exists('tvs_is_institutional_profile_text')){
+    $invalidInstitutional=tvs_is_institutional_profile_text($title,$sourceUrl,$subtitle.' '.$summary.' '.$body);
+  }
+  if(!$invalidInstitutional && preg_match('~^(meio ambiente|desenvolvimento sustent[aá]vel|assuntos clim[aá]ticos|secretaria de|departamento de|coordenadoria de|servi[cç]os|institucional|quem somos)\b~iu',trim($title))){
+    $invalidInstitutional=true;
+  }
+
+  $limit=function_exists('tvs_editorial_retention_days')
+    ? tvs_editorial_retention_days((array)$item)
+    : 90;
+
   $raw=(string)($item['published_at']??$item['created_at']??$item['date']??'');
   $ts=$raw!=='' ? strtotime($raw) : false;
-  if($ts===false){ $kept[]=$item; continue; }
-  $age=max(0,(int)floor((time()-$ts)/86400));
-  if($age<=$limit){ $kept[]=$item; continue; }
+  $age=$ts===false ? null : max(0,(int)floor((time()-$ts)/86400));
+
+  $archiveReason='';
+  $action='ARQUIVADA_RETENCAO';
+  if($invalidInstitutional){
+    $archiveReason='Arquivamento editorial automático: conteúdo institucional/genérico sem fato jornalístico.';
+    $action='ARQUIVADA_QUALIDADE';
+  } elseif($age!==null && $age>$limit){
+    $archiveReason="Arquivamento automático por retenção editorial ({$limit} dias).";
+  } else {
+    $kept[]=$item;
+    continue;
+  }
+
   $item['status']='arquivado';
   $item['deleted_at']=$now;
-  $item['archive_reason']="Arquivamento automático por retenção editorial ({$limit} dias).";
+  $item['archive_reason']=$archiveReason;
   $trash[]=$item;
   $validityLog[]=[
     'id'=>uniqid('valid_'),
     'news_id'=>$item['id']??'',
     'title'=>$title!==''?$title:'Sem título',
-    'action'=>'ARQUIVADA_RETENCAO',
-    'reason'=>$item['archive_reason'],
+    'action'=>$action,
+    'reason'=>$archiveReason,
     'created_at'=>$now
   ];
   $archivedByRetention++;
 }
 if($archivedByRetention>0){
+  $backupDir=dirname(__DIR__).'/data/retention_backup_'.date('Ymd_His');
+  @mkdir($backupDir,0775,true);
+  if(is_file($publishedPath)) @copy($publishedPath,$backupDir.'/noticias.json');
+  if(is_file($trashPath)) @copy($trashPath,$backupDir.'/lixeira_noticias.json');
+  if(is_file($validityLogPath)) @copy($validityLogPath,$backupDir.'/content_validity_log.json');
   tvs_save_json_file($publishedPath,array_values($kept));
   tvs_save_json_file($trashPath,array_values($trash));
   tvs_save_json_file($validityLogPath,array_slice($validityLog,-500));

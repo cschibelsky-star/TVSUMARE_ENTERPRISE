@@ -10,8 +10,8 @@ function cv_read($name){ $d=tvs_read_json_file(cv_path($name)); return is_array(
 function cv_write($name,$rows){ return tvs_save_json_file(cv_path($name),array_values($rows)); }
 function cv_date($n){ foreach(['published_at','created_at','date'] as $k){ if(!empty($n[$k])){ $ts=strtotime((string)$n[$k]); if($ts) return $ts; } } return 0; }
 function cv_date_label($n){ $ts=cv_date($n); return $ts?date('d/m/Y H:i',$ts):'sem data'; }
-function cv_sensitive($n){ $t=tvs_lower(tvs_clean_text(($n['category']??'').' '.($n['title']??'').' '.($n['subtitle']??'').' '.($n['summary']??''))); return preg_match('~\b(vagas?|empregos?|processo seletivo|concurso|inscri[cç][oõ]es|edital|evento|agenda|programa[cç][aã]o|interdi[cç][aã]o|tr[aâ]nsito|vacina[cç][aã]o|campanha|prazo|atendimento|curso|matr[ií]cula|feira|show|festival)\b~iu',$t)===1; }
-function cv_limit($n){ return cv_sensitive($n)?30:90; }
+function cv_limit($n){ return function_exists('tvs_editorial_retention_days') ? tvs_editorial_retention_days((array)$n) : 90; }
+function cv_sensitive($n){ return cv_limit($n)<90; }
 function cv_age($n){ $ts=cv_date($n); return $ts?max(0,(int)floor((time()-$ts)/86400)):null; }
 function cv_needs_review($n){ $age=cv_age($n); $limit=cv_limit($n); $checked=strtotime((string)($n['validity_checked_at']??'')); if($checked && (time()-$checked)<($limit*86400)) return false; if(($n['validity_status']??'')==='revisao_solicitada') return true; if($age===null) return true; return $age>=$limit; }
 function cv_reason($n){ $age=cv_age($n); if($age===null) return 'Data editorial não identificada.'; if(cv_sensitive($n)) return "Conteúdo temporal/serviço com {$age} dia(s): confirmar prazo, agenda ou validade."; return "Matéria publicada há {$age} dia(s): confirmar se continua atual."; }

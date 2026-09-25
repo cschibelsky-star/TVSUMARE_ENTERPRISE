@@ -300,10 +300,9 @@ function tvs_is_regional_news_strict($n){
   return tvs_region_city_detect($n)!=='';
 }
 function tvs_public_retention_days($n){
-  $txt=tvs_lc(($n['category']??'').' '.($n['title']??'').' '.($n['subtitle']??'').' '.($n['summary']??''));
-  if(preg_match('~frente fria|chuva|temporal|alerta|interdi[cç][aã]o|tr[aâ]nsito|plant[aã]o~iu',$txt)) return 7;
-  if(preg_match('~emprego|vagas|processo seletivo|recrutamento|evento|show|festival|agenda|inscri[cç][aã]o|matr[ií]cula|curso|feira|campanha~iu',$txt)) return 30;
-  return 90;
+  return function_exists('tvs_editorial_retention_days')
+    ? tvs_editorial_retention_days((array)$n)
+    : 90;
 }
 function tvs_public_is_active($n){
   $age=tvs_news_age_days($n);
