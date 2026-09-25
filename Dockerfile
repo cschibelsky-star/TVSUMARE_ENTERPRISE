@@ -4,7 +4,7 @@ COPY docker/apache-security.conf /etc/apache2/conf-available/tvsumare-security.c
 COPY docker/tvsumare-entrypoint.sh /usr/local/bin/tvsumare-entrypoint
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg \
+    && apt-get install -y --no-install-recommends ffmpeg curl \
     && rm -rf /var/lib/apt/lists/* \
     && a2enmod rewrite headers \
     && a2enconf tvsumare-security \
@@ -13,6 +13,15 @@ RUN apt-get update \
     && printf '%s\n' 'upload_max_filesize=512M' 'post_max_size=520M' 'upload_tmp_dir=/var/www/html/uploads/.tmp' 'max_execution_time=300' 'max_input_time=300' > /usr/local/etc/php/conf.d/tvsumare-uploads.ini
 
 COPY . /var/www/html/
+
+RUN set -eux; \
+    base='https://raw.githubusercontent.com/cschibelsky-star/TVSUMARE_ENTERPRISE/4c29edad2eba999a3c1f446549c2793d087c5b9b/assets'; \
+    curl -fsSL "$base/thumb-educacao.jpg" -o /var/www/html/assets/thumb-educacao.jpg; \
+    curl -fsSL "$base/thumb-esportes.jpg" -o /var/www/html/assets/thumb-esportes.jpg; \
+    curl -fsSL "$base/thumb-infraestrutura.jpg" -o /var/www/html/assets/thumb-infraestrutura.jpg; \
+    curl -fsSL "$base/thumb-politica.jpg" -o /var/www/html/assets/thumb-politica.jpg; \
+    curl -fsSL "$base/thumb-saude.jpg" -o /var/www/html/assets/thumb-saude.jpg; \
+    curl -fsSL "$base/thumb-seguranca.jpg" -o /var/www/html/assets/thumb-seguranca.jpg
 
 RUN php /var/www/html/docker/apply-radar-editorial-policy.php \
     && php /var/www/html/docker/apply-radar-image-audit.php \
