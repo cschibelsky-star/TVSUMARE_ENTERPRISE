@@ -419,9 +419,9 @@ foreach($published as $item){
     $invalidInstitutional=true;
   }
 
-  $limit=90;
-  if(preg_match('~frente fria|chuva|temporal|alerta|interdi[cç][aã]o|tr[aâ]nsito|plant[aã]o~iu',$txt)) $limit=7;
-  elseif(preg_match('~emprego|vagas|processo seletivo|recrutamento|evento|show|festival|agenda|inscri[cç][aã]o|matr[ií]cula|curso|feira|campanha~iu',$txt)) $limit=30;
+  $limit=function_exists('tvs_editorial_retention_days')
+    ? tvs_editorial_retention_days((array)$item)
+    : 90;
 
   $raw=(string)($item['published_at']??$item['created_at']??$item['date']??'');
   $ts=$raw!=='' ? strtotime($raw) : false;
