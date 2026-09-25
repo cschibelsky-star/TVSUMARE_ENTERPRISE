@@ -33,17 +33,28 @@ function tvs_real_image($n){
 }
 function tvs_category_asset($n){
   $category=tvs_lc(trim((string)($n['category']??'Cidade')));
+  $txt=tvs_lc(($n['category']??'').' '.($n['title']??'').' '.($n['subtitle']??'').' '.($n['summary']??'').' '.($n['body']??''));
+
+  $editorialKey='';
+  if(preg_match('~sa[uú]de|hospital|upa|ubs|vacina|medic|dengue|atendimento~iu',$txt)) $editorialKey='saude';
+  elseif(preg_match('~educa[cç][aã]o|escola|creche|aluno|professor|ensino|matr[ií]cula~iu',$txt)) $editorialKey='educacao';
+  elseif(preg_match('~seguran[cç]a|guarda|pol[ií]cia|crime|pris[aã]o|roubo|furto|tr[aá]fico~iu',$txt)) $editorialKey='seguranca';
+  elseif(preg_match('~pol[ií]tica|c[aâ]mara|vereador|prefeito|elei[cç][aã]o|projeto de lei|sess[aã]o~iu',$txt)) $editorialKey='politica';
+  elseif(preg_match('~esporte|futebol|campeonato|atleta|jogo|partida|torneio~iu',$txt)) $editorialKey='esportes';
+  elseif(preg_match('~infraestrutura|obra|asfalto|pavimenta[cç][aã]o|recape|vi[aá]rio|ponte|drenagem~iu',$txt)) $editorialKey='infraestrutura';
+
   $editorial=[
-    'política'=>'assets/thumb-politica.jpg','politica'=>'assets/thumb-politica.jpg',
-    'saúde'=>'assets/thumb-saude.jpg','saude'=>'assets/thumb-saude.jpg',
-    'educação'=>'assets/thumb-educacao.jpg','educacao'=>'assets/thumb-educacao.jpg',
-    'esportes'=>'assets/thumb-esportes.jpg','esporte'=>'assets/thumb-esportes.jpg',
-    'segurança'=>'assets/thumb-seguranca.jpg','seguranca'=>'assets/thumb-seguranca.jpg',
-    'infraestrutura'=>'assets/thumb-infraestrutura.jpg','obras'=>'assets/thumb-infraestrutura.jpg'
+    'politica'=>'assets/thumb-politica.jpg',
+    'saude'=>'assets/thumb-saude.jpg',
+    'educacao'=>'assets/thumb-educacao.jpg',
+    'esportes'=>'assets/thumb-esportes.jpg',
+    'seguranca'=>'assets/thumb-seguranca.jpg',
+    'infraestrutura'=>'assets/thumb-infraestrutura.jpg'
   ];
-  if(isset($editorial[$category]) && file_exists(__DIR__.'/../'.$editorial[$category])) return $editorial[$category];
+  if($editorialKey!=='' && isset($editorial[$editorialKey]) && file_exists(__DIR__.'/../'.$editorial[$editorialKey])) return $editorial[$editorialKey];
+
   $fallback=[
-    'cidade'=>'assets/cat-cidade.svg',
+    'cidade'=>'assets/cat-cidade.svg','cidades'=>'assets/cat-cidade.svg',
     'política'=>'assets/cat-politica.svg','politica'=>'assets/cat-politica.svg',
     'saúde'=>'assets/cat-saude.svg','saude'=>'assets/cat-saude.svg',
     'educação'=>'assets/cat-educacao.svg','educacao'=>'assets/cat-educacao.svg',
@@ -317,8 +328,10 @@ function tvs_prepare_public_news_v2($news,$maxDays=90){
     $detected=tvs_region_city_detect($n);
     if($detected!=='') $n['city']=$detected;
     $img=tvs_real_image($n);
-    $n['image_status']=$img!==''?'verified':'missing';
-    $n['home_eligible']=$img!=='' ? 1 : 0;
+    $fallback=tvs_category_asset($n);
+    $n['image_status']=$img!==''?'verified':'editorial_fallback';
+    $n['hero_eligible']=$img!=='' ? 1 : 0;
+    $n['home_eligible']=($img!=='' || $fallback!=='') ? 1 : 0;
     $n['publication_eligible']=1;
     $n['editorial_state']='published';
     $n['retention_days']=$limit;
