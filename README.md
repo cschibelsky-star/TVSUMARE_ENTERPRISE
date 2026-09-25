@@ -21,3 +21,5 @@ Este repositório será a base oficial da TV Sumaré Enterprise 3.0, produto ref
 ## Regra operacional
 
 Menos discussão. Mais build, teste e homologação.
+
+<!-- preserve-local-history-20260925 -->
