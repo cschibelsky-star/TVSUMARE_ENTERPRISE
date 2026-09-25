@@ -37,7 +37,9 @@ $empresas=tvs_json('data/empresas.json'); $empresas=is_array($empresas)?array_sl
 function tvs_card_img_html($n,$class=''){
   $img=tvs_display_image($n);
   $fallback=tvs_category_asset($n);
-  return '<img class="'.tvs_h($class).'" src="'.tvs_h($img).'" onerror="this.onerror=null;this.src=\''.tvs_h($fallback).'\'" alt="">';
+  $isEditorialFallback=tvs_real_image($n)==='' && preg_match('~(^|/)assets/thumb-~i',(string)$img);
+  $classes=trim($class.($isEditorialFallback?' tvs-editorial-thumb':''));
+  return '<img class="'.tvs_h($classes).'" src="'.tvs_h($img).'" onerror="this.onerror=null;this.src=\''.tvs_h($fallback).'\'" alt="">';
 }
 function tvs_video_thumb_html($v){
   $thumb=tvs_video_thumb($v);
@@ -97,9 +99,9 @@ function tvs_video_thumb_html($v){
     <section class="tvs-sections-20 tvs-sections-modern">
       <div class="section-heading modern-heading"><div><span>Cobertura regional</span><h2>Notícias por cidade</h2><p>Até 5 matérias aprovadas e ativas de cada cidade, sempre priorizando as mais recentes.</p></div><a href="noticias.php">Ver todas</a></div>
       <div class="tvs-topic-grid">
-      <?php foreach($citySections as $cityName=>$items): if(empty($items)) continue; $main=$items[0]; $img=tvs_display_image($main); if($img==='') $img='assets/tvsumare-noticia-padrao.svg'; ?>
+      <?php foreach($citySections as $cityName=>$items): if(empty($items)) continue; $main=$items[0]; $img=tvs_display_image($main); if($img==='') $img='assets/tvsumare-noticia-padrao.svg'; $isEditorialFallback=tvs_real_image($main)==='' && preg_match('~(^|/)assets/thumb-~i',(string)$img); ?>
         <article class="tvs-topic-card">
-          <a class="tvs-topic-image" href="<?=tvs_h(tvs_news_url($main))?>"><img src="<?=tvs_h($img)?>" onerror="this.onerror=null;this.src='<?=tvs_h(tvs_category_asset($main))?>'" alt=""></a>
+          <a class="tvs-topic-image" href="<?=tvs_h(tvs_news_url($main))?>"><img class="<?=$isEditorialFallback?'tvs-editorial-thumb':''?>" src="<?=tvs_h($img)?>" onerror="this.onerror=null;this.src='<?=tvs_h(tvs_category_asset($main))?>'" alt=""></a>
           <div class="tvs-topic-content">
             <h3><?=tvs_h($cityName)?><span>.</span></h3>
             <a class="tvs-topic-title" href="<?=tvs_h(tvs_news_url($main))?>"><?=tvs_h(tvs_title($main['title']??'',82))?></a>
