@@ -2085,6 +2085,7 @@ function tvs_publish_from_queue($id,$post){
   // A imagem é independente da validade editorial, mas o conteúdo não é.
   // Nenhuma matéria incompleta pode ser publicada apenas porque recebeu score alto.
   $title=trim($post['title']??$found['title']??'');
+  if(function_exists('tvs_editorial_clean_title')) $title=tvs_editorial_clean_title($title,$post['source']??$found['source']??'');
   $body=trim($post['body']??$found['body']??'');
   $candidate=$found;
   $candidate['title']=$title;

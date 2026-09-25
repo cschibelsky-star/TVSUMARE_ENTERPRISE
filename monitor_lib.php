@@ -13,6 +13,42 @@ function tvs_clean_text($s){
   return trim($s);
 }
 
+function tvs_editorial_clean_title($title,$source=''){
+  $title=tvs_clean_text((string)$title);
+  if($title==='') return '';
+  $sources=['G1','Portal ON','sampi.net.br','Sampi Campinas','Hora Campinas','Notícia FM','Noticias FM','Hortonews','Google News','Google Notícias','R7','UOL','CNN Brasil','Todo Dia','O Regional Net'];
+  $source=tvs_clean_text((string)$source);
+  if($source!=='') $sources[]=$source;
+  foreach(array_unique($sources) as $src){
+    $src=trim((string)$src);
+    if($src==='') continue;
+    $q=preg_quote($src,'~');
+    $title=preg_replace('~\s*(?:[-–—|•:]\s*)?'.$q.'\s*$~iu','',$title);
+  }
+  return trim(preg_replace('/\s+/u',' ',$title));
+}
+
+function tvs_editorial_body_is_thin($title,$body,$source=''){
+  $title=tvs_editorial_clean_title($title,$source);
+  $body=tvs_clean_text((string)$body);
+  if($body==='') return true;
+  $bodyWithoutSource=$body;
+  foreach(['G1','Portal ON','sampi.net.br','Sampi Campinas','Hora Campinas','Notícia FM','Noticias FM','Hortonews','Google News','Google Notícias','R7','UOL','CNN Brasil','Todo Dia','O Regional Net'] as $src){
+    $bodyWithoutSource=preg_replace('~\s*(?:[-–—|•:]\s*)?'.preg_quote($src,'~').'\s*$~iu','',$bodyWithoutSource);
+  }
+  $norm=function($s){
+    $s=tvs_lower(tvs_clean_text((string)$s));
+    $s=preg_replace('~[^\p{L}\p{N}]+~u',' ',$s);
+    return trim(preg_replace('/\s+/u',' ',$s));
+  };
+  $nt=$norm($title); $nb=$norm($bodyWithoutSource);
+  if($nt!=='' && ($nb===$nt || strpos($nb,$nt)===0 && str_word_count($bodyWithoutSource,'0..9áàâãéèêíïóôõöúçñÁÀÂÃÉÈÊÍÏÓÔÕÖÚÇÑ')<35)) return true;
+  $words=preg_split('/\s+/u',trim($bodyWithoutSource),-1,PREG_SPLIT_NO_EMPTY);
+  if(count($words)<55) return true;
+  if(tvs_strlen($bodyWithoutSource)<300) return true;
+  return false;
+}
+
 
 function tvs_is_skip_or_navigation_title($title){
   $t = tvs_lower(tvs_clean_text((string)$title));

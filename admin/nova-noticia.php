@@ -125,9 +125,12 @@ if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'){
       $error='Rascunho enriquecido inválido ou expirado. Faça o enriquecimento novamente antes de publicar.';
     } else {
       $title=tvs_quick_post('title');
+      if(function_exists('tvs_editorial_clean_title')) $title=tvs_editorial_clean_title($title,tvs_quick_post('source','Redação TV Sumaré'));
       $body=tvs_quick_post('body');
       if($title==='' || $body===''){
         $error='Título e texto são obrigatórios para publicação.';
+      } elseif(function_exists('tvs_editorial_body_is_thin') && tvs_editorial_body_is_thin($title,$body,tvs_quick_post('source','Redação TV Sumaré'))){
+        $error='O texto ainda está curto ou repete a manchete. Enriqueça e revise a matéria antes de publicar.';
       } else {
         $file=dirname(__DIR__).'/data/noticias.json';
         $arr=tvs_read_json_file($file);

@@ -78,6 +78,10 @@ function tvs_admin_invalid_draft($draft,&$reason=''){
     $reason='Conteúdo de menu, boilerplate ou página genérica detectado.';
     return true;
   }
+  if(function_exists('tvs_editorial_body_is_thin') && tvs_editorial_body_is_thin($title,$body,$source)){
+    $reason='Texto jornalístico insuficiente ou repetição da manchete.';
+    return true;
+  }
   if(tvs_admin_region_city_detect($draft)===''){
     $reason='Matéria fora do recorte regional da TV Sumaré ou sem cidade regional comprovada no conteúdo.';
     return true;
@@ -110,6 +114,7 @@ if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'){
 
   if($action==='save' || $action==='publish'){
     $drafts[$idx]['title']=tvs_admin_clean_field($_POST['title']??($drafts[$idx]['title']??''));
+    if(function_exists('tvs_editorial_clean_title')) $drafts[$idx]['title']=tvs_editorial_clean_title($drafts[$idx]['title'],$drafts[$idx]['source']??'');
     $drafts[$idx]['subtitle']=tvs_admin_clean_field($_POST['subtitle']??($drafts[$idx]['subtitle']??''));
     $drafts[$idx]['body']=tvs_admin_clean_field($_POST['body']??($drafts[$idx]['body']??''));
     $drafts[$idx]['category']=trim((string)($_POST['category']??($drafts[$idx]['category']??'Cidades'))) ?: 'Cidades';
