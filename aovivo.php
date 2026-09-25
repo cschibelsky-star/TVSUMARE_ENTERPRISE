@@ -149,6 +149,10 @@ $secondsToReload=0;
 if($slotEnd!==null && $selectionReason==='grade automática'){
   $secondsToReload=max(15,(($slotEnd-$nowMinutes)*60)-(int)date('s')+2);
 }
+
+$breakVideoPath='media/tvsumare-break-20min.mp4';
+$breakVideoReady=is_file(__DIR__.'/'.$breakVideoPath);
+$breakIntervalMinutes=20;
 ?>
 <!doctype html>
 <html lang="pt-BR">
@@ -165,6 +169,11 @@ if($slotEnd!==null && $selectionReason==='grade automática'){
 .live-badge{display:inline-flex;align-items:center;gap:7px;padding:7px 10px;border-radius:999px;background:#ef4444;font-size:12px;font-weight:900}
 .live-next{margin-top:14px;padding:12px 14px;border:1px solid #e5e7eb;border-radius:12px;background:#fff}
 .live-next strong{display:block;margin-bottom:4px}.live-attribution{margin-top:10px;font-size:12px;color:#64748b}
+.live-player{position:relative;overflow:hidden}
+.live-break-overlay{position:absolute;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;background:#000;opacity:0;pointer-events:none;transition:opacity .75s ease}
+.live-break-overlay.is-active{opacity:1;pointer-events:auto}
+.live-break-overlay video{width:100%;height:100%;object-fit:contain;background:#000}
+.live-break-status{position:absolute;left:14px;bottom:12px;z-index:22;padding:7px 10px;border-radius:999px;background:rgba(6,26,77,.86);color:#fff;font-size:11px;font-weight:800;letter-spacing:.03em}
 </style>
 </head>
 <body>
@@ -197,6 +206,12 @@ if($slotEnd!==null && $selectionReason==='grade automática'){
             <a class="btn btn-primary" href="<?=tvs_live_h($selected['url'])?>" target="_blank" rel="noopener">▶ Abrir fonte oficial</a>
           <?php endif; ?>
         <?php endif; ?>
+        <?php if($breakVideoReady): ?>
+          <div id="liveBreakOverlay" class="live-break-overlay" aria-hidden="true">
+            <video id="liveBreakVideo" preload="auto" playsinline src="<?=tvs_live_h($breakVideoPath)?>"></video>
+            <span class="live-break-status">TV Sumaré</span>
+          </div>
+        <?php endif; ?>
       </div>
 
       <div class="live-attribution">A TV Sumaré incorpora fontes oficiais quando disponíveis. O conteúdo externo permanece identificado pela emissora de origem.</div>
@@ -226,6 +241,89 @@ if($slotEnd!==null && $selectionReason==='grade automática'){
   </div>
 </main>
 <?php include 'rodape.php'; ?>
+<?php if($breakVideoReady): ?>
+<script>
+(function(){
+  const overlay=document.getElementById('liveBreakOverlay');
+  const video=document.getElementById('liveBreakVideo');
+  const player=document.querySelector('.live-player');
+  const intervalMs=<?=((int)$breakIntervalMinutes)*60*1000?>;
+  const fadeMs=750;
+  let running=false;
+  let timer=null;
+  let savedIframeSrc='';
+  let unlocked=false;
+
+  function currentIframe(){ return player ? player.querySelector('.live-embed-full iframe') : null; }
+
+  function unlockAudio(){
+    unlocked=true;
+    video.muted=false;
+    video.volume=1;
+  }
+  ['click','touchstart','keydown'].forEach(function(evt){
+    window.addEventListener(evt,unlockAudio,{once:true,passive:true});
+  });
+
+  function suspendLive(){
+    const iframe=currentIframe();
+    if(!iframe) return;
+    savedIframeSrc=iframe.getAttribute('src')||'';
+    if(savedIframeSrc) iframe.setAttribute('src','about:blank');
+  }
+
+  function restoreLive(done){
+    const iframe=currentIframe();
+    if(!iframe || !savedIframeSrc){ if(done) done(); return; }
+    let finished=false;
+    const finish=function(){ if(finished) return; finished=true; if(done) done(); };
+    iframe.addEventListener('load',finish,{once:true});
+    iframe.setAttribute('src',savedIframeSrc);
+    setTimeout(finish,1800);
+  }
+
+  function scheduleNext(){
+    if(timer) clearTimeout(timer);
+    const now=Date.now();
+    const next=(Math.floor(now/intervalMs)+1)*intervalMs;
+    timer=setTimeout(runBreak,Math.max(1000,next-now));
+  }
+
+  function finishBreak(){
+    video.pause();
+    video.currentTime=0;
+    restoreLive(function(){
+      overlay.classList.remove('is-active');
+      overlay.setAttribute('aria-hidden','true');
+      setTimeout(function(){ running=false; scheduleNext(); },fadeMs+100);
+    });
+  }
+
+  function runBreak(){
+    if(running){ scheduleNext(); return; }
+    running=true;
+    overlay.setAttribute('aria-hidden','false');
+    overlay.classList.add('is-active');
+    suspendLive();
+    video.currentTime=0;
+    video.muted=!unlocked;
+    video.volume=1;
+    const promise=video.play();
+    if(promise && typeof promise.catch==='function'){
+      promise.catch(function(){
+        video.muted=true;
+        video.play().catch(function(){ finishBreak(); });
+      });
+    }
+  }
+
+  video.addEventListener('ended',finishBreak);
+  video.addEventListener('error',function(){ if(running) finishBreak(); });
+  document.addEventListener('visibilitychange',function(){ if(!document.hidden && !running) scheduleNext(); });
+  scheduleNext();
+})();
+</script>
+<?php endif; ?>
 <?php if($secondsToReload>0): ?>
 <script>
 setTimeout(function(){ window.location.reload(); }, <?=((int)$secondsToReload)*1000?>);
