@@ -38,7 +38,18 @@ function tvs_centro_ia_generate_text($prompt,$generationConfig=[],$timeout=45){
 
     $configured=trim((string)(getenv('CENTRO_IA_URL') ?: ''));
     $fallback='https://core.hml.vitrineiapro.com.br/api/internal/centro-ia/execute';
-    $url=(function_exists('tvs_outbound_url_is_allowed') && tvs_outbound_url_is_allowed($configured)) ? $configured : $fallback;
+    $url=$fallback;
+
+    if($configured!==''){
+        $parts=parse_url($configured);
+        $path=is_array($parts) ? trim((string)($parts['path']??'')) : '';
+        $candidate=($path==='' || $path==='/')
+            ? rtrim($configured,'/').'/api/internal/centro-ia/execute'
+            : $configured;
+        if(function_exists('tvs_outbound_url_is_allowed') && tvs_outbound_url_is_allowed($candidate)){
+            $url=$candidate;
+        }
+    }
 
     $outboundOptions=tvs_outbound_curl_options($url,max(15,(int)$timeout));
     if($outboundOptions===null) return ['ok'=>false,'error'=>'URL do Centro IA bloqueada pela política de saída.'];
