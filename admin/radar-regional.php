@@ -815,6 +815,16 @@ function tvs_radar_source_section_urls($domain,$city=''){
 
 
 function tvs_radar_is_article_path($url,$title='',$city=''){
+  $queryParams=[];
+  parse_str((string)(parse_url((string)$url,PHP_URL_QUERY)??''),$queryParams);
+  $isQueryArticle=
+    tvs_lower((string)($queryParams['a']??''))==='noticia'
+    && preg_match('~^[0-9]+$~',(string)($queryParams['id']??''))===1;
+
+  // Alguns portais públicos, como Americana, identificam matérias por query string
+  // (?a=noticia&id=...). A confirmação final ainda valida título, corpo e cidade.
+  if($isQueryArticle) return true;
+
   $path=(string)(parse_url((string)$url,PHP_URL_PATH)??'');
   $path=trim($path,'/');
   if($path==='') return false;
@@ -975,16 +985,22 @@ function tvs_radar_find_article_in_html($domain,$html,$title){
       $candidateTitle
     );
 
+    $queryParams=[];
+    parse_str((string)(parse_url($candidateUrl,PHP_URL_QUERY)??''),$queryParams);
+    $isQueryArticle=
+      tvs_lower((string)($queryParams['a']??''))==='noticia'
+      && preg_match('~^[0-9]+$~',(string)($queryParams['id']??''))===1;
+
     $slugText=str_replace(
       ['-','_'],
       ' ',
       basename($normalizedPath)
     );
 
-    $slugScore=tvs_radar_title_match_score(
-      $title,
-      $slugText
-    );
+    // Em portais com artigo por ID, o texto da âncora substitui o slug genérico.
+    $slugScore=$isQueryArticle
+      ? $score
+      : tvs_radar_title_match_score($title,$slugText);
 
     if($score<55 || $slugScore<45){
       continue;
@@ -3888,10 +3904,16 @@ $editCanApprove=$editItem && !empty($editItem['ai_editor_processed']) && !empty(
 <?php else: ?>
 <?php
 $discarded=tvs_read_json_file(dirname(__DIR__).'/data/pautas_descartadas.json');
-$processingKeys=[];
-foreach(array_merge($processingQueue,tvs_radar_discovery_read()) as $processingItem) $processingKeys[tvs_radar_discovery_key($processingItem)]=1;
-$totalProcessing=count($processingKeys);
-?><div class="cards"><div class="stat"><span>Prontas para aprovação</span><b><?=count($normalQueue)+count($sensitiveQueue)+count($imageReviewQueue)?></b><small>Editor IA e validação concluídos</small></div><div class="stat"><span>Em processamento</span><b><?=$totalProcessing?></b><small><a href="drafts.php">ver todas e os motivos</a></small></div><div class="stat"><span>Revisão obrigatória</span><b><?=count($sensitiveQueue)?></b><small>pautas sensíveis ou de alto impacto</small></div><div class="stat"><span>Revisão de imagem</span><b><?=count($imageReviewQueue)?></b><small>texto pronto; imagem precisa ser confirmada</small></div></div>
+$sourcePendingKeys=[];
+foreach(tvs_radar_discovery_read() as $processingItem) $sourcePendingKeys[tvs_radar_discovery_key($processingItem)]=1;
+$editorPendingKeys=[];
+foreach($processingQueue as $processingItem){
+  $processingKey=tvs_radar_discovery_key($processingItem);
+  if(!isset($sourcePendingKeys[$processingKey])) $editorPendingKeys[$processingKey]=1;
+}
+$totalSourcePending=count($sourcePendingKeys);
+$totalEditorPending=count($editorPendingKeys);
+?><div class="cards"><div class="stat"><span>Prontas para aprovação</span><b><?=count($normalQueue)+count($sensitiveQueue)+count($imageReviewQueue)?></b><small>Editor IA e validação concluídos</small></div><div class="stat"><span>Aguardando fonte original</span><b><?=$totalSourcePending?></b><small>descobertas em resolução e enriquecimento</small></div><div class="stat"><span>Aguardando Editor IA</span><b><?=$totalEditorPending?></b><small><a href="drafts.php">ver matérias e motivos</a></small></div><div class="stat"><span>Revisão obrigatória</span><b><?=count($sensitiveQueue)?></b><small>pautas sensíveis ou de alto impacto</small></div><div class="stat"><span>Revisão de imagem</span><b><?=count($imageReviewQueue)?></b><small>texto pronto; imagem precisa ser confirmada</small></div></div>
 <?php if($sensitiveQueue): ?><section class="city-block"><h2>Revisão obrigatória <small class="muted">(<?=count($sensitiveQueue)?>)</small></h2><div class="queue-grid"><?php foreach($sensitiveQueue as $m): ?><article class="matter"><span class="badge" style="background:#fef2f2;color:#b91c1c">Revisão obrigatória</span><span class="badge"><?=h($m['editorial_status']??'Revisão')?></span><?php if(isset($m['editorial_score'])): ?><span class="badge">Score <?=h($m['editorial_score'])?></span><?php endif; ?><h3><?=h($m['title']??'Sem título')?></h3><p><?=h($m['subtitle']??($m['summary']??''))?></p><a class="btn orange" href="?edit=<?=h($m['id'])?>">Revisar</a></article><?php endforeach; ?></div></section><?php endif; ?>
 <?php if($imageReviewQueue): ?><section class="city-block"><h2>Revisão de imagem <small class="muted">(<?=count($imageReviewQueue)?>)</small></h2><div class="queue-grid"><?php foreach($imageReviewQueue as $m): ?><article class="matter"><span class="badge" style="background:#fff7ed;color:#c2410c">Imagem pendente</span><h3><?=h($m['title']??'Sem título')?></h3><p><?=h($m['image_review_reason']??'Revisar imagem antes da publicação.')?></p><a class="btn orange" href="?edit=<?=h($m['id'])?>">Corrigir imagem</a></article><?php endforeach; ?></div></section><?php endif; ?>
 <form id="bulk-form" method="post" class="settings-box bulk-row" onsubmit="return confirm('Aplicar a ação nas matérias selecionadas?');"><?=tvs_csrf_field()?><label class="check"><input type="checkbox" id="select-all-radar"> Selecionar todas visíveis</label><button class="btn orange" type="submit" name="action" value="bulk_approve">Aprovar selecionadas</button><button class="btn secondary" type="submit" name="action" value="bulk_review">Enviar para revisão</button><button class="btn secondary" type="submit" name="action" value="bulk_discard">Descartar selecionadas</button><span class="muted">Use os checkboxes dos cards para operar várias matérias de uma vez.</span></form>
