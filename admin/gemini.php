@@ -3,6 +3,7 @@ require_once (is_file(__DIR__.'/includes/outbound_guard.php') ? __DIR__.'/includ
 function tvs_ai_substr($s,$start,$len=null){ if(function_exists('tvs_substr')) return tvs_substr($s,$start,$len); return function_exists('mb_substr') ? mb_substr((string)$s,$start,$len,'UTF-8') : substr((string)$s,$start,$len); }
 function tvs_ai_strlen($s){ if(function_exists('tvs_strlen')) return tvs_strlen($s); return function_exists('mb_strlen') ? mb_strlen((string)$s,'UTF-8') : strlen((string)$s); }
 function tvs_ai_log($msg){
+    $GLOBALS['tvs_ai_last_error']=(string)$msg;
     $file = dirname(__DIR__).'/data/ia_erros.log';
     @file_put_contents($file, '['.date('c').'] '.$msg."\n", FILE_APPEND);
 }

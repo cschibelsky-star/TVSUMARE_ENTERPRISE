@@ -3191,9 +3191,12 @@ function tvs_radar_retry_pending_editor_articles(&$approval,$limit=6){
         (array)($item['queue_pending_reasons']??[]),['Editor IA ainda não concluiu; nova tentativa automática será realizada']
       ))));
       if(PHP_SAPI==='cli'){
+        $diag=trim((string)($GLOBALS['tvs_ai_last_error']??'sem_detalhe'));
+        $diag=preg_replace('/\\s+/u',' ',$diag);
         echo "EDITOR_RETRY_FAIL attempts=".(int)$item['ai_editor_attempts']
           ." city=".str_replace(' ','_',(string)($item['city']??'Região'))
           ." words=".tvs_radar_word_count((string)($item['body']??''))
+          ." reason=".substr($diag,0,260)
           ." title=".substr(preg_replace('/\\s+/u',' ',(string)($item['title']??'')),0,120)."\n";
       }
       continue;
