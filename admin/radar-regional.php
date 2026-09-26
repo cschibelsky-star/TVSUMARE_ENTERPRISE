@@ -806,6 +806,12 @@ function tvs_radar_source_section_urls($domain,$city=''){
     $urls[]=$domain.'/categoria/'.$citySlug;
   }
 
+  // Americana publica a listagem e as matérias no mesmo script, diferenciadas
+  // pelos parâmetros a=noticias e a=noticia&id=... .
+  if(tvs_radar_source_host($domain)==='americana.sp.gov.br'){
+    $urls[]=$domain.'/americana-index.php?a=noticias';
+  }
+
   $urls[]=$domain.'/noticias';
   $urls[]=$domain.'/cidades';
   $urls[]=$domain;
