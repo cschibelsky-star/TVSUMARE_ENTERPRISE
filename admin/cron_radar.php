@@ -92,6 +92,299 @@ $_SERVER['REQUEST_METHOD']='CRON';
 require_once __DIR__.'/radar-regional.php';
 
 /*
+ * EDITORIAL RULE v1.1 — retroactive backlog simulation.
+ * Read-only over discovery/approval/news. Network resolution runs in dry-run mode
+ * and does not persist cache/backlog mutations.
+ */
+$retroSimMarker=dirname(__DIR__).'/data/editorial_v11_retro_simulation_done.json';
+if(!is_file($retroSimMarker)){
+  $sim=tvs_radar_simulate_backlog_v11();
+  $payload=[
+    'executed_at'=>date('c'),
+    'editorial_rule_version'=>'1.1',
+    'mode'=>'read_only_simulation',
+    'metrics'=>$sim['metrics']??[],
+    'rows'=>$sim['rows']??[]
+  ];
+  tvs_save_json_file($retroSimMarker,$payload);
+  echo 'EDITORIAL_V11_RETRO_SIM '.json_encode($payload['metrics'],JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n";
+  @file_put_contents($cronLogFile,date('c').' EDITORIAL_V11_RETRO_SIM '.json_encode($payload['metrics'],JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n",FILE_APPEND|LOCK_EX);
+  exit(0);
+}
+
+/*
+ * EDITORIAL RULE v1.1 — controlled retroactive pilot.
+ * Processes at most 10 backlog candidates through the canonical pipeline,
+ * ignoring only enrichment_next_retry_at. It never auto-publishes.
+ */
+$retroPilotMarker=dirname(__DIR__).'/data/editorial_v11_retro_pilot_done.json';
+if(!is_file($retroPilotMarker)){
+  $dataDir=dirname(__DIR__).'/data';
+  $stamp=date('Ymd_His');
+  $beforeDiscovery=tvs_radar_discovery_read();
+  $beforeQueue=tvs_queue_read();
+  $beforeNews=tvs_read_json_file($newsFile); if(!is_array($beforeNews)) $beforeNews=[];
+
+  if(is_file($dataDir.'/radar_discovery_queue.json')) @copy($dataDir.'/radar_discovery_queue.json',$dataDir.'/radar_discovery_queue.retro-pilot-'.$stamp.'.json');
+  if(is_file($dataDir.'/materias_aprovacao.json')) @copy($dataDir.'/materias_aprovacao.json',$dataDir.'/materias_aprovacao.retro-pilot-'.$stamp.'.json');
+
+  $beforeMap=[];
+  foreach($beforeDiscovery as $row){
+    $id=(string)($row['id']??'');
+    if($id!=='') $beforeMap[$id]=[
+      'attempts'=>(int)($row['pipeline_attempts']??0),
+      'stage'=>(string)($row['pipeline_stage']??'')
+    ];
+  }
+
+  $generated=tvs_radar_process_discovery('normal',10,[
+    'force_retry'=>true,
+    'max_candidates'=>10,
+    'max_generated'=>10,
+    'editorial_rule_version'=>'1.1',
+    'reprocess_reason'=>'retroactive_rule_upgrade'
+  ]);
+
+  $afterDiscovery=tvs_radar_discovery_read();
+  $afterQueue=tvs_queue_read();
+  $afterNews=tvs_read_json_file($newsFile); if(!is_array($afterNews)) $afterNews=[];
+  $afterMap=[];
+  foreach($afterDiscovery as $row){
+    $id=(string)($row['id']??'');
+    if($id!=='') $afterMap[$id]=$row;
+  }
+
+  $changed=0; $removedToQueue=0; $states=[];
+  foreach($beforeMap as $id=>$meta){
+    if(!isset($afterMap[$id])){
+      $changed++;
+      $removedToQueue++;
+      $states['fila_humana']=($states['fila_humana']??0)+1;
+      continue;
+    }
+    $afterAttempts=(int)($afterMap[$id]['pipeline_attempts']??0);
+    if($afterAttempts>$meta['attempts']){
+      $changed++;
+      $stage=(string)($afterMap[$id]['pipeline_stage']??'desconhecido');
+      $states[$stage]=($states[$stage]??0)+1;
+    }
+  }
+
+  $integrity=(count($afterNews)===count($beforeNews) && $changed<=10);
+  $payload=[
+    'executed_at'=>date('c'),
+    'editorial_rule_version'=>'1.1',
+    'mode'=>'controlled_pilot',
+    'backlog_before'=>count($beforeDiscovery),
+    'backlog_after'=>count($afterDiscovery),
+    'queue_before'=>count($beforeQueue),
+    'queue_after'=>count($afterQueue),
+    'published_before'=>count($beforeNews),
+    'published_after'=>count($afterNews),
+    'candidates_changed'=>$changed,
+    'generated_to_editorial_queue'=>$generated,
+    'removed_to_queue'=>$removedToQueue,
+    'states_after'=>$states,
+    'integrity_ok'=>$integrity?1:0,
+    'backup_stamp'=>$stamp
+  ];
+  tvs_save_json_file($retroPilotMarker,$payload);
+  echo 'EDITORIAL_V11_RETRO_PILOT '.json_encode($payload,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n";
+  @file_put_contents($cronLogFile,date('c').' EDITORIAL_V11_RETRO_PILOT '.json_encode($payload,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n",FILE_APPEND|LOCK_EX);
+  exit(0);
+}
+
+/*
+ * EDITORIAL RULE v1.1 — pilot validation checkpoint.
+ * Read-only against the post-pilot state. Remainder processing is blocked
+ * unless this checkpoint passes.
+ */
+$retroPilotValidationMarker=dirname(__DIR__).'/data/editorial_v11_retro_pilot_validation_done.json';
+if(is_file($retroPilotMarker) && !is_file($retroPilotValidationMarker)){
+  $queue=tvs_queue_read();
+  $retro=[]; $seenKeys=[]; $duplicateRetro=0;
+  $editorProcessed=0; $publicationEligible=0; $metadataOk=1;
+
+  foreach($queue as $item){
+    if(($item['reprocess_reason']??'')!=='retroactive_rule_upgrade') continue;
+    if(($item['editorial_rule_version']??'')!=='1.1') continue;
+    $retro[]=$item;
+    $key=tvs_radar_discovery_key($item);
+    if(isset($seenKeys[$key])) $duplicateRetro++;
+    $seenKeys[$key]=1;
+    if(!empty($item['ai_editor_processed'])) $editorProcessed++;
+    if(!empty($item['publication_eligible'])) $publicationEligible++;
+    if(empty($item['previous_pipeline_stage']) || empty($item['new_pipeline_stage'])) $metadataOk=0;
+  }
+
+  $pilot=tvs_read_json_file($retroPilotMarker); if(!is_array($pilot)) $pilot=[];
+  $integrity=!empty($pilot['integrity_ok'])
+    && $duplicateRetro===0
+    && $metadataOk===1
+    && count($retro)===(int)($pilot['generated_to_editorial_queue']??0);
+
+  $payload=[
+    'executed_at'=>date('c'),
+    'retro_queue_items'=>count($retro),
+    'editor_processed'=>$editorProcessed,
+    'publication_eligible'=>$publicationEligible,
+    'duplicate_retro_items'=>$duplicateRetro,
+    'metadata_ok'=>$metadataOk,
+    'pilot_integrity_ok'=>!empty($pilot['integrity_ok'])?1:0,
+    'validation_ok'=>$integrity?1:0
+  ];
+  tvs_save_json_file($retroPilotValidationMarker,$payload);
+  echo 'EDITORIAL_V11_RETRO_PILOT_VALIDATION '.json_encode($payload,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n";
+  @file_put_contents($cronLogFile,date('c').' EDITORIAL_V11_RETRO_PILOT_VALIDATION '.json_encode($payload,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n",FILE_APPEND|LOCK_EX);
+  exit(0);
+}
+
+/*
+ * EDITORIAL RULE v1.1 — pilot validation v2.
+ * Rechecks the pilot after enforcing the canonical Editor IA publication gate.
+ */
+$retroPilotValidationV2Marker=dirname(__DIR__).'/data/editorial_v11_retro_pilot_validation_v2_done.json';
+if(is_file($retroPilotMarker) && !is_file($retroPilotValidationV2Marker)){
+  $gate=tvs_radar_enforce_queue_rules(true);
+  $queue=tvs_queue_read();
+  $retro=[]; $seenKeys=[]; $duplicateRetro=0;
+  $editorProcessed=0; $publicationEligible=0; $unsafeEditorBypass=0; $metadataOk=1;
+
+  foreach($queue as $item){
+    if(($item['reprocess_reason']??'')!=='retroactive_rule_upgrade') continue;
+    if(($item['editorial_rule_version']??'')!=='1.1') continue;
+    $retro[]=$item;
+    $key=tvs_radar_discovery_key($item);
+    if(isset($seenKeys[$key])) $duplicateRetro++;
+    $seenKeys[$key]=1;
+    $editorDone=!empty($item['ai_editor_processed']);
+    $eligible=!empty($item['publication_eligible']);
+    if($editorDone) $editorProcessed++;
+    if($eligible) $publicationEligible++;
+    if(!$editorDone && $eligible) $unsafeEditorBypass++;
+    if(empty($item['previous_pipeline_stage']) || empty($item['new_pipeline_stage'])) $metadataOk=0;
+  }
+
+  $pilotRaw=@file_get_contents($retroPilotMarker);
+  $pilot=is_string($pilotRaw)?json_decode($pilotRaw,true):[];
+  if(!is_array($pilot)) $pilot=[];
+
+  $integrity=!empty($pilot['integrity_ok'])
+    && $duplicateRetro===0
+    && $unsafeEditorBypass===0
+    && $metadataOk===1
+    && count($retro)===(int)($pilot['generated_to_editorial_queue']??0);
+
+  $payload=[
+    'executed_at'=>date('c'),
+    'queue_gate_removed'=>(int)($gate['removed']??0),
+    'queue_gate_changed'=>(int)($gate['changed']??0),
+    'retro_queue_items'=>count($retro),
+    'editor_processed'=>$editorProcessed,
+    'publication_eligible'=>$publicationEligible,
+    'unsafe_editor_bypass'=>$unsafeEditorBypass,
+    'duplicate_retro_items'=>$duplicateRetro,
+    'metadata_ok'=>$metadataOk,
+    'pilot_integrity_ok'=>!empty($pilot['integrity_ok'])?1:0,
+    'validation_ok'=>$integrity?1:0
+  ];
+  tvs_save_json_file($retroPilotValidationV2Marker,$payload);
+  echo 'EDITORIAL_V11_RETRO_PILOT_VALIDATION_V2 '.json_encode($payload,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n";
+  @file_put_contents($cronLogFile,date('c').' EDITORIAL_V11_RETRO_PILOT_VALIDATION_V2 '.json_encode($payload,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n",FILE_APPEND|LOCK_EX);
+  exit(0);
+}
+
+/* Régua v1.1 — reprocessamento restante em lotes canônicos de até 10. Trigger controlado 4. */
+$retroBatchStateFile=dirname(__DIR__).'/data/editorial_v11_retro_batches_state.json';
+if(is_file($retroPilotMarker)){
+  $stateRaw=@file_get_contents($retroBatchStateFile);
+  $batchState=is_string($stateRaw)?json_decode($stateRaw,true):[];
+  if(!is_array($batchState)) $batchState=[];
+
+  if(!empty($batchState['halted'])){
+    $gate=tvs_radar_enforce_queue_rules(true);
+    $retroSeen=[]; $dup=0; $unsafe=0;
+    foreach(tvs_queue_read() as $item){
+      if(($item['reprocess_reason']??'')!=='retroactive_rule_upgrade' || ($item['editorial_rule_version']??'')!=='1.1') continue;
+      $key=tvs_radar_discovery_key($item);
+      if(isset($retroSeen[$key])) $dup++;
+      $retroSeen[$key]=1;
+      if(empty($item['ai_editor_processed']) && !empty($item['publication_eligible'])) $unsafe++;
+    }
+    if($dup===0 && $unsafe===0){
+      $batchState['halted']=0;
+      $batchState['resumed_at']=date('c');
+      $batchState['resume_reason']='canonical_queue_dedup_and_editor_gate';
+      $batchState['resume_gate_removed']=(int)($gate['removed']??0);
+      @file_put_contents($retroBatchStateFile,json_encode($batchState,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_PRETTY_PRINT),LOCK_EX);
+      echo 'EDITORIAL_V11_RETRO_RESUME dup=0 unsafe_editor_bypass=0'."\n";
+    }
+  }
+
+  if(empty($batchState['complete']) && empty($batchState['halted'])){
+    $beforeDiscovery=tvs_radar_discovery_read();
+    $beforeNews=tvs_read_json_file($newsFile); if(!is_array($beforeNews)) $beforeNews=[];
+
+    $beforeUnprocessed=0;
+    foreach($beforeDiscovery as $row){
+      if(($row['reprocess_reason']??'')!=='retroactive_rule_upgrade' || ($row['editorial_rule_version']??'')!=='1.1') $beforeUnprocessed++;
+    }
+
+    $generated=tvs_radar_process_discovery('normal',10,[
+      'force_retry'=>true,
+      'max_candidates'=>10,
+      'max_generated'=>10,
+      'editorial_rule_version'=>'1.1',
+      'reprocess_reason'=>'retroactive_rule_upgrade'
+    ]);
+
+    $afterDiscovery=tvs_radar_discovery_read();
+    $afterNews=tvs_read_json_file($newsFile); if(!is_array($afterNews)) $afterNews=[];
+    $afterUnprocessed=0;
+    foreach($afterDiscovery as $row){
+      if(($row['reprocess_reason']??'')!=='retroactive_rule_upgrade' || ($row['editorial_rule_version']??'')!=='1.1') $afterUnprocessed++;
+    }
+    $processedNow=max(0,$beforeUnprocessed-$afterUnprocessed);
+
+    $queue=tvs_queue_read();
+    $retroSeen=[]; $duplicateRetro=0; $unsafeEditorBypass=0;
+    foreach($queue as $item){
+      if(($item['reprocess_reason']??'')!=='retroactive_rule_upgrade' || ($item['editorial_rule_version']??'')!=='1.1') continue;
+      $key=tvs_radar_discovery_key($item);
+      if(isset($retroSeen[$key])) $duplicateRetro++;
+      $retroSeen[$key]=1;
+      if(empty($item['ai_editor_processed']) && !empty($item['publication_eligible'])) $unsafeEditorBypass++;
+    }
+
+    $integrity=count($afterNews)===count($beforeNews)
+      && $processedNow<=10
+      && $duplicateRetro===0
+      && $unsafeEditorBypass===0;
+
+    $batchNo=(int)($batchState['last_batch']??0)+1;
+    $batchState['last_batch']=$batchNo;
+    $batchState['updated_at']=date('c');
+    $batchState['remaining_unprocessed']=$afterUnprocessed;
+    $batchState['complete']=$afterUnprocessed===0?1:0;
+    $batchState['halted']=$integrity?0:1;
+    $batchState['batches'][]=[
+      'batch'=>$batchNo,
+      'processed'=>$processedNow,
+      'generated'=>$generated,
+      'remaining'=>$afterUnprocessed,
+      'duplicate_retro_items'=>$duplicateRetro,
+      'unsafe_editor_bypass'=>$unsafeEditorBypass,
+      'published_unchanged'=>count($afterNews)===count($beforeNews)?1:0,
+      'integrity_ok'=>$integrity?1:0
+    ];
+    @file_put_contents($retroBatchStateFile,json_encode($batchState,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_PRETTY_PRINT),LOCK_EX);
+
+    echo 'EDITORIAL_V11_RETRO_BATCH '.json_encode(end($batchState['batches']),JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n";
+    exit(0);
+  }
+}
+
+/*
  * QUALITY REPAIR 2026-09-25 — one-shot.
  * Retira do ar matérias antigas que chegaram publicadas apenas com manchete/RSS,
  * limpa sufixos de fonte do título e devolve itens incompletos para revisão.
