@@ -2174,6 +2174,35 @@ function tvs_radar_ready_count_by_city($queue){
   }
   return $counts;
 }
+
+function tvs_radar_ready_categories_by_city($queue){
+  global $cities;
+  $out=[];
+  foreach($cities as $city) $out[$city]=[];
+  foreach((array)$queue as $q){
+    $city=(string)($q['city']??'');
+    if(!isset($out[$city])) continue;
+    if(empty($q['ai_editor_processed']) || empty($q['publication_eligible'])) continue;
+    $cat=trim((string)($q['category']??'Cidade'));
+    if($cat==='') $cat='Cidade';
+    $out[$city][$cat]=($out[$city][$cat]??0)+1;
+  }
+  return $out;
+}
+
+function tvs_radar_final_category_cap($category,$targetPerCity=5){
+  $category=trim((string)$category);
+  // Em uma fila de 5, Esportes ocupa no máximo 1 vaga. As demais editorias
+  // podem ocupar até 2, evitando monocultura editorial sem forçar pauta fraca.
+  if($category==='Esportes') return 1;
+  if($category==='Política') return 1;
+  return 2;
+}
+
+function tvs_radar_category_room($city,$category,$readyCategories,$targetPerCity=5){
+  $used=(int)($readyCategories[$city][$category]??0);
+  return $used < tvs_radar_final_category_cap($category,$targetPerCity);
+}
 function tvs_radar_process_discovery($mode='normal',$targetPerCity=5){
   global $cities;
   $discovery=tvs_radar_discovery_read();
@@ -2181,6 +2210,7 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5){
 
   $approval=tvs_queue_read();
   $ready=tvs_radar_ready_count_by_city($approval);
+  $readyCategories=tvs_radar_ready_categories_by_city($approval);
   $generated=0;
   $maxPerCycle=tvs_radar_is_volume_mode($mode)?12:6;
   $maxTriesPerCity=tvs_radar_is_volume_mode($mode)?6:3;
@@ -2193,14 +2223,21 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5){
     foreach($discovery as $idx=>$cand){
       $requested=(string)($cand['radar_requested_city']??$cand['city']??'');
       if($requested!==$city) continue;
+      $category=trim((string)($cand['category']??$cand['radar_pre_category']??''));
+      if($category==='') $category=tvs_radar_candidate_category($cand);
+      if(!tvs_radar_category_room($city,$category,$readyCategories,$targetPerCity)) continue;
+
       $cityCandidates[]=[
         'idx'=>$idx,
+        'category'=>$category,
+        'category_used'=>(int)($readyCategories[$city][$category]??0),
         'attempts'=>(int)($cand['pipeline_attempts']??0),
         'updated'=>(string)($cand['pipeline_updated_at']??$cand['pipeline_created_at']??'')
       ];
     }
 
     usort($cityCandidates,function($a,$b){
+      if($a['category_used']!==$b['category_used']) return $a['category_used']<=>$b['category_used'];
       if($a['attempts']!==$b['attempts']) return $a['attempts']<=>$b['attempts'];
       return strcmp($a['updated'],$b['updated']);
     });
@@ -2249,11 +2286,23 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5){
       $cand['pipeline_stage']='pronta_para_redacao';
       $article=tvs_generate_ready_article($city,$cand);
       if(is_array($article) && !empty($article['title']) && !empty($article['body'])){
+        $articleCategory=trim((string)($article['category']??$cand['category']??'Cidade'));
+        if($articleCategory==='') $articleCategory='Cidade';
+
+        if(!tvs_radar_category_room($city,$articleCategory,$readyCategories,$targetPerCity)){
+          $cand['pipeline_stage']='aguardando_diversidade';
+          $cand['pipeline_reason']='Editorias já suficientemente representadas na fila desta cidade.';
+          $discovery[$pick]=$cand;
+          tvs_radar_log_event($article['title']??'', $article['source']??($cand['source']??'Fonte'), $city, 'AGUARDANDO_DIVERSIDADE', $cand['pipeline_reason'], $cand['url']??'');
+          continue;
+        }
+
         $approval[]=$article;
         unset($discovery[$pick]);
         $generated++;
         $ready[$city]=($ready[$city]??0)+1;
-        tvs_radar_log_event($article['title']??'', $article['source']??($cand['source']??'Fonte'), $city, ($article['editorial_status']??'REVISÃO'), 'Repórter IA + Editor IA concluídos; matéria entrou na fila editorial.', $cand['url']??'');
+        $readyCategories[$city][$articleCategory]=($readyCategories[$city][$articleCategory]??0)+1;
+        tvs_radar_log_event($article['title']??'', $article['source']??($cand['source']??'Fonte'), $city, ($article['editorial_status']??'REVISÃO'), 'Repórter IA + Editor IA concluídos; matéria entrou na fila editorial com diversidade preservada.', $cand['url']??'');
         break;
       }
 
