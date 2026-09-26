@@ -433,15 +433,34 @@ if (!function_exists('tvp_veo_config')) {
     return ['ok'=>true,'operations'=>$ops,'status'=>'gerando','provider'=>'hub_veo'];
   }
   function tvp_veo_download($url,$dest){
-    $cfg=tvp_veo_config(); $url=trim((string)$url);
-    if(!preg_match('~^https://~i',$url)) return ['ok'=>false,'error'=>'URL de render VEO inválida.'];
+    $cfg=tvp_veo_config();
+    $url=trim((string)$url);
+    if($url!=='' && str_starts_with($url,'/')){
+      $hubBase=rtrim((string)(getenv('MARKETING_ENGINE_URL')?:'https://marketing.hml.vitrineiapro.com.br'),'/');
+      $url=$hubBase.$url;
+    }
+    if(!preg_match('~^https://~i',$url)) return ['ok'=>false,'error'=>'URL de render VEO inválida após normalização.'];
+
+    $host=strtolower((string)parse_url($url,PHP_URL_HOST));
+    if($host==='') return ['ok'=>false,'error'=>'Host da URL de render VEO inválido.'];
+
     $outbound=tvs_outbound_curl_options($url,120); if($outbound===null) return ['ok'=>false,'error'=>'Download VEO bloqueado pela política de saída.'];
     $fp=@fopen($dest,'wb'); if(!$fp) return ['ok'=>false,'error'=>'Falha ao criar arquivo temporário VEO.'];
-    $ch=curl_init($url); curl_setopt_array($ch,$outbound+[CURLOPT_FILE=>$fp,CURLOPT_FOLLOWLOCATION=>false,CURLOPT_HTTPHEADER=>['Accept: video/mp4,video/*;q=0.9,*/*;q=0.1','x-goog-api-key: '.$cfg['api_key']]]);
+
+    $headers=['Accept: video/mp4,video/*;q=0.9,*/*;q=0.1'];
+    if(($host==='googleapis.com' || str_ends_with($host,'.googleapis.com')) && trim((string)($cfg['api_key']??''))!==''){
+      $headers[]='x-goog-api-key: '.$cfg['api_key'];
+    }
+
+    $ch=curl_init($url); curl_setopt_array($ch,$outbound+[
+      CURLOPT_FILE=>$fp,
+      CURLOPT_FOLLOWLOCATION=>false,
+      CURLOPT_HTTPHEADER=>$headers
+    ]);
     $ok=curl_exec($ch); $err=curl_error($ch); $http=(int)curl_getinfo($ch,CURLINFO_HTTP_CODE); curl_close($ch); fclose($fp);
     $size=is_file($dest)?(int)filesize($dest):0;
     if(!$ok || $http<200 || $http>=300 || $size<10240){ @unlink($dest); return ['ok'=>false,'error'=>'Falha no download VEO HTTP '.$http.'. '.$err]; }
-    return ['ok'=>true,'bytes'=>$size];
+    return ['ok'=>true,'bytes'=>$size,'source_host'=>$host];
   }
   function tvp_veo_finalize($uris,$jobId){
     $ffmpeg=trim((string)@shell_exec('command -v ffmpeg 2>/dev/null')); if($ffmpeg==='') return ['ok'=>false,'error'=>'FFmpeg indisponível.'];

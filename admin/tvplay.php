@@ -143,7 +143,15 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
     $idx=null; $jobs=null; $job=tvp_find_job($_POST['job_id']??'',$jobs,$idx);
     if(!$job) tvp_admin_redirect(['err'=>'Job não encontrado.']);
     $r=tvp_check_veo($job);
-    if(!$r['ok']){ $jobs[$idx]['status']='erro'; $jobs[$idx]['veo_failure']=$r['error']??'Falha VEO'; $jobs[$idx]['updated_at']=date('c'); tvp_save_video_jobs($jobs); tvp_admin_redirect(['err'=>$r['error']??'Falha ao consultar VEO.']); }
+    if(!$r['ok']){
+      $veoError=(string)($r['error']??'Falha VEO');
+      $terminal=str_contains($veoError,'Hub IA informou falha na geração VEO');
+      $jobs[$idx]['status']=$terminal?'erro':'gerando';
+      $jobs[$idx]['veo_failure']=$veoError;
+      $jobs[$idx]['updated_at']=date('c');
+      tvp_save_video_jobs($jobs);
+      tvp_admin_redirect(['err'=>$veoError.($terminal?'':' A operação foi preservada para nova tentativa.')]);
+    }
     if(isset($r['progress'])) $jobs[$idx]['veo_progress']=$r['progress'];
     if(!empty($r['video_url'])){ $jobs[$idx]['video_url']=$r['video_url']; $jobs[$idx]['status']='pronto'; }
     else $jobs[$idx]['status']='gerando';
