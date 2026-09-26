@@ -2712,7 +2712,13 @@ function tvs_radar_enrichment_due($cand){
   $next=(string)($cand['enrichment_next_retry_at']??'');
   if($next==='') return true;
   $ts=strtotime($next);
-  return !$ts || $ts<=time();
+  if(!$ts || $ts<=time()) return true;
+
+  // Notícias frescas não podem ficar presas por janelas legadas de 2 horas.
+  // Se a última tentativa ocorreu há pelo menos 15 minutos, libera novo ciclo.
+  $updatedRaw=(string)($cand['pipeline_updated_at']??$cand['url_resolved_at']??$cand['enrichment_first_seen_at']??'');
+  $updated=$updatedRaw!=='' ? strtotime($updatedRaw) : false;
+  return $updated && (time()-$updated)>=900;
 }
 
 function tvs_radar_schedule_enrichment(&$cand,$reason=''){
@@ -2722,7 +2728,7 @@ function tvs_radar_schedule_enrichment(&$cand,$reason=''){
 
   if($ageHours<48){
     $cand['pipeline_stage']='aguardando_enriquecimento';
-    $cand['enrichment_next_retry_at']=date('c',time()+7200);
+    $cand['enrichment_next_retry_at']=date('c',time()+900);
   } elseif($ageHours<168){
     $cand['pipeline_stage']='enriquecimento_baixa_prioridade';
     $cand['enrichment_next_retry_at']=date('c',time()+86400);
