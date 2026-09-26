@@ -201,7 +201,8 @@ function tvs_radar_trusted_source($cand,$url=''){
     'g1.globo.com','ge.globo.com','portalhortolandia.com.br',
     'horacampinas.com.br','sbnoticias.com.br','portaldesumare.com.br',
     'noticiasumare.com.br','portalon.com.br','noticiafm.com','novomomento.com.br',
-    'tribunaliberal.com.br','tododia.com.br','hortonews.com.br','portalporque.com.br'
+    'tribunaliberal.com.br','liberal.com.br','tododia.com.br','hortonews.com.br','portalporque.com.br',
+    'sumare.portaldacidade.com'
   ];
   if($host!=='' && in_array($host,$trustedHosts,true)) return true;
 
@@ -276,16 +277,35 @@ function tvs_radar_stale_event_signal($title,$text=''){
   if(preg_match('~\b(carnaval|natal|ano novo|r[eé]veillon|elei[cç][oõ]es?\s+20[0-9]{2}|campanha eleitoral|segundo turno|retrospectiva|arquivo)\b~iu',$all)) return true;
   return false;
 }
+function tvs_radar_text_mentions_city($text,$city){
+  $patterns=[
+    'Sumaré'=>'~\bSumar[eé]\b~iu',
+    'Hortolândia'=>'~\bHortol[aâ]ndia\b~iu',
+    'Paulínia'=>'~\bPaul[ií]nia\b~iu',
+    'Nova Odessa'=>'~\bNova\s+Odessa\b~iu',
+    'Americana'=>'~\bAmericana\b~iu',
+    'Campinas'=>'~\bCampinas\b~iu'
+  ];
+  return isset($patterns[$city]) && preg_match($patterns[$city],(string)$text)===1;
+}
 function tvs_radar_candidate_region_ok($cand,$requestedCity,&$reason=''){
   $title=$cand['title']??''; $desc=$cand['description']??'';
   $fact=tvs_radar_fact_text($cand);
   if(tvs_radar_stale_event_signal($title,$desc)){ $reason='Evento antigo/sazonal detectado'; return false; }
-  if(tvs_radar_has_outside_city_signal($fact)){ $reason='Fora da região monitorada'; return false; }
 
-  // Hard gate regional canônico: cidade do feed, consulta, fonte ou URL nunca comprova
-  // que o fato pertence à cobertura da TV Sumaré. A evidência precisa estar no fato.
-  if(!tvs_radar_text_mentions_allowed_city($fact)){
-    $reason='Sem evidência regional no título/resumo/conteúdo da matéria';
+  // Primeiro confirma a cidade-alvo. Uma menção secundária a São Paulo ou outra
+  // cidade não pode apagar uma pauta cujo fato é claramente de Americana,
+  // Campinas, Hortolândia etc.
+  $cityConfirmed=tvs_radar_text_mentions_city($fact,(string)$requestedCity);
+  if(!$cityConfirmed && !empty($cand['source_city_confirmed'])){
+    $cityConfirmed=in_array((string)$requestedCity,tvs_radar_allowed_cities(),true);
+  }
+  if(!$cityConfirmed){
+    if(tvs_radar_has_outside_city_signal($fact)){
+      $reason='Fora da região monitorada';
+      return false;
+    }
+    $reason='Sem evidência da cidade-alvo no fato ou na editoria municipal confirmada da fonte';
     return false;
   }
 
@@ -301,7 +321,7 @@ function tvs_radar_editorial_score($title,$city,$category,$source,$text,$url='',
   $fact=tvs_lower(tvs_clean_text($title.' '.$category.' '.$text));
   $all=tvs_lower(tvs_clean_text($title.' '.$category.' '.$source.' '.$text.' '.$url));
   if(tvs_radar_stale_event_signal($title,$text)) return 0;
-  if(tvs_radar_has_outside_city_signal($fact)) return 0;
+  if(tvs_radar_has_outside_city_signal($fact) && !tvs_radar_text_mentions_allowed_city($fact)) return 0;
 
   $score=0;
   // 1) Recorte regional: precisa haver cidade no fato ou fonte oficial local.
@@ -310,7 +330,7 @@ function tvs_radar_editorial_score($title,$city,$category,$source,$text,$url='',
 
   // 2) Qualidade da fonte.
   if(preg_match('~\b(prefeitura|c[aâ]mara|governo\s+sp|defesa\s+civil|secretaria|hospital|ubs|pat)\b~iu',$all)) $score+=14;
-  elseif(preg_match('~\b(g1|eptv|cbn|correio|rac|jornal|portal)\b~iu',$all)) $score+=7;
+  elseif(preg_match('~\b(g1|eptv|cbn|correio|rac|jornal|portal|liberal)\b~iu',$all)) $score+=9;
 
   // 3) Interesse público por editoria.
   // Empregos continuam relevantes, mas não dominam toda a régua.
@@ -1278,7 +1298,10 @@ function tvs_radar_source_domain_hint($source,$title=''){
   if(strpos($s,'portal on')!==false || strpos($s,'portalon')!==false) return 'https://portalon.com.br';
   if(strpos($s,'notícia fm')!==false || strpos($s,'noticia fm')!==false || strpos($s,'noticiafm')!==false) return 'https://noticiafm.com';
   if(strpos($s,'novo momento')!==false || strpos($s,'novomomento')!==false) return 'https://novomomento.com.br';
+  if(strpos($s,'o liberal')!==false || strpos($s,'liberal —')!==false || strpos($s,'liberal -')!==false || strpos($s,'liberal.com.br')!==false) return 'https://liberal.com.br';
+  if(strpos($s,'portal da cidade sumaré')!==false || strpos($s,'portal da cidade sumare')!==false || strpos($s,'sumare.portaldacidade.com')!==false) return 'https://sumare.portaldacidade.com';
   if(strpos($s,'tribuna liberal')!==false || strpos($s,'tribunaliberal')!==false) return 'https://www.tribunaliberal.com.br';
+  if(strpos(tvs_lower(tvs_clean_text((string)$source)),'liberal')!==false || strpos($s,'liberal.com.br')!==false) return 'https://liberal.com.br';
   if(strpos($s,'todo dia')!==false || strpos($s,'tododia')!==false) return 'https://tododia.com.br';
   if(strpos($s,'hortonews')!==false || strpos($s,'horto news')!==false) return 'https://hortonews.com.br';
   if(strpos($s,'portal porque')!==false || strpos($s,'portalporque')!==false || strpos($s,'jornalismo que faltava')!==false) return 'https://www.portalporque.com.br';
@@ -1640,6 +1663,27 @@ function tvs_radar_titles_are_similar($a,$b){
   return $minimum>=2 && ($intersection/$minimum)>=0.70;
 }
 
+function tvs_radar_history_duplicate($candidate,$history){
+  $candCity=(string)($candidate['city']??$candidate['radar_requested_city']??'');
+  $candUrl=trim((string)($candidate['url']??$candidate['source_url']??''));
+  $candTitle=(string)($candidate['title']??'');
+  $candCluster=tvs_radar_topic_cluster($candidate);
+
+  foreach((array)$history as $existing){
+    $existingCity=(string)($existing['city']??'');
+    if($candCity!=='' && $existingCity!=='' && tvs_lower($candCity)!==tvs_lower($existingCity)) continue;
+
+    $existingUrl=trim((string)($existing['url']??$existing['source_url']??''));
+    if($candUrl!=='' && $existingUrl!=='' && $candUrl===$existingUrl) return true;
+
+    $existingCluster=tvs_radar_topic_cluster($existing);
+    if($candCluster!=='' && $existingCluster!=='' && $candCluster===$existingCluster) return true;
+
+    if(tvs_radar_titles_are_similar($candTitle,(string)($existing['title']??''))) return true;
+  }
+  return false;
+}
+
 function tvs_radar_deduplicate_topics($items){
   $result=[];
   $clusters=[];
@@ -1730,8 +1774,8 @@ function tvs_radar_candidate_category($item){
   }
 
   if(preg_match(
-    '~\b(pra[cç]a|revitaliza[cç][aã]o|obra|obras|'
-    .'pavimenta[cç][aã]o|recape|ilumina[cç][aã]o|'
+    '~\b(pra[cç]a|revitaliza[cç][aã]o|obra|obras|ponte|pontes|viaduto|viadutos|'
+    .'mobilidade urbana|ciclovia|ordem de servi[cç]o|pavimenta[cç][aã]o|recape|ilumina[cç][aã]o|'
     .'servi[cç]os? p[uú]blicos?|cad[uú]nico|atendimento itinerante)\b~iu',
     $text
   )){
@@ -1879,6 +1923,16 @@ function tvs_radar_obvious_false_positive($item,$city,&$reason=''){
     return true;
   }
 
+  // Páginas de editoria/listagem não são pautas, mesmo quando carregam vários
+  // parágrafos e acabam parecendo uma matéria para o extrator.
+  if(
+    preg_match('~^(Economia|Cidade|Cidades|Sa[uú]de|Educa[cç][aã]o|Cultura|Esportes?|Seguran[cç]a|Pol[ií]tica|Empregos?)\s*[-–—:]\s*Not[ií]cias sobre\b~iu',$title)
+    || preg_match('~/noticias/(?:economia|cidade|cidades|saude|educacao|cultura|esportes?|seguranca|politica|empregos?)/?$~iu',$url)
+  ){
+    $reason='Página de editoria/listagem, não matéria jornalística';
+    return true;
+  }
+
   // Vagas privadas de cursos, projetos ou instituições sem caráter jornalístico.
   if(preg_match(
     '~\b(abre vagas para crianças|abre vagas para adolescentes|'
@@ -1952,10 +2006,238 @@ function tvs_radar_global_caps(){
   ];
 }
 
+function tvs_radar_extract_published_at_from_html($html){
+  $html=(string)$html;
+  if($html==='') return '';
+  $patterns=[
+    '~<meta\b[^>]*(?:property|name)=["\']article:published_time["\'][^>]*content=["\']([^"\']+)["\']~i',
+    '~<meta\b[^>]*content=["\']([^"\']+)["\'][^>]*(?:property|name)=["\']article:published_time["\']~i',
+    '~"datePublished"\s*:\s*"([^"]+)"~i',
+    '~<time\b[^>]*datetime=["\']([^"\']+)["\']~i'
+  ];
+  foreach($patterns as $rx){
+    if(preg_match($rx,$html,$m)){
+      $raw=html_entity_decode(trim((string)$m[1]),ENT_QUOTES|ENT_HTML5,'UTF-8');
+      if($raw!=='' && strtotime($raw)!==false) return $raw;
+    }
+  }
+  return '';
+}
+
+function tvs_radar_liberal_city($city,$limit=8){
+  $slugs=[
+    'Sumaré'=>'sumare',
+    'Hortolândia'=>'hortolandia',
+    'Nova Odessa'=>'nova-odessa',
+    'Americana'=>'americana',
+    'Campinas'=>'campinas'
+  ];
+  if(!isset($slugs[$city])) return [];
+
+  $base='https://liberal.com.br';
+  $page=$base.'/cidades/'.$slugs[$city];
+  $html=tvs_fetch_url($page);
+  // Algumas editorias do Liberal podem responder 403/HTML reduzido enquanto
+  // a home continua disponível e traz blocos "Explore por cidade".
+  if($html==='') $html=tvs_fetch_url($base.'/');
+  $out=[]; $seen=[];
+
+  // No Liberal, o título <h2> pode ficar fora do <a>. Associa cada heading ao
+  // último link interno imediatamente anterior no card, em vez de exigir
+  // texto dentro da âncora.
+  if($html!=='' && preg_match_all('~<h2\\b[^>]*>(.*?)</h2>~is',$html,$hm,PREG_OFFSET_CAPTURE)){
+    foreach($hm[1] as $idx=>$capture){
+      $title=tvs_clean_text((string)($capture[0]??''));
+      $headingOffset=(int)($hm[0][$idx][1]??0);
+      if(tvs_strlen($title)<25 || tvs_strlen($title)>220) continue;
+      if(tvs_is_boilerplate($title)) continue;
+
+      $start=max(0,$headingOffset-2600);
+      $prefix=substr($html,$start,$headingOffset-$start);
+      if(!preg_match_all("~<a\\b[^>]*href=[\"']([^\"']+)[\"'][^>]*>~is",$prefix,$am)) continue;
+
+      $url='';
+      for($j=count($am[1])-1;$j>=0;$j--){
+        $candidate=tvs_radar_absolute_source_url($base,$am[1][$j]??'');
+        if($candidate==='' || tvs_radar_source_host($candidate)!=='liberal.com.br') continue;
+        if(isset($seen[$candidate])) continue;
+        if(!tvs_radar_is_article_path($candidate,$title,$city)) continue;
+        $url=$candidate;
+        break;
+      }
+      if($url==='') continue;
+
+      $articleHtml=tvs_fetch_url($url);
+      if($articleHtml==='') continue;
+      $article=tvs_extract_article($url,$title);
+      $desc=trim((string)($article['description']??''));
+      $body=trim((string)($article['body']??''));
+      if(tvs_strlen($desc.' '.$body)<80) continue;
+
+      $published=tvs_radar_extract_published_at_from_html($articleHtml);
+      if($published==='') continue;
+
+      $factText=trim((string)($article['title']??$title).' '.$desc.' '.$body);
+      $path=tvs_lower((string)(parse_url($url,PHP_URL_PATH)??''));
+      $cityPath='/cidades/'.$slugs[$city].'/';
+      $cityConfirmed=tvs_radar_text_mentions_city($factText,$city) || strpos($path,$cityPath)!==false;
+      if(!$cityConfirmed) continue;
+
+      $candidate=[
+        'title'=>trim((string)($article['title']??$title)) ?: $title,
+        'url'=>$url,
+        'description'=>$desc!==''?$desc:tvs_substr(tvs_clean_text($body),0,420),
+        'published_at'=>$published,
+        'source'=>'Liberal',
+        'source_type'=>'Portal Regional',
+        'city'=>$city,
+        'image'=>$article['image']??'',
+        'source_city_confirmed'=>1,
+        'priority'=>2,
+        'source_domain'=>'https://liberal.com.br'
+      ];
+
+      $reason='';
+      if(!tvs_radar_candidate_region_ok($candidate,$city,$reason)) continue;
+
+      $seen[$url]=1;
+      $out[]=$candidate;
+      if(count($out)>=$limit) break;
+    }
+  }
+
+  // Fallback: se o HTML mudar, ainda abastece pela indexação do Google News.
+  // Aqui NÃO confirma a cidade automaticamente; o fato precisa mencionar a
+  // cidade-alvo antes de entrar na fila.
+  if(!$out){
+    $q='site:liberal.com.br "'.$city.'" when:3d';
+    $feed='https://news.google.com/rss/search?q='
+      .urlencode($q)
+      .'&hl=pt-BR&gl=BR&ceid=BR:pt-419';
+
+    foreach(tvs_reporter_fetch_feed_compat($feed,max(6,(int)$limit)) as $it){
+      $it['city']=$city;
+      $it['source']='Liberal';
+      $it['source_type']='Portal Regional';
+      $it['source_city_confirmed']=0;
+      $it['priority']=2;
+      $it['source_domain']='https://liberal.com.br';
+
+      $reason='';
+      if(!tvs_radar_candidate_region_ok($it,$city,$reason)) continue;
+
+      $out[]=$it;
+      if(count($out)>=$limit) break;
+    }
+  }
+
+  if(PHP_SAPI==='cli'){
+    echo 'LIBERAL_COLLECT city='.str_replace(' ','_',$city)
+      .' accepted='.count($out)
+      .' mode='.(isset($out[0]) && !tvs_radar_is_google_news_url($out[0]['url']??'')?'direct':'fallback')
+      ."\\n";
+  }
+
+  return $out;
+}
+
+function tvs_radar_portal_cidade_sumare($limit=6){
+  $base='https://sumare.portaldacidade.com';
+  $pages=[
+    $base.'/noticias/cidade',
+    $base.'/noticias'
+  ];
+  $out=[]; $seen=[];
+
+  foreach($pages as $page){
+    $html=tvs_fetch_url($page);
+    if($html==='') continue;
+
+    if(!preg_match_all('~<a\b[^>]*href=["\']([^"\']*/noticias/[^"\']+)["\'][^>]*>(.*?)</a>~is',$html,$m,PREG_SET_ORDER)) continue;
+
+    foreach($m as $match){
+      $url=tvs_radar_absolute_source_url($base,$match[1]??'');
+      if($url==='' || isset($seen[$url]) || tvs_radar_source_host($url)!=='sumare.portaldacidade.com') continue;
+
+      $linkTitle=tvs_clean_text((string)($match[2]??''));
+      if(!tvs_radar_is_article_path($url,$linkTitle,'Sumaré')) continue;
+      $articleHtml=tvs_fetch_url($url);
+      if($articleHtml==='') continue;
+
+      $article=tvs_extract_article($url,$linkTitle);
+      $title=trim((string)($article['title']??$linkTitle));
+      $desc=trim((string)($article['description']??''));
+      $body=trim((string)($article['body']??''));
+      if($title==='' || tvs_strlen($desc.' '.$body)<80) continue;
+
+      $published=tvs_radar_extract_published_at_from_html($articleHtml);
+      if($published==='') continue;
+
+      $candidate=[
+        'title'=>$title,
+        'url'=>$url,
+        'description'=>$desc!==''?$desc:tvs_substr(tvs_clean_text($body),0,420),
+        'published_at'=>$published,
+        'source'=>'Portal da Cidade Sumaré',
+        'source_type'=>'Portal Regional',
+        'city'=>'Sumaré',
+        'image'=>$article['image']??'',
+        'source_city_confirmed'=>1,
+        'priority'=>2,
+        'source_domain'=>$base
+      ];
+
+      $reason='';
+      if(!tvs_radar_candidate_region_ok($candidate,'Sumaré',$reason)) continue;
+
+      $seen[$url]=1;
+      $out[]=$candidate;
+      if(count($out)>=$limit) break 2;
+    }
+  }
+
+  if(PHP_SAPI==='cli'){
+    echo 'PORTAL_CIDADE_SUMARE accepted='.count($out)."\n";
+  }
+  return $out;
+}
+
+function tvs_radar_builtin_regional_sources($city){
+  $sources=[];
+  // O Liberal possui coletor dedicado por cidade; aqui ficam apenas fontes
+  // suplementares que não dependem do cadastro persistente.
+  if($city==='Sumaré'){
+    $sources[]=[
+      'type'=>'Portal Regional',
+      'city'=>'Sumaré',
+      'name'=>'Portal da Cidade Sumaré',
+      'url'=>'https://sumare.portaldacidade.com/',
+      'rss'=>'',
+      'active'=>true
+    ];
+  }
+  return $sources;
+}
+
 function tvs_radar_candidates_for_city($city){
   $volumeMode=tvs_radar_is_volume_mode();
   $fontes=tvs_read_json_file(dirname(__DIR__).'/data/fontes.json');
+  if(!is_array($fontes)) $fontes=[];
+  $fontes=array_merge($fontes,tvs_radar_builtin_regional_sources($city));
   $items=[]; $officialCount=0;
+
+  // Coletor dedicado do Liberal por editoria municipal. O portal publica
+  // várias cidades na mesma home; usar a editoria correta evita que uma
+  // pauta de Campinas/Americana seja atribuída à cidade errada.
+  foreach(tvs_radar_liberal_city($city,$volumeMode?8:6) as $it){
+    $items[]=$it;
+  }
+  if($city==='Sumaré'){
+    foreach(tvs_radar_portal_cidade_sumare($volumeMode?8:6) as $it){
+      $items[]=$it;
+    }
+  }
+
   foreach($fontes as $src){
     if(isset($src['active']) && !$src['active']) continue;
     $scity=$src['city']??'Região';
@@ -2170,6 +2452,22 @@ function tvs_radar_fact_package($cand,$mat,$city,$extraSources=[]){
     && !tvs_is_commercial_candidate((string)($mat['title']??''),(string)($mat['text']??''),$url);
   if($noiseFree) $score+=10;
 
+  $editorialText=tvs_lower(tvs_clean_text(
+    (string)($mat['title']??'').' '.
+    (string)($mat['text']??'').' '.
+    (string)($cand['category']??'')
+  ));
+  $editorialInterest=preg_match(
+    '~\b(sa[uú]de|hospital|upa|ubs|dengue|vacina[cç][aã]o|educa[cç][aã]o|escola|creche|'
+    .'empregos?|vagas?|pat|trabalho|economia|empresa|ind[uú]stria|com[eé]rcio|'
+    .'obras?|ponte|pontes|viaduto|viadutos|ciclovia|ordem de servi[cç]o|tr[aâ]nsito|mobilidade|transporte|seguran[cç]a|pol[ií]cia|pris[aã]o|acidente|'
+    .'cultura|festival|teatro|m[uú]sica|evento|esporte|corrida|futebol|'
+    .'servi[cç]os? p[uú]blicos?|meio ambiente|turismo|defesa civil)\b~iu',
+    $editorialText
+  )===1;
+  $contentWords=tvs_radar_word_count((string)($mat['text']??''));
+  $contentUsable=$sourceResolved && $noiseFree && $contentWords>=70;
+
   $age=$cand['age_days']??null;
   if(is_numeric($age)){
     if((int)$age<=3) $score+=5;
@@ -2196,6 +2494,9 @@ function tvs_radar_fact_package($cand,$mat,$city,$extraSources=[]){
     'source_original_resolved'=>$sourceResolved?1:0,
     'trusted_source'=>$trustedSource?1:0,
     'freshness_ok'=>$freshnessOk?1:0,
+    'editorial_interest'=>$editorialInterest?1:0,
+    'content_usable'=>$contentUsable?1:0,
+    'content_words'=>$contentWords,
     'second_source_confirmed'=>$secondSource?1:0,
     'flags'=>[
       'single_source'=>$secondSource?0:1,
@@ -2621,7 +2922,8 @@ function tvs_radar_collect_discovery($mode='normal',$perCity=12){
   $approval=tvs_queue_read();
   $news=tvs_read_json_file($newsFile); if(!is_array($news)) $news=[];
   $seen=[];
-  foreach(array_merge($discovery,$approval,$news) as $row){
+  $history=array_merge($approval,$news);
+  foreach(array_merge($discovery,$history) as $row){
     $key=tvs_radar_discovery_key($row);
     if($key!=='title:'.md5('')) $seen[$key]=1;
   }
@@ -2633,6 +2935,10 @@ function tvs_radar_collect_discovery($mode='normal',$perCity=12){
       if($cityAdded>=$perCity) break;
       $key=tvs_radar_discovery_key($cand);
       if(isset($seen[$key])) continue;
+      if(tvs_radar_history_duplicate($cand,$history)){
+        tvs_radar_log_event($cand['title']??'', $cand['source']??'Fonte', $city, 'DESCARTADA', 'Duplicata de pauta já aprovada/publicada', $cand['url']??'');
+        continue;
+      }
       $cand['id']=$cand['id']??uniqid('pauta_');
       $cand['city']=$cand['city']??$city;
       $cand['radar_requested_city']=$city;
@@ -2695,14 +3001,26 @@ function tvs_radar_factually_ready($package){
   $sourceResolved=!empty($package['source_original_resolved']);
   $trustedSource=!empty($package['trusted_source']);
   $freshnessOk=!empty($package['freshness_ok']);
+  $contentUsable=!empty($package['content_usable']);
+  $editorialInterest=!empty($package['editorial_interest']);
+
+  // Régua em camadas: primeiro os gates de elegibilidade factual/editorial;
+  // o score passa a ordenar/priorizar a pauta, e não a eliminar sozinho uma
+  // matéria regional legítima de fonte confiável.
+  $layeredEligible=
+    $coreOk
+    && $sourceResolved
+    && $trustedSource
+    && $freshnessOk
+    && $contentUsable
+    && $editorialInterest;
 
   $ready=(
-    ($sf>=70 && $coreOk)
+    ($layeredEligible && $sf>=55)
     || (
-      $sf>=60 && $sf<70
+      $sf>=70
       && $coreOk
       && $sourceResolved
-      && $trustedSource
       && $freshnessOk
     )
   );
@@ -2713,16 +3031,20 @@ function tvs_radar_factually_ready($package){
     'core_4w_ok'=>$coreOk?1:0,
     'source_original_resolved'=>$sourceResolved?1:0,
     'trusted_source'=>$trustedSource?1:0,
-    'freshness_ok'=>$freshnessOk?1:0
+    'freshness_ok'=>$freshnessOk?1:0,
+    'content_usable'=>$contentUsable?1:0,
+    'editorial_interest'=>$editorialInterest?1:0,
+    'layered_eligible'=>$layeredEligible?1:0
   ];
 }
 
 function tvs_radar_process_discovery($mode='normal',$targetPerCity=5,$options=[]){
-  global $cities;
+  global $cities,$newsFile;
   $discovery=tvs_radar_discovery_read();
   if(!$discovery) return 0;
 
   $approval=tvs_queue_read();
+  $publishedHistory=tvs_read_json_file($newsFile); if(!is_array($publishedHistory)) $publishedHistory=[];
   $ready=tvs_radar_ready_count_by_city($approval);
   $readyCategories=tvs_radar_ready_categories_by_city($approval);
   $generated=0;
@@ -2885,6 +3207,19 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5,$options=[]
           $article['new_pipeline_stage']='fila_humana';
         }
         $article['diversity_overrepresented']=tvs_radar_category_room($city,$articleCategory,$readyCategories,$targetPerCity)?0:1;
+
+        if(tvs_radar_history_duplicate($article,array_merge($approval,$publishedHistory))){
+          tvs_radar_log_event(
+            $article['title']??($cand['title']??''),
+            $article['source']??($cand['source']??'Fonte'),
+            $city,
+            'DESCARTADA',
+            'Duplicata de pauta já aprovada/publicada',
+            $article['source_url']??($cand['url']??'')
+          );
+          unset($discovery[$pick]);
+          continue;
+        }
 
         $approval[]=$article;
         unset($discovery[$pick]);

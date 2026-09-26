@@ -496,11 +496,32 @@ function tvs_parse_rss($rssUrl, $src){
   return $items;
 }
 function tvs_capture_source_items($src){
+  $sourceUrl=trim((string)($src['url']??''));
+  $host=tvs_lower((string)(parse_url($sourceUrl,PHP_URL_HOST)??''));
+  $host=preg_replace('~^www\.~i','',$host);
+
+  // Portais cuja home nem sempre expõe todas as chamadas como links simples.
+  // O feed restrito preserva cidade/data e continua exigindo resolução da fonte original
+  // antes de qualquer matéria seguir para redação.
+  if(in_array($host,['liberal.com.br','sumare.portaldacidade.com'],true)){
+    $city=(string)($src['city']??'');
+    $query='site:'.$host;
+    if($city!=='' && $city!=='Região') $query.=' "'.$city.'"';
+    $query.=' when:3d';
+    $feed='https://news.google.com/rss/search?q='.urlencode($query)
+      .'&hl=pt-BR&gl=BR&ceid=BR:pt-419';
+    $rssSrc=$src;
+    $rssSrc['name']=$src['name']??($host==='liberal.com.br'?'Liberal':'Portal da Cidade Sumaré');
+    $rssSrc['city']=$city!==''?$city:'Região';
+    $items=tvs_parse_rss($feed,$rssSrc);
+    if($items) return $items;
+  }
+
   if(!empty($src['rss'])){
     $items=tvs_parse_rss($src['rss'],$src);
     if($items) return $items;
   }
-  $home=tvs_fetch_url($src['url']??'');
+  $home=tvs_fetch_url($sourceUrl);
   $links=tvs_extract_links($src['url']??'', $home);
   $out=[];
   foreach($links as $l){ $out[]=['title'=>$l['title'],'url'=>$l['url'],'description'=>'','source'=>$src['name']??'', 'city'=>$src['city']??'Região']; }

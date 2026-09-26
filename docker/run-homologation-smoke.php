@@ -70,6 +70,11 @@ check(has($redes,'if(isset(') && has($redes,'add') && has($redes,'draft'), 'Rede
 check(has($presenters,'REQUEST_METHOD') && has($presenters,'Salvar avaliação'), 'Apresentadores IA: salvar avaliação possui fluxo POST');
 check(has($social,'prepare') && has($social,'enqueue') && has($social,'REQUEST_METHOD'), 'Distribuição Social: preparar e enfileirar possuem handlers');
 check(has($instagram,'navigator.clipboard.writeText'), 'Instagram: copiar legenda possui ação no navegador');
+check(has($radar,'function tvs_radar_liberal_city') && has($radar,"'/cidades/'"), 'Radar possui coletor municipal dedicado do Liberal');
+check(has($radar,'function tvs_radar_portal_cidade_sumare') && has($radar,'sumare.portaldacidade.com'), 'Radar possui coletor do Portal da Cidade Sumaré');
+check(has($radar,'function tvs_radar_history_duplicate') && has($radar,'Duplicata de pauta já aprovada/publicada'), 'Radar bloqueia reentrada de pauta já aprovada/publicada');
+check(has($radar,'layered_eligible') && has($radar,'content_usable') && has($radar,'editorial_interest'), 'Radar usa elegibilidade editorial em camadas antes do score');
+check(has($radar,'ponte|pontes|viaduto|viadutos') && has($radar,'ordem de servi'), 'Radar reconhece mobilidade/obras como interesse jornalístico');
 
 foreach($ok as $label) echo "OK: {$label}\n";
 if($fail){ foreach($fail as $label) fwrite(STDERR,"FAIL: {$label}\n"); fwrite(STDERR,'HOMOLOGATION_SMOKE=FAIL total='.count($fail)."\n"); exit(1); }
