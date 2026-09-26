@@ -581,6 +581,43 @@ function tvs_radar_resolve_by_bing_news($title,$city='',$source=''){
   return $bestScore>=55 ? $bestUrl : '';
 }
 
+function tvs_radar_resolve_by_bing_site($domain,$title,$city=''){
+  $domain=rtrim(trim((string)$domain),'/');
+  $host=tvs_radar_source_host($domain);
+  if($host==='' || trim((string)$title)==='') return '';
+
+  $query='site:'.$host.' "'.trim((string)$title).'"';
+  if(trim((string)$city)!=='') $query.=' '.trim((string)$city);
+
+  $url='https://www.bing.com/news/search?q='
+    .rawurlencode($query)
+    .'&format=rss&setlang=pt-br';
+
+  $xml=tvs_fetch_url($url);
+  if($xml==='') return '';
+
+  libxml_use_internal_errors(true);
+  $sx=@simplexml_load_string($xml,'SimpleXMLElement',LIBXML_NOCDATA);
+  if(!$sx || !isset($sx->channel->item)) return '';
+
+  $bestUrl='';
+  $bestScore=0;
+  foreach($sx->channel->item as $item){
+    $candidateTitle=tvs_clean_text((string)($item->title??''));
+    $candidateUrl=trim((string)($item->link??''));
+    if(!tvs_radar_external_url_is_valid($candidateUrl)) continue;
+    if(tvs_radar_source_host($candidateUrl)!==$host) continue;
+
+    $score=tvs_radar_title_match_score($title,$candidateTitle);
+    if($score>$bestScore){
+      $bestScore=$score;
+      $bestUrl=$candidateUrl;
+    }
+  }
+
+  return $bestScore>=52 ? $bestUrl : '';
+}
+
 
 function tvs_radar_source_host($url){
   $host=tvs_lower((string)(parse_url((string)$url,PHP_URL_HOST)??''));
@@ -1003,10 +1040,22 @@ function tvs_radar_source_domain_hint($source,$title=''){
   $s=tvs_lower(tvs_clean_text((string)$source.' '.(string)$title));
   if(strpos($s,'hora campinas')!==false) return 'https://horacampinas.com.br';
   if(strpos($s,'portal hortolandia')!==false || strpos($s,'portal hortolândia')!==false) return 'https://portalhortolandia.com.br';
-  if(strpos($s,'prefeitura de campinas')!==false || strpos($s,'campinas.sp.gov.br')!==false) return 'https://www.campinas.sp.gov.br';
+
+  // Portais oficiais das seis cidades monitoradas.
+  if(strpos($s,'sumare.sp.gov.br')!==false || strpos($s,'sumaré.sp.gov.br')!==false || strpos($s,'prefeitura de sumaré')!==false || strpos($s,'prefeitura de sumare')!==false) return 'https://sumare.sp.gov.br';
+  if(strpos($s,'hortolandia.sp.gov.br')!==false || strpos($s,'hortolândia.sp.gov.br')!==false || strpos($s,'prefeitura de hortolândia')!==false || strpos($s,'prefeitura de hortolandia')!==false) return 'https://www.hortolandia.sp.gov.br';
+  if(strpos($s,'paulinia.sp.gov.br')!==false || strpos($s,'paulínia.sp.gov.br')!==false || strpos($s,'prefeitura de paulínia')!==false || strpos($s,'prefeitura de paulinia')!==false) return 'https://www.paulinia.sp.gov.br';
+  if(strpos($s,'novaodessa.sp.gov.br')!==false || strpos($s,'prefeitura de nova odessa')!==false) return 'https://www.novaodessa.sp.gov.br';
   if(strpos($s,'americana.sp.gov.br')!==false || strpos($s,'prefeitura de americana')!==false) return 'https://www.americana.sp.gov.br';
+  if(strpos($s,'prefeitura de campinas')!==false || strpos($s,'campinas.sp.gov.br')!==false) return 'https://www.campinas.sp.gov.br';
+
+  // Veículos regionais recorrentes.
   if(strpos($s,'sb noticias')!==false || strpos($s,'sb notícias')!==false) return 'https://sbnoticias.com.br';
   if(strpos($s,'portal de sumare')!==false || strpos($s,'portal de sumaré')!==false) return 'https://portaldesumare.com.br';
+  if(strpos($s,'notícias sumaré')!==false || strpos($s,'noticias sumare')!==false || strpos($s,'noticiasumare')!==false) return 'https://noticiasumare.com.br';
+  if(strpos($s,'portal on')!==false || strpos($s,'portalon')!==false) return 'https://portalon.com.br';
+  if(strpos($s,'notícia fm')!==false || strpos($s,'noticia fm')!==false || strpos($s,'noticiafm')!==false) return 'https://noticiafm.com';
+  if(strpos($s,'novo momento')!==false || strpos($s,'novomomento')!==false) return 'https://novomomento.com.br';
   if(preg_match('~\bge\b|globo esporte~u',$s)) return 'https://ge.globo.com';
   if(preg_match('~\bg1\b|eptv~u',$s)) return 'https://g1.globo.com';
   return '';
@@ -1045,6 +1094,17 @@ function tvs_radar_resolve_candidate_urls($items){
       if($resolved!==''){
         $method='source_domain_title_match';
       }
+    }
+
+    // Quando a busca interna do próprio portal falha, procura a mesma manchete
+    // no índice de notícias restrito ao domínio conhecido da fonte.
+    if($sourceDomain!=='' && $resolved===''){
+      $resolved=tvs_radar_resolve_by_bing_site(
+        $sourceDomain,
+        $item['title']??'',
+        $item['city']??''
+      );
+      if($resolved!=='') $method='bing_site_title_match';
     }
 
     /*
@@ -2487,10 +2547,16 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5){
         continue;
       }
 
-      if($sf<70 || !$coreOk){
+      $sourceResolved=!empty($package['source_original_resolved']);
+      $factuallyReady=(
+        ($sf>=70 && $coreOk)
+        || ($sf>=60 && $sf<70 && $coreOk && $sourceResolved)
+      );
+
+      if(!$factuallyReady){
         tvs_radar_schedule_enrichment(
           $cand,
-          'Pacote factual ainda insuficiente: SF '.$sf.'/100; 4W básico '.($coreOk?'completo':'incompleto').'.'
+          'Pacote factual ainda insuficiente: SF '.$sf.'/100; 4W básico '.($coreOk?'completo':'incompleto').'; fonte original '.($sourceResolved?'resolvida':'não resolvida').'.'
         );
         if(($cand['pipeline_stage']??'')==='expirada_sem_enriquecimento'){
           tvs_radar_discard($cand,$city,'TTL de enriquecimento expirado após 7 dias sem pacote factual suficiente.');
