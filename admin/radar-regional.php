@@ -3139,12 +3139,50 @@ function tvs_radar_factually_ready($package){
   ];
 }
 
+function tvs_radar_retry_pending_editor_articles(&$approval,$limit=6){
+  global $gemini_api_key;
+  $recovered=0; $attempted=0;
+  foreach($approval as &$item){
+    if($attempted>=$limit) break;
+    if(!is_array($item) || !empty($item['ai_editor_processed'])) continue;
+    if(trim((string)($item['title']??''))==='' || trim((string)($item['body']??''))==='') continue;
+    $attempted++;
+    $item['ai_editor_attempts']=(int)($item['ai_editor_attempts']??0)+1;
+    $item['ai_editor_last_attempt_at']=date('c');
+    $edited=function_exists('tvs_ai_editor_process_article') ? tvs_ai_editor_process_article($gemini_api_key??'',$item,[
+      'city'=>$item['city']??'Região','category'=>$item['category']??'Cidade',
+      'source'=>$item['source']??'Fonte consultada','source_url'=>$item['source_url']??'','origin'=>'radar_retry'
+    ]) : null;
+    if(!$edited){
+      $item['queue_status']='processing'; $item['ai_editor_stage']='pending';
+      $item['editorial_status']='Aguardando Editor IA'; $item['publication_eligible']=0;
+      $item['queue_pending_reasons']=array_values(array_unique(array_filter(array_merge(
+        (array)($item['queue_pending_reasons']??[]),['Editor IA ainda não concluiu; nova tentativa automática será realizada']
+      ))));
+      continue;
+    }
+    $preservedId=$item['id']??uniqid('aprov_'); $preservedCreated=$item['created_at']??date('c');
+    $item=array_merge($item,$edited); $item['id']=$preservedId; $item['created_at']=$preservedCreated;
+    $item['ai_editor_processed']=1; $item['ai_editor_stage']='completed';
+    $item['ai_editor_processed_at']=$item['ai_editor_processed_at']??date('c');
+    $readiness=function_exists('tvs_radar_queue_item_readiness') ? tvs_radar_queue_item_readiness($item) : ['ready'=>1,'reasons'=>[]];
+    $item['queue_pending_reasons']=array_values(array_unique(array_filter((array)($readiness['reasons']??[]))));
+    $item['queue_status']=!empty($readiness['ready'])?'ready':'processing';
+    $item['publication_eligible']=!empty($readiness['ready'])?1:0;
+    $item['editorial_status']=!empty($readiness['ready'])?'Editor IA concluído':'Revisão editorial pendente';
+    if(!empty($readiness['ready'])) $recovered++;
+  }
+  unset($item);
+  return ['attempted'=>$attempted,'recovered'=>$recovered];
+}
+
 function tvs_radar_process_discovery($mode='normal',$targetPerCity=5,$options=[]){
   global $cities,$newsFile;
   $discovery=tvs_radar_discovery_read();
   if(!$discovery) return 0;
 
   $approval=tvs_queue_read();
+  $editorRetry=tvs_radar_retry_pending_editor_articles($approval,tvs_radar_is_volume_mode($mode)?8:4);
   $publishedHistory=tvs_read_json_file($newsFile); if(!is_array($publishedHistory)) $publishedHistory=[];
   $ready=tvs_radar_ready_count_by_city($approval);
   $readyCategories=tvs_radar_ready_categories_by_city($approval);
@@ -3331,21 +3369,16 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5,$options=[]
           if(empty($article['ai_editor_processed'])) $pendingReasons[]='Editor IA ainda não concluído';
           $pendingReasons=array_values(array_unique(array_filter($pendingReasons)));
 
-          $cand['pipeline_stage']='aguardando_editor_ia';
-          $cand['pipeline_reason']=$pendingReasons
-            ? implode('; ',$pendingReasons)
-            : 'Aguardando conclusão e validação do Editor IA.';
-          $cand['pipeline_updated_at']=date('c');
-          $discovery[$pick]=$cand;
-
-          tvs_radar_log_event(
-            $article['title']??($cand['title']??''),
-            $article['source']??($cand['source']??'Fonte'),
-            $city,
-            'PROCESSAMENTO',
-            $cand['pipeline_reason'],
-            $cand['url']??''
-          );
+          $article['queue_status']='processing';
+          $article['queue_pending_reasons']=$pendingReasons;
+          $article['publication_eligible']=0;
+          $article['ai_editor_stage']='pending';
+          $article['editorial_status']='Aguardando Editor IA';
+          $article['ai_editor_attempts']=(int)($article['ai_editor_attempts']??0)+1;
+          $article['ai_editor_last_attempt_at']=date('c');
+          $approval[]=$article;
+          unset($discovery[$pick]);
+          tvs_radar_log_event($article['title']??($cand['title']??''),$article['source']??($cand['source']??'Fonte'),$city,'PROCESSAMENTO',$pendingReasons ? implode('; ',$pendingReasons) : 'Aguardando conclusão e validação do Editor IA.',$cand['url']??'');
           continue;
         }
 
@@ -3850,7 +3883,12 @@ $editCanApprove=$editItem && !empty($editItem['ai_editor_processed']) && !empty(
 <?php if($editItem): $tags=is_array($editItem['tags']??null)?implode(', ',$editItem['tags']):($editItem['tags']??''); ?>
 <section class="edit-form"><h2><?= $editCanApprove ? 'Editar matéria antes de aprovar' : 'Matéria em processamento editorial' ?></h2><?php if(!$editCanApprove): ?><div class="notice error">Esta matéria ainda não está liberada para aprovação. <?=h(implode(' · ',array_values(array_unique(array_filter(array_merge((array)($editReadiness['reasons']??[]),empty($editItem['ai_editor_processed'])?['Editor IA ainda não concluído']:[]))))))?></div><?php endif; ?><form method="post"><?=tvs_csrf_field()?><input type="hidden" name="id" value="<?=h($editItem['id'])?>"><input type="hidden" name="human_review" value="1"><label>Título</label><input name="title" value="<?=h($editItem['title']??'')?>"><label>Subtítulo</label><input name="subtitle" value="<?=h($editItem['subtitle']??'')?>"><label>Resumo</label><input name="summary" value="<?=h($editItem['summary']??'')?>"><label>Cidade</label><input name="city" value="<?=h($editItem['city']??'')?>"><label>Categoria</label><input name="category" value="<?=h($editItem['category']??'')?>"><label>Imagem</label><input name="image" value="<?=h($editItem['image']??'')?>"><label>Crédito da imagem</label><input name="image_credit" value="<?=h($editItem['image_credit']??'')?>"><label>Texto completo</label><textarea name="body"><?=h($editItem['body']??'')?></textarea><label>Fonte</label><input name="source" value="<?=h($editItem['source']??'')?>"><label>URL da fonte</label><input name="source_url" value="<?=h($editItem['source_url']??'')?>"><label>Tags</label><input name="tags" value="<?=h($tags)?>"><label>SEO title</label><input name="seo_title" value="<?=h($editItem['seo_title']??'')?>"><label>Meta description</label><input name="meta_description" value="<?=h($editItem['meta_description']??'')?>"><label>Slug</label><input name="slug" value="<?=h($editItem['slug']??'')?>"><label>Legenda Instagram</label><textarea name="instagram_caption" style="min-height:120px"><?=h($editItem['instagram_caption']??'')?></textarea><label>Texto WhatsApp</label><textarea name="whatsapp_text" style="min-height:100px"><?=h($editItem['whatsapp_text']??'')?></textarea><div class="matter-actions"><button class="btn" type="submit" name="action" value="save_edit">Salvar edição</button><?php if($editCanApprove): ?><button class="btn orange" type="submit" name="action" value="approve" onclick="return confirm('Aprovar e publicar exatamente esta versão revisada?')">Aprovar e publicar</button><?php else: ?><a class="btn secondary" href="drafts.php">Ver em Revisões Pendentes</a><?php endif; ?><a class="btn secondary" href="radar-regional.php">Voltar</a></div></form></section>
 <?php else: ?>
-<?php $discarded=tvs_read_json_file(dirname(__DIR__).'/data/pautas_descartadas.json'); ?><div class="cards"><div class="stat"><span>Prontas para aprovação</span><b><?=count($normalQueue)+count($sensitiveQueue)+count($imageReviewQueue)?></b><small>Editor IA e validação concluídos</small></div><div class="stat"><span>Em processamento</span><b><?=count($processingQueue)?></b><small><a href="drafts.php">ver em Revisões Pendentes</a></small></div><div class="stat"><span>Revisão obrigatória</span><b><?=count($sensitiveQueue)?></b><small>pautas sensíveis ou de alto impacto</small></div><div class="stat"><span>Revisão de imagem</span><b><?=count($imageReviewQueue)?></b><small>texto pronto; imagem precisa ser confirmada</small></div></div>
+<?php
+$discarded=tvs_read_json_file(dirname(__DIR__).'/data/pautas_descartadas.json');
+$processingKeys=[];
+foreach(array_merge($processingQueue,tvs_radar_discovery_read()) as $processingItem) $processingKeys[tvs_radar_discovery_key($processingItem)]=1;
+$totalProcessing=count($processingKeys);
+?><div class="cards"><div class="stat"><span>Prontas para aprovação</span><b><?=count($normalQueue)+count($sensitiveQueue)+count($imageReviewQueue)?></b><small>Editor IA e validação concluídos</small></div><div class="stat"><span>Em processamento</span><b><?=$totalProcessing?></b><small><a href="drafts.php">ver todas e os motivos</a></small></div><div class="stat"><span>Revisão obrigatória</span><b><?=count($sensitiveQueue)?></b><small>pautas sensíveis ou de alto impacto</small></div><div class="stat"><span>Revisão de imagem</span><b><?=count($imageReviewQueue)?></b><small>texto pronto; imagem precisa ser confirmada</small></div></div>
 <?php if($sensitiveQueue): ?><section class="city-block"><h2>Revisão obrigatória <small class="muted">(<?=count($sensitiveQueue)?>)</small></h2><div class="queue-grid"><?php foreach($sensitiveQueue as $m): ?><article class="matter"><span class="badge" style="background:#fef2f2;color:#b91c1c">Revisão obrigatória</span><span class="badge"><?=h($m['editorial_status']??'Revisão')?></span><?php if(isset($m['editorial_score'])): ?><span class="badge">Score <?=h($m['editorial_score'])?></span><?php endif; ?><h3><?=h($m['title']??'Sem título')?></h3><p><?=h($m['subtitle']??($m['summary']??''))?></p><a class="btn orange" href="?edit=<?=h($m['id'])?>">Revisar</a></article><?php endforeach; ?></div></section><?php endif; ?>
 <?php if($imageReviewQueue): ?><section class="city-block"><h2>Revisão de imagem <small class="muted">(<?=count($imageReviewQueue)?>)</small></h2><div class="queue-grid"><?php foreach($imageReviewQueue as $m): ?><article class="matter"><span class="badge" style="background:#fff7ed;color:#c2410c">Imagem pendente</span><h3><?=h($m['title']??'Sem título')?></h3><p><?=h($m['image_review_reason']??'Revisar imagem antes da publicação.')?></p><a class="btn orange" href="?edit=<?=h($m['id'])?>">Corrigir imagem</a></article><?php endforeach; ?></div></section><?php endif; ?>
 <form id="bulk-form" method="post" class="settings-box bulk-row" onsubmit="return confirm('Aplicar a ação nas matérias selecionadas?');"><?=tvs_csrf_field()?><label class="check"><input type="checkbox" id="select-all-radar"> Selecionar todas visíveis</label><button class="btn orange" type="submit" name="action" value="bulk_approve">Aprovar selecionadas</button><button class="btn secondary" type="submit" name="action" value="bulk_review">Enviar para revisão</button><button class="btn secondary" type="submit" name="action" value="bulk_discard">Descartar selecionadas</button><span class="muted">Use os checkboxes dos cards para operar várias matérias de uma vez.</span></form>
