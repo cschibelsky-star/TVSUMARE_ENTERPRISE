@@ -2,6 +2,9 @@
 require_once __DIR__.'/../includes/outbound_guard.php';
 $TVS_RADAR_IS_CLI_CRON = defined('TVS_RADAR_CRON') && TVS_RADAR_CRON && PHP_SAPI === 'cli';
 if(!$TVS_RADAR_IS_CLI_CRON){
+  header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+  header('Pragma: no-cache');
+  header('Expires: 0');
   require_once __DIR__.'/auth.php';
   require_login();
 }
