@@ -3322,6 +3322,35 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5,$options=[]
           continue;
         }
 
+        $articleReadiness=function_exists('tvs_radar_queue_item_readiness')
+          ? tvs_radar_queue_item_readiness($article)
+          : ['ready'=>!empty($article['ai_editor_processed'])];
+
+        if(empty($article['ai_editor_processed']) || empty($articleReadiness['ready'])){
+          $pendingReasons=(array)($articleReadiness['reasons']??[]);
+          if(empty($article['ai_editor_processed'])) $pendingReasons[]='Editor IA ainda não concluído';
+          $pendingReasons=array_values(array_unique(array_filter($pendingReasons)));
+
+          $cand['pipeline_stage']='aguardando_editor_ia';
+          $cand['pipeline_reason']=$pendingReasons
+            ? implode('; ',$pendingReasons)
+            : 'Aguardando conclusão e validação do Editor IA.';
+          $cand['pipeline_updated_at']=date('c');
+          $discovery[$pick]=$cand;
+
+          tvs_radar_log_event(
+            $article['title']??($cand['title']??''),
+            $article['source']??($cand['source']??'Fonte'),
+            $city,
+            'PROCESSAMENTO',
+            $cand['pipeline_reason'],
+            $cand['url']??''
+          );
+          continue;
+        }
+
+        $article['queue_status']='ready';
+        $article['queue_pending_reasons']=[];
         $approval[]=$article;
         unset($discovery[$pick]);
         $generated++;
@@ -3332,7 +3361,7 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5,$options=[]
           $article['source']??($cand['source']??'Fonte'),
           $city,
           ($article['editorial_status']??'REVISÃO'),
-          'Repórter IA + Editor IA concluídos; SF '.$sf.'/100; diversidade aplicada como preferência.',
+          'Repórter IA + Editor IA concluídos e conteúdo validado; SF '.$sf.'/100; diversidade aplicada como preferência.',
           $cand['url']??''
         );
         break;
@@ -3475,14 +3504,14 @@ function tvs_publish_from_queue($id,$post){
   if(!$found){ $TVS_PUBLISH_ERROR='Matéria não encontrada na fila.'; return false; }
 
   $humanReview=!empty($post['human_review']);
-  if(!$humanReview && empty($found['ai_editor_processed'])){
+  if(empty($found['ai_editor_processed'])){
     $TVS_PUBLISH_ERROR='A matéria ainda não passou pelo Editor IA.';
     return false;
   }
 
-  // Aprovação direta continua obedecendo todos os gates automáticos.
-  // Na tela de edição, uma confirmação humana explícita pode superar flags de
-  // revisão/score, mas nunca os requisitos factuais críticos.
+  // Aprovação direta e revisão humana obedecem ao Editor IA obrigatório.
+  // A revisão humana pode ajustar conteúdo, mas não substitui a etapa editorial
+  // automatizada nem os requisitos factuais críticos.
   $title=trim($post['title']??$found['title']??'');
   if(function_exists('tvs_editorial_clean_title')) $title=tvs_editorial_clean_title($title,$post['source']??$found['source']??'');
   $body=trim($post['body']??$found['body']??'');
@@ -3512,7 +3541,9 @@ function tvs_publish_from_queue($id,$post){
       $TVS_PUBLISH_ERROR='Publicação bloqueada: '.implode('; ',$critical).'.';
       return false;
     }
-  } elseif(function_exists('tvs_radar_queue_item_readiness')){
+  }
+
+  if(function_exists('tvs_radar_queue_item_readiness')){
     $readiness=tvs_radar_queue_item_readiness($candidate);
     if(empty($readiness['ready'])){
       $TVS_PUBLISH_ERROR='Publicação bloqueada: '.implode('; ',(array)($readiness['reasons']??['conteúdo incompleto'])).'.';
@@ -3711,7 +3742,7 @@ if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'){
     }
     unset($q);
     tvs_queue_save($queue);
-    $notice='Edição salva. Agora você pode aprovar quando quiser.';
+    $notice='Edição salva. A publicação só será liberada após o Editor IA e a validação editorial concluírem.';
   }
 
   if($notice!=='') $_SESSION['tvs_flash_notice']=$notice;
@@ -3779,8 +3810,23 @@ unset($legacyItem);
 if($queueImageMigrated) tvs_queue_save($queue);
 
 $byCity=[]; foreach($cities as $c) $byCity[$c]=[];
-$sensitiveQueue=[]; $imageReviewQueue=[]; $normalQueue=[];
+$sensitiveQueue=[]; $imageReviewQueue=[]; $normalQueue=[]; $processingQueue=[];
 foreach($queue as $q){
+  $readiness=function_exists('tvs_radar_queue_item_readiness')
+    ? tvs_radar_queue_item_readiness($q)
+    : ['ready'=>!empty($q['ai_editor_processed'])];
+
+  if(empty($q['ai_editor_processed']) || empty($readiness['ready'])){
+    $q['queue_status']='processing';
+    $q['queue_pending_reasons']=array_values(array_unique(array_filter(array_merge(
+      (array)($q['queue_pending_reasons']??[]),
+      (array)($readiness['reasons']??[]),
+      empty($q['ai_editor_processed'])?['Editor IA ainda não concluído']:[]
+    ))));
+    $processingQueue[]=$q;
+    continue;
+  }
+
   if(!empty($q['sensitive_review_required']) || ($q['review_level']??'')==='revisao_obrigatoria'){
     $sensitiveQueue[]=$q;
     continue;
@@ -3793,14 +3839,18 @@ foreach($queue as $q){
   $byCity[$q['city']??'Região'][]=$q;
 }
 $editId=$_GET['edit']??''; $editItem=null; foreach($queue as $q){ if(($q['id']??'')===$editId){$editItem=$q; break;} }
+$editReadiness=$editItem && function_exists('tvs_radar_queue_item_readiness')
+  ? tvs_radar_queue_item_readiness($editItem)
+  : ['ready'=>!empty($editItem['ai_editor_processed'])];
+$editCanApprove=$editItem && !empty($editItem['ai_editor_processed']) && !empty($editReadiness['ready']);
 ?>
 <!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Matérias para Aprovação | TV Sumaré</title><link rel="stylesheet" href="admin.css?v=132"><style>.queue-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}.matter{background:#fff;border:1px solid #e5e7eb;border-radius:18px;padding:14px;box-shadow:0 8px 22px rgba(15,23,42,.06)}.matter img{width:100%;height:150px;object-fit:cover;border-radius:14px;background:#eef2ff}.matter h3{margin:10px 0 6px;font-size:18px}.matter p{color:#475569;font-size:14px}.badge{display:inline-flex;border-radius:999px;background:#eef2ff;color:#1d4ed8;padding:5px 9px;font-size:12px;font-weight:800;margin:6px 5px 6px 0}.city-block{margin:24px 0}.matter-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.edit-form{background:#fff;border-radius:18px;padding:18px;border:1px solid #e5e7eb}.edit-form input,.edit-form textarea,.edit-form select{width:100%;padding:11px;border:1px solid #cbd5e1;border-radius:12px;margin:5px 0 12px}.edit-form textarea{min-height:320px}.muted{color:#64748b}.settings-box{background:#fff;border:1px solid #e5e7eb;border-radius:18px;padding:14px;margin:14px 0}.settings-inline{display:flex;gap:12px;align-items:end;flex-wrap:wrap}.settings-inline label{display:flex;flex-direction:column;font-size:13px;color:#334155}.settings-inline input[type=number]{width:110px;padding:10px;border:1px solid #cbd5e1;border-radius:12px}.settings-inline .check{flex-direction:row;gap:8px;align-items:center}.top-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.bulk-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.bulk-row .check,.bulk-check{display:flex;align-items:center;gap:7px;font-weight:800;color:#334155}.bulk-check{margin-bottom:8px}.bulk-check input{width:18px;height:18px}@media(max-width:1000px){.queue-grid{grid-template-columns:1fr}.matter img{height:190px}}</style></head><body><div class="admin"><?php include __DIR__.'/_menu.php'; ?><main class="main"><div class="top"><div><span class="eyebrow">Centro de Redação • Radar 2.0</span><h1>Matérias para Aprovação</h1><p class="muted">O Radar abastece a redação com mais opções. Você aprova o que achar relevante para a TV Sumaré.</p></div><div class="top-actions"><form method="post"><?=tvs_csrf_field()?><input type="hidden" name="action" value="update_radar"><button class="btn orange" type="submit" onclick="return confirm('Atualizar o Radar agora? Isso pode levar alguns segundos.');">Atualizar Agora</button></form><form method="post"><?=tvs_csrf_field()?><input type="hidden" name="action" value="update_radar_volume"><button class="btn secondary" type="submit" onclick="return confirm('Ativar Modo Volume Máximo? Mais pautas entrarão como revisão humana, não como publicação automática.');">Modo Volume Máximo</button></form></div></div>
 <div class="settings-box"><form method="post" class="settings-inline"><?=tvs_csrf_field()?><input type="hidden" name="action" value="save_settings"><label class="check"><input type="checkbox" name="auto_daily" value="1" <?=!empty($radarCfg['auto_daily'])?'checked':''?>> Atualização automática diária</label><label>Meta de matérias por cidade<input type="number" min="1" max="40" name="per_city" value="<?=h($radarCfg['per_city']??20)?>"></label><button class="btn secondary" type="submit">Salvar configuração</button><span class="muted">Última atualização: <?=!empty($radarStatus['last_run'])?h(date('d/m/Y H:i',strtotime($radarStatus['last_run']))):'ainda não executada'?> <?=!empty($radarStatus['last_mode'])?'• '.h($radarStatus['last_mode']):''?></span></form><div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px"><form method="post" onsubmit="return confirm('Remover automaticamente matérias realmente inválidas como menu, rodapé e texto genérico?');"><?=tvs_csrf_field()?><input type="hidden" name="action" value="clean_invalid"><button class="btn secondary" type="submit">Limpar matérias inválidas</button></form><span class="muted">Use volume quando precisar abastecer a redação; aprove apenas o que estiver bom.</span></div></div>
 <?php if($notice): ?><div class="notice"><?=h($notice)?></div><?php endif; ?><?php if($error): ?><div class="notice error"><?=h($error)?></div><?php endif; ?>
 <?php if($editItem): $tags=is_array($editItem['tags']??null)?implode(', ',$editItem['tags']):($editItem['tags']??''); ?>
-<section class="edit-form"><h2>Editar matéria antes de aprovar</h2><form method="post"><?=tvs_csrf_field()?><input type="hidden" name="id" value="<?=h($editItem['id'])?>"><input type="hidden" name="human_review" value="1"><label>Título</label><input name="title" value="<?=h($editItem['title']??'')?>"><label>Subtítulo</label><input name="subtitle" value="<?=h($editItem['subtitle']??'')?>"><label>Resumo</label><input name="summary" value="<?=h($editItem['summary']??'')?>"><label>Cidade</label><input name="city" value="<?=h($editItem['city']??'')?>"><label>Categoria</label><input name="category" value="<?=h($editItem['category']??'')?>"><label>Imagem</label><input name="image" value="<?=h($editItem['image']??'')?>"><label>Crédito da imagem</label><input name="image_credit" value="<?=h($editItem['image_credit']??'')?>"><label>Texto completo</label><textarea name="body"><?=h($editItem['body']??'')?></textarea><label>Fonte</label><input name="source" value="<?=h($editItem['source']??'')?>"><label>URL da fonte</label><input name="source_url" value="<?=h($editItem['source_url']??'')?>"><label>Tags</label><input name="tags" value="<?=h($tags)?>"><label>SEO title</label><input name="seo_title" value="<?=h($editItem['seo_title']??'')?>"><label>Meta description</label><input name="meta_description" value="<?=h($editItem['meta_description']??'')?>"><label>Slug</label><input name="slug" value="<?=h($editItem['slug']??'')?>"><label>Legenda Instagram</label><textarea name="instagram_caption" style="min-height:120px"><?=h($editItem['instagram_caption']??'')?></textarea><label>Texto WhatsApp</label><textarea name="whatsapp_text" style="min-height:100px"><?=h($editItem['whatsapp_text']??'')?></textarea><div class="matter-actions"><button class="btn" type="submit" name="action" value="save_edit">Salvar edição</button><button class="btn orange" type="submit" name="action" value="approve" onclick="return confirm('Aprovar e publicar exatamente esta versão revisada?')">Aprovar e publicar</button><a class="btn secondary" href="radar-regional.php">Voltar</a></div></form></section>
+<section class="edit-form"><h2><?= $editCanApprove ? 'Editar matéria antes de aprovar' : 'Matéria em processamento editorial' ?></h2><?php if(!$editCanApprove): ?><div class="notice error">Esta matéria ainda não está liberada para aprovação. <?=h(implode(' · ',array_values(array_unique(array_filter(array_merge((array)($editReadiness['reasons']??[]),empty($editItem['ai_editor_processed'])?['Editor IA ainda não concluído']:[]))))))?></div><?php endif; ?><form method="post"><?=tvs_csrf_field()?><input type="hidden" name="id" value="<?=h($editItem['id'])?>"><input type="hidden" name="human_review" value="1"><label>Título</label><input name="title" value="<?=h($editItem['title']??'')?>"><label>Subtítulo</label><input name="subtitle" value="<?=h($editItem['subtitle']??'')?>"><label>Resumo</label><input name="summary" value="<?=h($editItem['summary']??'')?>"><label>Cidade</label><input name="city" value="<?=h($editItem['city']??'')?>"><label>Categoria</label><input name="category" value="<?=h($editItem['category']??'')?>"><label>Imagem</label><input name="image" value="<?=h($editItem['image']??'')?>"><label>Crédito da imagem</label><input name="image_credit" value="<?=h($editItem['image_credit']??'')?>"><label>Texto completo</label><textarea name="body"><?=h($editItem['body']??'')?></textarea><label>Fonte</label><input name="source" value="<?=h($editItem['source']??'')?>"><label>URL da fonte</label><input name="source_url" value="<?=h($editItem['source_url']??'')?>"><label>Tags</label><input name="tags" value="<?=h($tags)?>"><label>SEO title</label><input name="seo_title" value="<?=h($editItem['seo_title']??'')?>"><label>Meta description</label><input name="meta_description" value="<?=h($editItem['meta_description']??'')?>"><label>Slug</label><input name="slug" value="<?=h($editItem['slug']??'')?>"><label>Legenda Instagram</label><textarea name="instagram_caption" style="min-height:120px"><?=h($editItem['instagram_caption']??'')?></textarea><label>Texto WhatsApp</label><textarea name="whatsapp_text" style="min-height:100px"><?=h($editItem['whatsapp_text']??'')?></textarea><div class="matter-actions"><button class="btn" type="submit" name="action" value="save_edit">Salvar edição</button><?php if($editCanApprove): ?><button class="btn orange" type="submit" name="action" value="approve" onclick="return confirm('Aprovar e publicar exatamente esta versão revisada?')">Aprovar e publicar</button><?php else: ?><a class="btn secondary" href="drafts.php">Ver em Revisões Pendentes</a><?php endif; ?><a class="btn secondary" href="radar-regional.php">Voltar</a></div></form></section>
 <?php else: ?>
-<?php $discarded=tvs_read_json_file(dirname(__DIR__).'/data/pautas_descartadas.json'); ?><div class="cards"><div class="stat"><span>Fila comum</span><b><?=count($normalQueue)?></b><small>matérias aguardando decisão</small></div><div class="stat"><span>Revisão obrigatória</span><b><?=count($sensitiveQueue)?></b><small>pautas sensíveis ou de alto impacto</small></div><div class="stat"><span>Revisão de imagem</span><b><?=count($imageReviewQueue)?></b><small>imagem precisa ser confirmada</small></div></div>
+<?php $discarded=tvs_read_json_file(dirname(__DIR__).'/data/pautas_descartadas.json'); ?><div class="cards"><div class="stat"><span>Prontas para aprovação</span><b><?=count($normalQueue)+count($sensitiveQueue)+count($imageReviewQueue)?></b><small>Editor IA e validação concluídos</small></div><div class="stat"><span>Em processamento</span><b><?=count($processingQueue)?></b><small><a href="drafts.php">ver em Revisões Pendentes</a></small></div><div class="stat"><span>Revisão obrigatória</span><b><?=count($sensitiveQueue)?></b><small>pautas sensíveis ou de alto impacto</small></div><div class="stat"><span>Revisão de imagem</span><b><?=count($imageReviewQueue)?></b><small>texto pronto; imagem precisa ser confirmada</small></div></div>
 <?php if($sensitiveQueue): ?><section class="city-block"><h2>Revisão obrigatória <small class="muted">(<?=count($sensitiveQueue)?>)</small></h2><div class="queue-grid"><?php foreach($sensitiveQueue as $m): ?><article class="matter"><span class="badge" style="background:#fef2f2;color:#b91c1c">Revisão obrigatória</span><span class="badge"><?=h($m['editorial_status']??'Revisão')?></span><?php if(isset($m['editorial_score'])): ?><span class="badge">Score <?=h($m['editorial_score'])?></span><?php endif; ?><h3><?=h($m['title']??'Sem título')?></h3><p><?=h($m['subtitle']??($m['summary']??''))?></p><a class="btn orange" href="?edit=<?=h($m['id'])?>">Revisar</a></article><?php endforeach; ?></div></section><?php endif; ?>
 <?php if($imageReviewQueue): ?><section class="city-block"><h2>Revisão de imagem <small class="muted">(<?=count($imageReviewQueue)?>)</small></h2><div class="queue-grid"><?php foreach($imageReviewQueue as $m): ?><article class="matter"><span class="badge" style="background:#fff7ed;color:#c2410c">Imagem pendente</span><h3><?=h($m['title']??'Sem título')?></h3><p><?=h($m['image_review_reason']??'Revisar imagem antes da publicação.')?></p><a class="btn orange" href="?edit=<?=h($m['id'])?>">Corrigir imagem</a></article><?php endforeach; ?></div></section><?php endif; ?>
 <form id="bulk-form" method="post" class="settings-box bulk-row" onsubmit="return confirm('Aplicar a ação nas matérias selecionadas?');"><?=tvs_csrf_field()?><label class="check"><input type="checkbox" id="select-all-radar"> Selecionar todas visíveis</label><button class="btn orange" type="submit" name="action" value="bulk_approve">Aprovar selecionadas</button><button class="btn secondary" type="submit" name="action" value="bulk_review">Enviar para revisão</button><button class="btn secondary" type="submit" name="action" value="bulk_discard">Descartar selecionadas</button><span class="muted">Use os checkboxes dos cards para operar várias matérias de uma vez.</span></form>
