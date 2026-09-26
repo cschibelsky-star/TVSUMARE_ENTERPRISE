@@ -3324,12 +3324,39 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5,$options=[]
       $factuallyReady=!empty($decision['ready']);
 
       if(!$factuallyReady){
-        tvs_radar_schedule_enrichment(
-          $cand,
-          'Pacote factual ainda insuficiente: SF '.$sf.'/100; 4W básico '.($coreOk?'completo':'incompleto')
+        $contentUsable=!empty($decision['content_usable']);
+        $editorialInterest=!empty($decision['editorial_interest']);
+        $gateReason='Pacote factual ainda insuficiente: SF '.$sf.'/100; 4W básico '.($coreOk?'completo':'incompleto')
           .'; fonte original '.($sourceResolved?'resolvida':'não resolvida')
           .'; fonte confiável '.($trustedSource?'sim':'não')
-          .'; atualidade '.($freshnessOk?'ok':'fora da janela').'.'
+          .'; atualidade '.($freshnessOk?'ok':'fora da janela')
+          .'; conteúdo útil '.($contentUsable?'sim':'não').' ('.$sourceWords.' palavras)'
+          .'; interesse editorial '.($editorialInterest?'sim':'não').'.';
+        $cand['fact_gate_audit']=[
+          'checked_at'=>date('c'),
+          'sf_score'=>$sf,
+          'source_words'=>$sourceWords,
+          'core_4w_ok'=>$coreOk?1:0,
+          'source_original_resolved'=>$sourceResolved?1:0,
+          'trusted_source'=>$trustedSource?1:0,
+          'freshness_ok'=>$freshnessOk?1:0,
+          'content_usable'=>$contentUsable?1:0,
+          'editorial_interest'=>$editorialInterest?1:0
+        ];
+        if(PHP_SAPI==='cli'){
+          echo "FACT_GATE_BLOCK city=".str_replace(' ','_',$city)
+            ." sf={$sf} words={$sourceWords}"
+            ." core=".($coreOk?'ok':'missing')
+            ." resolved=".($sourceResolved?'yes':'no')
+            ." trusted=".($trustedSource?'yes':'no')
+            ." fresh=".($freshnessOk?'yes':'no')
+            ." usable=".($contentUsable?'yes':'no')
+            ." editorial=".($editorialInterest?'yes':'no')
+            ." title=".substr(preg_replace('/\\s+/u',' ',(string)($cand['title']??'')),0,120)."\n";
+        }
+        tvs_radar_schedule_enrichment(
+          $cand,
+          $gateReason
         );
         if(($cand['pipeline_stage']??'')==='expirada_sem_enriquecimento'){
           tvs_radar_discard($cand,$city,'TTL de enriquecimento expirado após 7 dias sem pacote factual suficiente.');
