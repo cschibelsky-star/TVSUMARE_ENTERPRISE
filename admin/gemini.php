@@ -36,23 +36,16 @@ function tvs_centro_ia_generate_text($prompt,$generationConfig=[],$timeout=45){
     $token=trim((string)(getenv('CENTRO_IA_INTERNAL_TOKEN') ?: ''));
     if($token==='') return ['ok'=>false,'error'=>'Token interno do Centro IA ausente.'];
 
-    $configured=trim((string)(getenv('CENTRO_IA_URL') ?: ''));
-    $fallback='https://core.hml.vitrineiapro.com.br/api/internal/centro-ia/execute';
-    $url=$fallback;
-
-    if($configured!==''){
-        $parts=parse_url($configured);
-        $path=is_array($parts) ? trim((string)($parts['path']??'')) : '';
-        $candidate=($path==='' || $path==='/')
-            ? rtrim($configured,'/').'/api/internal/centro-ia/execute'
-            : $configured;
-        if(function_exists('tvs_outbound_url_is_allowed') && tvs_outbound_url_is_allowed($candidate)){
-            $url=$candidate;
-        }
-    }
-
-    $outboundOptions=tvs_outbound_curl_options($url,max(15,(int)$timeout));
-    if($outboundOptions===null) return ['ok'=>false,'error'=>'URL do Centro IA bloqueada pela política de saída.'];
+    // Serviço interno da Vitrine IA Pro: evita o gateway público e seu timeout.
+    // Host e rota são fixos; não aceitamos URL arbitrária para esta comunicação.
+    $url='http://vitrine_core_web_hml/api/internal/centro-ia/execute';
+    $safeTimeout=max(15,min((int)$timeout,180));
+    $outboundOptions=[
+        CURLOPT_PROTOCOLS=>CURLPROTO_HTTP,
+        CURLOPT_FOLLOWLOCATION=>false,
+        CURLOPT_CONNECTTIMEOUT=>5,
+        CURLOPT_TIMEOUT=>$safeTimeout
+    ];
 
     $temperature=(float)($generationConfig['temperature']??0.25);
     $payload=json_encode([

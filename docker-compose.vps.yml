@@ -105,6 +105,7 @@ services:
     networks:
       - tvsumare_internal
       - tvsumare_egress
+      - vitrine_net
     security_opt:
       - no-new-privileges:true
     cap_drop:
