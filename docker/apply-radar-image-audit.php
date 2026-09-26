@@ -12,8 +12,9 @@ if($source===false){
 }
 
 $marker="'image_source_type'=>\$imageSourceType,";
-if(strpos($source,$marker)!==false){
-    echo "Radar image audit hardening already applied.\n";
+$newerPublishMarker="'human_review_override'=>\$humanReview?1:0";
+if(strpos($source,$marker)!==false || strpos($source,$newerPublishMarker)!==false){
+    echo "Radar image audit hardening already applied or superseded by newer publish flow.\n";
     exit(0);
 }
 
