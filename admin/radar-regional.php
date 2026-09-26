@@ -3747,7 +3747,7 @@ if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'){
     $found=(int)($pipeline['pipeline_discovered_last_cycle']??0);
     $st=array_merge($pipeline,['last_run'=>date('c'),'last_mode'=>'manual','last_generated'=>$n,'last_message'=>"{$n} matéria(s) pronta(s); {$pending} pauta(s) no pipeline; {$found} descoberta(s) neste ciclo."]);
     tvs_radar_save_status($st);
-    $notice="Radar atualizado: {$n} matéria(s) pronta(s) para aprovação, {$pending} pauta(s) em processamento/enriquecimento e {$found} nova(s) pauta(s) descoberta(s).";
+    $notice="Radar atualizado. Os números abaixo mostram o snapshot atual do pipeline.";
   } elseif($action==='update_radar_volume'){
     $cfg=tvs_radar_config();
     $perCity=max(25,min(60,(int)($cfg['per_city']??25)));
@@ -3757,7 +3757,7 @@ if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'){
     $found=(int)($pipeline['pipeline_discovered_last_cycle']??0);
     $st=array_merge($pipeline,['last_run'=>date('c'),'last_mode'=>'volume_maximo','last_generated'=>$n,'last_message'=>"{$n} matéria(s) pronta(s); {$pending} pauta(s) no pipeline; {$found} descoberta(s) neste ciclo."]);
     tvs_radar_save_status($st);
-    $notice="Modo Volume Máximo: {$n} matéria(s) pronta(s), {$pending} pauta(s) no pipeline e {$found} nova(s) pauta(s) descoberta(s).";
+    $notice="Modo Volume Máximo concluído. Os números abaixo mostram o snapshot atual do pipeline.";
   } elseif($action==='save_settings'){
     $cfg=tvs_radar_config();
     $cfg['auto_daily']=!empty($_POST['auto_daily']);
@@ -3946,7 +3946,11 @@ foreach($processingQueue as $processingItem){
 }
 $totalSourcePending=count($sourcePendingKeys);
 $totalEditorPending=count($editorPendingKeys);
-?><div class="cards"><div class="stat"><span>Prontas para aprovação</span><b><?=count($normalQueue)+count($sensitiveQueue)+count($imageReviewQueue)?></b><small>Editor IA e validação concluídos</small></div><div class="stat"><span>Aguardando fonte original</span><b><?=$totalSourcePending?></b><small>descobertas em resolução e enriquecimento</small></div><div class="stat"><span>Aguardando Editor IA</span><b><?=$totalEditorPending?></b><small><a href="drafts.php">ver matérias e motivos</a></small></div><div class="stat"><span>Revisão obrigatória</span><b><?=count($sensitiveQueue)?></b><small>pautas sensíveis ou de alto impacto</small></div><div class="stat"><span>Revisão de imagem</span><b><?=count($imageReviewQueue)?></b><small>texto pronto; imagem precisa ser confirmada</small></div></div>
+$totalReady=count($normalQueue);
+$totalSensitive=count($sensitiveQueue);
+$totalImageReview=count($imageReviewQueue);
+$totalPipelineCurrent=$totalSourcePending+$totalEditorPending+$totalReady+$totalSensitive+$totalImageReview;
+?><div class="notice">Pipeline atual: <?=$totalPipelineCurrent?> pauta(s) acompanhada(s) — <?=$totalSourcePending?> em fonte/enriquecimento · <?=$totalEditorPending?> aguardando Editor IA · <?=$totalSensitive?> em revisão obrigatória · <?=$totalImageReview?> em revisão de imagem · <?=$totalReady?> pronta(s) para aprovação.</div><div class="cards"><div class="stat"><span>Prontas para aprovação</span><b><?=$totalReady?></b><small>Editor IA e validação concluídos, sem pendência adicional</small></div><div class="stat"><span>Fonte / enriquecimento</span><b><?=$totalSourcePending?></b><small>resolução de origem ou conteúdo factual ainda insuficiente</small></div><div class="stat"><span>Aguardando Editor IA</span><b><?=$totalEditorPending?></b><small><a href="drafts.php">ver matérias e motivos</a></small></div><div class="stat"><span>Revisão obrigatória</span><b><?=$totalSensitive?></b><small>pautas sensíveis ou de alto impacto</small></div><div class="stat"><span>Revisão de imagem</span><b><?=$totalImageReview?></b><small>texto pronto; imagem precisa ser confirmada</small></div></div>
 <?php if($sensitiveQueue): ?><section class="city-block"><h2>Revisão obrigatória <small class="muted">(<?=count($sensitiveQueue)?>)</small></h2><div class="queue-grid"><?php foreach($sensitiveQueue as $m): ?><article class="matter"><span class="badge" style="background:#fef2f2;color:#b91c1c">Revisão obrigatória</span><span class="badge"><?=h($m['editorial_status']??'Revisão')?></span><?php if(isset($m['editorial_score'])): ?><span class="badge">Score <?=h($m['editorial_score'])?></span><?php endif; ?><h3><?=h($m['title']??'Sem título')?></h3><p><?=h($m['subtitle']??($m['summary']??''))?></p><a class="btn orange" href="?edit=<?=h($m['id'])?>">Revisar</a></article><?php endforeach; ?></div></section><?php endif; ?>
 <?php if($imageReviewQueue): ?><section class="city-block"><h2>Revisão de imagem <small class="muted">(<?=count($imageReviewQueue)?>)</small></h2><div class="queue-grid"><?php foreach($imageReviewQueue as $m): ?><article class="matter"><span class="badge" style="background:#fff7ed;color:#c2410c">Imagem pendente</span><h3><?=h($m['title']??'Sem título')?></h3><p><?=h($m['image_review_reason']??'Revisar imagem antes da publicação.')?></p><a class="btn orange" href="?edit=<?=h($m['id'])?>">Corrigir imagem</a></article><?php endforeach; ?></div></section><?php endif; ?>
 <form id="bulk-form" method="post" class="settings-box bulk-row" onsubmit="return confirm('Aplicar a ação nas matérias selecionadas?');"><?=tvs_csrf_field()?><label class="check"><input type="checkbox" id="select-all-radar"> Selecionar todas visíveis</label><button class="btn orange" type="submit" name="action" value="bulk_approve">Aprovar selecionadas</button><button class="btn secondary" type="submit" name="action" value="bulk_review">Enviar para revisão</button><button class="btn secondary" type="submit" name="action" value="bulk_discard">Descartar selecionadas</button><span class="muted">Use os checkboxes dos cards para operar várias matérias de uma vez.</span></form>
