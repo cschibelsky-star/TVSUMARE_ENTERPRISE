@@ -2587,12 +2587,18 @@ function tvs_radar_fact_package($cand,$mat,$city,$extraSources=[]){
     '~\b(sa[uú]de|hospital|upa|ubs|dengue|vacina[cç][aã]o|educa[cç][aã]o|escola|creche|'
     .'empregos?|vagas?|pat|trabalho|economia|empresa|ind[uú]stria|com[eé]rcio|'
     .'obras?|ponte|pontes|viaduto|viadutos|ciclovia|ordem de servi[cç]o|tr[aâ]nsito|mobilidade|transporte|seguran[cç]a|pol[ií]cia|pris[aã]o|acidente|'
-    .'cultura|festival|teatro|m[uú]sica|evento|esporte|corrida|futebol|'
+    .'cultura|festival|teatro|m[uú]sica|evento|esporte|corrida|futebol|document[aá]rio|cinema|dan[cç]a|coral|literatura|patrim[oô]nio|exposi[cç][aã]o|'
     .'servi[cç]os? p[uú]blicos?|meio ambiente|turismo|defesa civil)\b~iu',
     $editorialText
   )===1;
   $contentWords=tvs_radar_word_count((string)($mat['text']??''));
-  $contentUsable=$sourceResolved && $noiseFree && $contentWords>=70;
+  $coreContentSignals=!empty($signals['quem']) && !empty($signals['o_que']) && !empty($signals['quando']) && !empty($signals['onde']);
+  $contentUsable=$sourceResolved
+    && $noiseFree
+    && (
+      $contentWords>=70
+      || ($trustedSource && $coreContentSignals && $contentWords>=45)
+    );
 
   $age=$cand['age_days']??null;
   if(is_numeric($age)){
@@ -3184,7 +3190,18 @@ function tvs_radar_retry_pending_editor_articles(&$approval,$limit=6){
       $item['queue_pending_reasons']=array_values(array_unique(array_filter(array_merge(
         (array)($item['queue_pending_reasons']??[]),['Editor IA ainda não concluiu; nova tentativa automática será realizada']
       ))));
+      if(PHP_SAPI==='cli'){
+        echo "EDITOR_RETRY_FAIL attempts=".(int)$item['ai_editor_attempts']
+          ." city=".str_replace(' ','_',(string)($item['city']??'Região'))
+          ." words=".tvs_radar_word_count((string)($item['body']??''))
+          ." title=".substr(preg_replace('/\\s+/u',' ',(string)($item['title']??'')),0,120)."\n";
+      }
       continue;
+    }
+    if(PHP_SAPI==='cli'){
+      echo "EDITOR_RETRY_OK attempts=".(int)$item['ai_editor_attempts']
+        ." city=".str_replace(' ','_',(string)($item['city']??'Região'))
+        ." title=".substr(preg_replace('/\\s+/u',' ',(string)($item['title']??'')),0,120)."\n";
     }
     $preservedId=$item['id']??uniqid('aprov_'); $preservedCreated=$item['created_at']??date('c');
     $item=array_merge($item,$edited); $item['id']=$preservedId; $item['created_at']=$preservedCreated;
@@ -3303,9 +3320,34 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5,$options=[]
       }
 
       if(tvs_radar_is_google_news_url($cand['url']??'')){
+        $factText=tvs_radar_fact_text($cand);
+        $detectedAllowed=tvs_radar_detect_city_from_text($factText,'');
+        if($detectedAllowed!=='' && in_array($detectedAllowed,tvs_radar_allowed_cities(),true) && $detectedAllowed!==$city){
+          $cand['city']=$detectedAllowed;
+          $cand['radar_requested_city']=$detectedAllowed;
+          $cand['pipeline_stage']='aguardando_enriquecimento';
+          $cand['pipeline_reason']='Pauta regional reclassificada para '.$detectedAllowed.' antes da resolução da fonte original.';
+          $cand['enrichment_next_retry_at']=date('c',time()+300);
+          $discovery[$pick]=$cand;
+          if(PHP_SAPI==='cli'){
+            echo "PIPELINE_RECLASSIFY from=".str_replace(' ','_',$city)
+              ." to=".str_replace(' ','_',$detectedAllowed)
+              ." title=".substr(preg_replace('/\\s+/u',' ',(string)($cand['title']??'')),0,120)."\n";
+          }
+          continue;
+        }
+        if($detectedAllowed==='' && tvs_radar_has_outside_city_signal($factText)){
+          tvs_radar_discard($cand,$city,'Pauta do agregador pertence a cidade fora da região monitorada.');
+          unset($discovery[$pick]);
+          if(PHP_SAPI==='cli'){
+            echo "PIPELINE_DROP_OUTSIDE city=".str_replace(' ','_',$city)
+              ." title=".substr(preg_replace('/\\s+/u',' ',(string)($cand['title']??'')),0,120)."\n";
+          }
+          continue;
+        }
         tvs_radar_schedule_enrichment(
           $cand,
-          'Pauta válida, mas a URL original ainda não foi resolvida. Snippet não será usado como matéria.'
+          'Pauta regional válida, mas a URL original ainda não foi resolvida. Snippet não será usado como matéria.'
         );
         if(($cand['pipeline_stage']??'')==='expirada_sem_enriquecimento'){
           tvs_radar_discard($cand,$city,'TTL de enriquecimento expirado após 7 dias sem fonte original resolvida.');
