@@ -30,6 +30,66 @@ function tvs_gemini_extract_json($txt){
     return is_array($data) ? $data : null;
 }
 
+function tvs_centro_ia_generate_text($prompt,$generationConfig=[],$timeout=45){
+    if(!function_exists('curl_init')) return ['ok'=>false,'error'=>'cURL não está habilitado no servidor.'];
+
+    $token=trim((string)(getenv('CENTRO_IA_INTERNAL_TOKEN') ?: ''));
+    if($token==='') return ['ok'=>false,'error'=>'Token interno do Centro IA ausente.'];
+
+    $configured=trim((string)(getenv('CENTRO_IA_URL') ?: ''));
+    $fallback='https://core.hml.vitrineiapro.com.br/api/internal/centro-ia/execute';
+    $url=(function_exists('tvs_outbound_url_is_allowed') && tvs_outbound_url_is_allowed($configured)) ? $configured : $fallback;
+
+    $outboundOptions=tvs_outbound_curl_options($url,max(15,(int)$timeout));
+    if($outboundOptions===null) return ['ok'=>false,'error'=>'URL do Centro IA bloqueada pela política de saída.'];
+
+    $temperature=(float)($generationConfig['temperature']??0.25);
+    $payload=json_encode([
+        'project_id'=>'tvsumare',
+        'capability'=>'editorial_generation',
+        'input'=>[
+            'user'=>(string)$prompt,
+            'response_format'=>'json',
+            'temperature'=>$temperature
+        ]
+    ],JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+
+    $ch=curl_init($url);
+    curl_setopt_array($ch,$outboundOptions+[
+        CURLOPT_RETURNTRANSFER=>true,
+        CURLOPT_POST=>true,
+        CURLOPT_HTTPHEADER=>[
+            'Content-Type: application/json',
+            'Accept: application/json',
+            'Authorization: Bearer '.$token,
+            'X-Vitrine-Project: tvsumare'
+        ],
+        CURLOPT_POSTFIELDS=>$payload
+    ]);
+    $res=curl_exec($ch);
+    $curlErr=curl_error($ch);
+    $http=(int)curl_getinfo($ch,CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if($res===false || $res==='') return ['ok'=>false,'error'=>'Centro IA sem resposta'.($curlErr?': '.$curlErr:'')];
+    if(is_string($res) && strlen($res)>2097152) return ['ok'=>false,'error'=>'Resposta do Centro IA excedeu o limite seguro.'];
+
+    $j=json_decode((string)$res,true);
+    if($http>=400 || !is_array($j) || empty($j['ok'])){
+        return ['ok'=>false,'error'=>'Centro IA HTTP '.$http.': '.substr((string)$res,0,900)];
+    }
+
+    $txt=trim((string)($j['output_text']??''));
+    if($txt==='') return ['ok'=>false,'error'=>'Centro IA retornou texto vazio.'];
+
+    return [
+        'ok'=>true,
+        'text'=>$txt,
+        'model'=>'centro-ia/'.trim((string)($j['model']??'hub-routed')),
+        'raw'=>$j
+    ];
+}
+
 function tvs_gemini_generate_text($apiKey,$prompt,$generationConfig=[],$timeout=22){
     $apiKey=trim((string)$apiKey);
     if($apiKey==='') return ['ok'=>false,'error'=>'Chave Gemini ausente.'];
@@ -95,7 +155,14 @@ function tvs_gemini_generate_text($apiKey,$prompt,$generationConfig=[],$timeout=
         }
         return ['ok'=>true,'text'=>$txt,'model'=>$model,'raw'=>$j];
     }
-    return ['ok'=>false,'error'=>$lastError ?: 'Falha desconhecida ao chamar Gemini.'];
+    $hub=tvs_centro_ia_generate_text($prompt,$generationConfig,max(30,(int)$timeout));
+    if(!empty($hub['ok'])){
+        tvs_ai_log('Fallback Centro IA acionado após falha do Gemini; modelo '.($hub['model']??'hub-routed').'.');
+        return $hub;
+    }
+    $hubError=(string)($hub['error']??'');
+    if($hubError!=='') tvs_ai_log('Falha fallback Centro IA: '.$hubError);
+    return ['ok'=>false,'error'=>trim(($lastError ?: 'Falha desconhecida ao chamar Gemini.').' | '.$hubError)];
 }
 
 function tvs_ai_style_rules($style, $approach='Informativa', $size='Média'){
