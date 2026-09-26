@@ -494,6 +494,77 @@ if(is_file($sourceResolutionPilotMarker)){
 }
 
 /*
+ * SOURCE RESOLUTION UPGRADE V3 — sitemap-aware controlled batches.
+ * Reprocessa apenas pautas ainda presas em Google News, usando o pipeline canônico.
+ */
+$sourceResolutionV3State=dirname(__DIR__).'/data/source_resolution_v3_batches.json';
+$stateRaw=@file_get_contents($sourceResolutionV3State);
+$v3=is_string($stateRaw)?json_decode($stateRaw,true):[];
+if(!is_array($v3)) $v3=[];
+
+if(empty($v3['complete']) && empty($v3['halted'])){
+  $before=tvs_radar_discovery_read();
+  $beforeNews=tvs_read_json_file($newsFile); if(!is_array($beforeNews)) $beforeNews=[];
+  $eligibleBefore=0;
+  foreach($before as $row){
+    if(
+      tvs_radar_is_google_news_url($row['url']??'') &&
+      (($row['reprocess_reason']??'')!=='source_resolution_upgrade_v3' || ($row['editorial_rule_version']??'')!=='1.1')
+    ) $eligibleBefore++;
+  }
+
+  if($eligibleBefore>0){
+    $generated=tvs_radar_process_discovery('normal',10,[
+      'force_retry'=>true,
+      'only_google_unresolved'=>true,
+      'max_candidates'=>10,
+      'max_generated'=>10,
+      'editorial_rule_version'=>'1.1',
+      'reprocess_reason'=>'source_resolution_upgrade_v3'
+    ]);
+
+    $after=tvs_radar_discovery_read();
+    $afterNews=tvs_read_json_file($newsFile); if(!is_array($afterNews)) $afterNews=[];
+    $eligibleAfter=0; $unresolvedTotal=0;
+    foreach($after as $row){
+      if(tvs_radar_is_google_news_url($row['url']??'')){
+        $unresolvedTotal++;
+        if(
+          (($row['reprocess_reason']??'')!=='source_resolution_upgrade_v3' || ($row['editorial_rule_version']??'')!=='1.1')
+        ) $eligibleAfter++;
+      }
+    }
+
+    $processed=max(0,$eligibleBefore-$eligibleAfter);
+    $integrity=count($beforeNews)===count($afterNews) && $processed<=10;
+    $batch=(int)($v3['last_batch']??0)+1;
+    $v3['last_batch']=$batch;
+    $v3['remaining_unprocessed']=$eligibleAfter;
+    $v3['unresolved_total']=$unresolvedTotal;
+    $v3['complete']=$eligibleAfter===0?1:0;
+    $v3['halted']=$integrity?0:1;
+    $v3['updated_at']=date('c');
+    $v3['batches'][]=[
+      'batch'=>$batch,
+      'processed'=>$processed,
+      'generated'=>$generated,
+      'remaining_unprocessed'=>$eligibleAfter,
+      'unresolved_total'=>$unresolvedTotal,
+      'published_unchanged'=>count($beforeNews)===count($afterNews)?1:0,
+      'integrity_ok'=>$integrity?1:0
+    ];
+    @file_put_contents($sourceResolutionV3State,json_encode($v3,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_PRETTY_PRINT),LOCK_EX);
+    echo 'SOURCE_RESOLUTION_V3_BATCH '.json_encode(end($v3['batches']),JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n";
+    exit(0);
+  } else {
+    $v3['complete']=1;
+    $v3['remaining_unprocessed']=0;
+    $v3['updated_at']=date('c');
+    @file_put_contents($sourceResolutionV3State,json_encode($v3,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_PRETTY_PRINT),LOCK_EX);
+  }
+}
+
+/*
  * QUALITY REPAIR 2026-09-25 — one-shot.
  * Retira do ar matérias antigas que chegaram publicadas apenas com manchete/RSS,
  * limpa sufixos de fonte do título e devolve itens incompletos para revisão.

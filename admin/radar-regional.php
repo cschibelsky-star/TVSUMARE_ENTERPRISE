@@ -647,6 +647,60 @@ function tvs_radar_resolve_by_bing_news($title,$city='',$source=''){
   return $bestScore>=55 ? $bestUrl : '';
 }
 
+function tvs_radar_resolve_by_sitemap($domain,$title,$city=''){
+  static $cache=[];
+  $domain=rtrim(trim((string)$domain),'/');
+  $host=tvs_radar_source_host($domain);
+  if($host==='' || trim((string)$title)==='') return '';
+
+  $cacheKey=md5($domain.'|'.$title.'|'.$city);
+  if(array_key_exists($cacheKey,$cache)) return $cache[$cacheKey];
+
+  $queue=[
+    $domain.'/sitemap.xml',
+    $domain.'/sitemap_index.xml',
+    $domain.'/wp-sitemap.xml',
+    $domain.'/wp-sitemap-posts-post-1.xml'
+  ];
+  $seen=[]; $bestUrl=''; $bestScore=0; $visited=0;
+
+  while($queue && $visited<4){
+    $sitemap=array_shift($queue);
+    if(isset($seen[$sitemap])) continue;
+    $seen[$sitemap]=1;
+    $visited++;
+
+    $xml=tvs_fetch_url($sitemap);
+    if($xml==='') continue;
+
+    if(!preg_match_all('~<loc>\s*(.*?)\s*</loc>~is',$xml,$m)) continue;
+    foreach(array_slice($m[1],0,1200) as $rawLoc){
+      $loc=html_entity_decode(trim(strip_tags((string)$rawLoc)),ENT_QUOTES|ENT_HTML5,'UTF-8');
+      if($loc==='' || tvs_radar_source_host($loc)!==$host) continue;
+
+      if(preg_match('~\.xml(?:\?|$)~i',$loc)){
+        if(count($seen)<12) $queue[]=$loc;
+        continue;
+      }
+
+      if(!tvs_radar_is_article_path($loc,$title,$city)) continue;
+      $slug=(string)basename((string)(parse_url($loc,PHP_URL_PATH)??''));
+      $score=tvs_radar_title_match_score($title,str_replace(['-','_'],' ',$slug));
+      if($score>$bestScore){
+        $bestScore=$score;
+        $bestUrl=$loc;
+      }
+    }
+  }
+
+  if($bestScore>=48 && $bestUrl!==''){
+    $validation=tvs_radar_validate_resolved_article($bestUrl,$title,$city);
+    if(!empty($validation['ok'])) return $cache[$cacheKey]=$bestUrl;
+  }
+
+  return $cache[$cacheKey]='';
+}
+
 function tvs_radar_resolve_by_bing_site($domain,$title,$city=''){
   $domain=rtrim(trim((string)$domain),'/');
   $host=tvs_radar_source_host($domain);
@@ -816,10 +870,10 @@ function tvs_radar_validate_resolved_article($url,$expectedTitle,$city=''){
     ];
   }
 
-  if(tvs_strlen($body)<180){
+  if(tvs_strlen($body)<80){
     return [
       'ok'=>false,
-      'reason'=>'Página sem conteúdo jornalístico suficiente',
+      'reason'=>'Página sem conteúdo factual mínimo para validação da fonte',
       'title_score'=>$titleScore
     ];
   }
@@ -1270,7 +1324,17 @@ function tvs_radar_resolve_candidate_urls($items){
       if($resolved!=='') $method='source_domain_title_match';
     }
 
-    // 3) Índice de notícias restrito ao domínio.
+    // 3) Sitemaps do veículo (WordPress e portais oficiais).
+    if($sourceDomain!=='' && $resolved===''){
+      $resolved=tvs_radar_resolve_by_sitemap(
+        $sourceDomain,
+        $item['title']??'',
+        $item['city']??''
+      );
+      if($resolved!=='') $method='source_sitemap_title_match';
+    }
+
+    // 4) Índice de notícias restrito ao domínio.
     if($sourceDomain!=='' && $resolved===''){
       $resolved=tvs_radar_resolve_by_bing_site(
         $sourceDomain,
@@ -1280,7 +1344,7 @@ function tvs_radar_resolve_candidate_urls($items){
       if($resolved!=='') $method='bing_site_title_match';
     }
 
-    // 4) Busca geral como último recurso.
+    // 5) Busca geral como último recurso.
     if($resolved===''){
       $bingResolved=tvs_radar_resolve_by_bing_news(
         $item['title']??'',
