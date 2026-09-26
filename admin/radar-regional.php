@@ -200,7 +200,8 @@ function tvs_radar_trusted_source($cand,$url=''){
     'saopaulo.sp.gov.br','agenciabrasil.ebc.com.br',
     'g1.globo.com','ge.globo.com','portalhortolandia.com.br',
     'horacampinas.com.br','sbnoticias.com.br','portaldesumare.com.br',
-    'noticiasumare.com.br','portalon.com.br','noticiafm.com','novomomento.com.br'
+    'noticiasumare.com.br','portalon.com.br','noticiafm.com','novomomento.com.br',
+    'tribunaliberal.com.br','tododia.com.br','hortonews.com.br','portalporque.com.br'
   ];
   if($host!=='' && in_array($host,$trustedHosts,true)) return true;
 
@@ -722,10 +723,14 @@ function tvs_radar_source_section_urls($domain,$city=''){
   if($citySlug!==''){
     $urls[]=$domain.'/'.$citySlug;
     $urls[]=$domain.'/cidade/'.$citySlug;
+    $urls[]=$domain.'/cidades/'.$citySlug;
     $urls[]=$domain.'/noticias/'.$citySlug;
+    $urls[]=$domain.'/noticias/cidade/'.$citySlug;
     $urls[]=$domain.'/categoria/'.$citySlug;
   }
 
+  $urls[]=$domain.'/noticias';
+  $urls[]=$domain.'/cidades';
   $urls[]=$domain;
 
   return array_values(array_unique($urls));
@@ -735,53 +740,47 @@ function tvs_radar_source_section_urls($domain,$city=''){
 function tvs_radar_is_article_path($url,$title='',$city=''){
   $path=(string)(parse_url((string)$url,PHP_URL_PATH)??'');
   $path=trim($path,'/');
-
   if($path==='') return false;
 
   $segments=array_values(array_filter(explode('/',$path)));
+  if(!$segments) return false;
 
-  if(count($segments)<2) return false;
+  $last=(string)end($segments);
+  if($last==='') return false;
 
-  // Páginas de listagem, categoria, cidade, autor, pesquisa ou arquivo.
-  if(preg_match(
-    '~(?:^|/)(category|categoria|tag|tags|author|autor|search|'
-    .'busca|page|pagina|arquivo|archive|editoria|secao|seção|'
-    .'cidades?|noticias?|notícias?)(?:/|$)~iu',
-    $path
-  )){
+  $generic=[
+    'category','categoria','tag','tags','author','autor','search','busca',
+    'page','pagina','arquivo','archive','editoria','secao','seção',
+    'cidade','cidades','noticia','noticias','notícia','notícias'
+  ];
+
+  // Só bloqueia se a URL inteira for uma seção/listagem. Caminhos como
+  // /noticias/titulo-da-materia e /cidades/sumare/titulo-da-materia
+  // são artigos válidos e não devem ser descartados.
+  if(count($segments)===1 && in_array(tvs_lower($segments[0]),$generic,true)){
     return false;
   }
 
-  $last=(string)end($segments);
-
-  if($last==='') return false;
-
   $citySlug=tvs_slug((string)$city);
-
   if(
     $citySlug!=='' &&
     (
-      $path===$citySlug ||
-      $last===$citySlug
+      tvs_slug($path)===$citySlug ||
+      tvs_slug($last)===$citySlug
     )
   ){
     return false;
   }
 
-  // Slug muito curto tende a ser seção.
-  $slugWords=array_values(array_filter(
-    preg_split('~[-_]+~',$last)
-  ));
+  // Último segmento precisa parecer uma manchete, inclusive em URLs WordPress
+  // de um único nível (/titulo-da-materia).
+  $slugWords=array_values(array_filter(preg_split('~[-_]+~',$last)));
+  if(count($slugWords)<4) return false;
 
-  if(count($slugWords)<4){
-    return false;
-  }
-
-  // O slug precisa manter relação suficiente com o título.
   $slugText=str_replace(['-','_'],' ',$last);
   $slugScore=tvs_radar_title_match_score($title,$slugText);
 
-  return $slugScore>=45;
+  return $slugScore>=42;
 }
 
 function tvs_radar_validate_resolved_article($url,$expectedTitle,$city=''){
@@ -1225,6 +1224,10 @@ function tvs_radar_source_domain_hint($source,$title=''){
   if(strpos($s,'portal on')!==false || strpos($s,'portalon')!==false) return 'https://portalon.com.br';
   if(strpos($s,'notícia fm')!==false || strpos($s,'noticia fm')!==false || strpos($s,'noticiafm')!==false) return 'https://noticiafm.com';
   if(strpos($s,'novo momento')!==false || strpos($s,'novomomento')!==false) return 'https://novomomento.com.br';
+  if(strpos($s,'tribuna liberal')!==false || strpos($s,'tribunaliberal')!==false) return 'https://www.tribunaliberal.com.br';
+  if(strpos($s,'todo dia')!==false || strpos($s,'tododia')!==false) return 'https://tododia.com.br';
+  if(strpos($s,'hortonews')!==false || strpos($s,'horto news')!==false) return 'https://hortonews.com.br';
+  if(strpos($s,'portal porque')!==false || strpos($s,'portalporque')!==false || strpos($s,'jornalismo que faltava')!==false) return 'https://www.portalporque.com.br';
   if(preg_match('~\bge\b|globo esporte~u',$s)) return 'https://ge.globo.com';
   if(preg_match('~\bg1\b|eptv~u',$s)) return 'https://g1.globo.com';
   return '';
@@ -2661,6 +2664,7 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5,$options=[]
   $generated=0;
   $processed=0;
   $forceRetry=!empty($options['force_retry']);
+  $onlyGoogleUnresolved=!empty($options['only_google_unresolved']);
   $maxCandidates=max(0,(int)($options['max_candidates']??0));
   $onlyIds=array_values(array_filter(array_map('strval',(array)($options['only_ids']??[]))));
   $onlyLookup=$onlyIds?array_fill_keys($onlyIds,true):[];
@@ -2679,6 +2683,7 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5,$options=[]
       $requested=(string)($cand['radar_requested_city']??$cand['city']??'');
       if($requested!==$city) continue;
       if($reprocessReason!=='' && ($cand['reprocess_reason']??'')===$reprocessReason && ($cand['editorial_rule_version']??'')===$ruleVersion) continue;
+      if($onlyGoogleUnresolved && !tvs_radar_is_google_news_url($cand['url']??'')) continue;
       $candId=(string)($cand['id']??'');
       if($onlyLookup && !isset($onlyLookup[$candId])) continue;
       if(!$forceRetry && !tvs_radar_enrichment_due($cand)) continue;
