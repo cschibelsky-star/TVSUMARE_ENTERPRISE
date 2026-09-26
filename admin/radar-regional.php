@@ -1807,6 +1807,9 @@ function tvs_build_material_from_candidate($cand){
   $text=trim(($a['description']??'')."\n\n".($a['body']??''));
   if(tvs_strlen($text)<80) $text=$desc;
   if(tvs_strlen($text)<40) $text=$title;
+  if(!empty($cand['enrichment_text'])){
+    $text=trim($text."\n\n".(string)$cand['enrichment_text']);
+  }
   $text=tvs_normalize_article_body($text);
   $cat=$cand['category'] ?? tvs_category_from_text(($title??'').' '.($desc??'').' '.$text);
   $image=tvs_best_image($cand['image']??'', $a['image']??'', $cat);
@@ -1817,6 +1820,193 @@ function tvs_radar_word_count($text){
   if($text==='') return 0;
   $parts=preg_split('/\s+/u',$text);
   return count(array_filter($parts));
+}
+
+function tvs_radar_fact_signals($cand,$mat,$city){
+  $title=trim((string)($mat['title']??$cand['title']??''));
+  $text=trim((string)($mat['text']??''));
+  $all=$title."\n".$text;
+  $lc=tvs_lower($all);
+  $published=(string)($cand['published_at']??'');
+
+  $signals=[
+    'quem'=>(
+      preg_match('~\b(prefeitura|secretaria|governo|câmara|camara|polícia|policia|hospital|ubs|empresa|associação|associacao|escola|universidade|moradores|alunos|atletas|prefeito|vereador|deputado|senador|instituto|fundação|fundacao|defesa civil|guarda municipal|samu)\b~iu',$all)===1
+      || preg_match('~\b\p{Lu}[\p{L}]+\s+\p{Lu}[\p{L}]+\b~u',$all)===1
+    ),
+    'o_que'=>tvs_strlen($title)>=18 && tvs_strlen($text)>=45,
+    'quando'=>($published!=='' || preg_match('~\b(hoje|ontem|amanhã|amanha|segunda|terça|terca|quarta|quinta|sexta|sábado|sabado|domingo|\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?|\d{1,2}\s+de\s+[a-zç]+)\b~iu',$all)===1),
+    'onde'=>trim((string)$city)!=='' && strpos(tvs_slug($all),tvs_slug((string)$city))!==false,
+    'por_que'=>preg_match('~\b(devido|porque|por causa|objetivo|visa|para garantir|para ampliar|para reduzir|em razão|em razao)\b~iu',$all)===1,
+    'como'=>preg_match('~\b(por meio|através|atraves|com apoio|em parceria|será realizado|sera realizado|foi realizado|passa a|vai oferecer|oferece|recebeu|realizou)\b~iu',$all)===1,
+    'impacto'=>preg_match('~\b(\d+[\.,]?\d*|vagas?|pessoas?|alunos?|moradores?|atendimentos?|milhões?|milhoes?|mil|reais|r\$|km|unidades?)\b~iu',$all)===1,
+  ];
+  return $signals;
+}
+
+function tvs_radar_fact_package($cand,$mat,$city,$extraSources=[]){
+  $signals=tvs_radar_fact_signals($cand,$mat,$city);
+  $url=trim((string)($cand['url']??$mat['url']??''));
+  $articleText=trim((string)(($mat['article']['description']??'').' '.($mat['article']['body']??'')));
+  $sourceResolved=$url!=='' && !tvs_radar_is_google_news_url($url) && tvs_strlen($articleText)>=80;
+
+  $sources=[[
+    'url'=>$url,
+    'vehicle'=>(string)($cand['source']??'Fonte consultada'),
+    'observed_at'=>date('c'),
+    'primary'=>1
+  ]];
+  foreach((array)$extraSources as $src){
+    if(!is_array($src) || empty($src['url'])) continue;
+    $sources[]=$src;
+  }
+
+  $hosts=[];
+  foreach($sources as $src){
+    $host=tvs_radar_source_host($src['url']??'');
+    if($host!=='') $hosts[$host]=1;
+  }
+  $secondSource=count($hosts)>=2;
+
+  $fiveW2HCount=count(array_filter($signals));
+  $score=(int)round(($fiveW2HCount/7)*35);
+  if($sourceResolved) $score+=20;
+  if($secondSource) $score+=15;
+
+  $all=trim((string)($mat['title']??'').' '.(string)($mat['text']??''));
+  $specificity=0;
+  if(preg_match('~\b\d+[\.,]?\d*\b~u',$all)) $specificity+=5;
+  if(preg_match('~\b\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?|\d{1,2}\s+de\s+[a-zç]+\b~iu',$all)) $specificity+=5;
+  if(preg_match('~\b(Prefeitura|Secretaria|Hospital|Universidade|Câmara|Camara|Polícia|Policia|Associação|Associacao|Instituto|Fundação|Fundacao)\b~u',$all)) $specificity+=5;
+  $score+=$specificity;
+
+  $noiseFree=!tvs_is_non_news_candidate((string)($mat['title']??''),$url,(string)($mat['text']??''))
+    && !tvs_is_commercial_candidate((string)($mat['title']??''),(string)($mat['text']??''),$url);
+  if($noiseFree) $score+=10;
+
+  $age=$cand['age_days']??null;
+  if(is_numeric($age)){
+    if((int)$age<=3) $score+=5;
+    elseif((int)$age<=7) $score+=3;
+    elseif((int)$age<=14) $score+=1;
+  } else {
+    $score+=3;
+  }
+  $score=max(0,min(100,$score));
+
+  $coreOk=!empty($signals['quem']) && !empty($signals['o_que']) && !empty($signals['quando']) && !empty($signals['onde']);
+
+  return [
+    'title'=>(string)($mat['title']??$cand['title']??''),
+    'city'=>$city,
+    'fact_date'=>(string)($cand['published_at']??''),
+    'category'=>(string)($cand['category']??'Cidade'),
+    'summary_5w2h'=>$signals,
+    'facts'=>[],
+    'sources'=>$sources,
+    'divergences'=>[],
+    'sf_score'=>$score,
+    'core_4w_ok'=>$coreOk?1:0,
+    'source_original_resolved'=>$sourceResolved?1:0,
+    'second_source_confirmed'=>$secondSource?1:0,
+    'flags'=>[
+      'single_source'=>$secondSource?0:1,
+      'official'=>((int)($cand['priority']??3)===1)?1:0
+    ]
+  ];
+}
+
+function tvs_radar_try_second_source($cand,$mat,$city){
+  $primary=trim((string)($cand['url']??''));
+  $candidateUrl=tvs_radar_resolve_by_bing_news(
+    $cand['title']??($mat['title']??''),
+    $city,
+    ''
+  );
+  if($candidateUrl==='' || !tvs_radar_external_url_is_valid($candidateUrl)) return null;
+  if(tvs_radar_source_host($candidateUrl)==='' || tvs_radar_source_host($candidateUrl)===tvs_radar_source_host($primary)) return null;
+
+  $article=tvs_extract_article($candidateUrl,$cand['title']??($mat['title']??''));
+  if(!is_array($article)) return null;
+  $body=trim((string)(($article['description']??'').' '.($article['body']??'')));
+  if(tvs_strlen($body)<80) return null;
+
+  $titleScore=tvs_radar_title_match_score(
+    (string)($cand['title']??$mat['title']??''),
+    (string)($article['title']??'')
+  );
+  if($titleScore<55) return null;
+
+  return [
+    'url'=>$candidateUrl,
+    'vehicle'=>tvs_radar_source_host($candidateUrl),
+    'observed_at'=>date('c'),
+    'primary'=>0,
+    'title_score'=>$titleScore,
+    'text'=>tvs_normalize_article_body($body)
+  ];
+}
+
+function tvs_radar_enrich_candidate($cand,$city){
+  if(tvs_radar_is_google_news_url($cand['url']??'')){
+    $resolvedBatch=tvs_radar_resolve_candidate_urls([$cand]);
+    if(isset($resolvedBatch[0]) && is_array($resolvedBatch[0])) $cand=$resolvedBatch[0];
+  }
+
+  $mat=tvs_build_material_from_candidate($cand);
+  $extra=[];
+  $package=tvs_radar_fact_package($cand,$mat,$city,$extra);
+
+  if(($package['sf_score']??0)<70 || empty($package['core_4w_ok'])){
+    $second=tvs_radar_try_second_source($cand,$mat,$city);
+    if(is_array($second)){
+      $extra[]=[
+        'url'=>$second['url'],
+        'vehicle'=>$second['vehicle'],
+        'observed_at'=>$second['observed_at'],
+        'primary'=>0,
+        'title_score'=>$second['title_score']
+      ];
+      $enrichedText=trim(
+        (string)($mat['text']??'')
+        ."\n\n--- FONTE SECUNDÁRIA: ".(string)($second['vehicle']??'Fonte alternativa')
+        ." | ".(string)($second['url']??'')." ---\n"
+        .(string)($second['text']??'')
+      );
+      $mat['text']=tvs_normalize_article_body($enrichedText);
+      $cand['enrichment_text']=$mat['text'];
+      $cand['enrichment_sources']=$extra;
+      $package=tvs_radar_fact_package($cand,$mat,$city,$extra);
+    }
+  }
+
+  $cand['fact_package']=$package;
+  $cand['sf_score']=(int)($package['sf_score']??0);
+  return [$cand,$mat,$package];
+}
+
+function tvs_radar_enrichment_due($cand){
+  $next=(string)($cand['enrichment_next_retry_at']??'');
+  if($next==='') return true;
+  $ts=strtotime($next);
+  return !$ts || $ts<=time();
+}
+
+function tvs_radar_schedule_enrichment(&$cand,$reason=''){
+  if(empty($cand['enrichment_first_seen_at'])) $cand['enrichment_first_seen_at']=date('c');
+  $first=strtotime((string)$cand['enrichment_first_seen_at']);
+  $ageHours=$first ? (time()-$first)/3600 : 0;
+
+  if($ageHours<48){
+    $cand['pipeline_stage']='aguardando_enriquecimento';
+    $cand['enrichment_next_retry_at']=date('c',time()+7200);
+  } elseif($ageHours<168){
+    $cand['pipeline_stage']='enriquecimento_baixa_prioridade';
+    $cand['enrichment_next_retry_at']=date('c',time()+86400);
+  } else {
+    $cand['pipeline_stage']='expirada_sem_enriquecimento';
+  }
+  $cand['pipeline_reason']=$reason;
 }
 function tvs_radar_has_generic_text($text){
   $bad='~(Uma informação divulgada por|O tema foi classificado|Antes da publicação final|Moradores interessados devem acompanhar|A TV Sumar[eé] identificou|rascunho|monitor regional|conte[uú]do gerado automaticamente|redação deve conferir|fonte consultada para confirmar|entrou no acompanhamento regional|permanece em revisão editorial|A pauta tem relação|A ocorrência foi registrada em .* acompanhamento regional|Segundo informações publicadas por .* pode ter impacto direto|Novas informações oficiais poderão detalhar|o assunto envolve .* e pode ter impacto direto|fonte original .* serviços públicos ou atividades da região)~iu';
@@ -1987,7 +2177,12 @@ function tvs_generate_ready_article($city,$cand){
     return null;
   }
   $facts=tvs_extract_facts_block($mat['title']??($cand['title']??''),$city,$category,$mat['text']??'',($cand['source']??'Fonte consultada'),($cand['url']??''));
-  $material="CIDADE: {$city}\nCATEGORIA: {$category}\nFONTE: ".($cand['source']??'Fonte consultada')."\nURL: ".($cand['url']??'')."\nTÍTULO ORIGINAL: ".($mat['title']??'')."\n\n".$facts."\n\nCONTEÚDO COMPLETO COLETADO:\n".tvs_substr($mat['text']??'',0,10000);
+  $factPackage=is_array($cand['fact_package']??null)?$cand['fact_package']:[];
+  $material="CIDADE: {$city}\nCATEGORIA: {$category}\nFONTE PRINCIPAL: ".($cand['source']??'Fonte consultada')."\nURL PRINCIPAL: ".($cand['url']??'')."\nTÍTULO ORIGINAL: ".($mat['title']??'')."\n\n".$facts
+    ."\n\nPACOTE FACTUAL E PROVENIÊNCIA:\n"
+    .json_encode($factPackage,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)
+    ."\n\nREGRA DE GROUNDING: use somente fatos presentes no material e nas fontes identificadas; não complete lacunas por inferência."
+    ."\n\nCONTEÚDO COMPLETO COLETADO E ENRIQUECIDO:\n".tvs_substr($mat['text']??'',0,12000);
 
   // Toda pauta precisa atravessar o Editor de Matéria IA antes de poder ser publicada.
   // O Repórter IA pode montar uma primeira versão, mas ela não recebe elegibilidade
@@ -2213,7 +2408,7 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5){
   $readyCategories=tvs_radar_ready_categories_by_city($approval);
   $generated=0;
   $maxPerCycle=tvs_radar_is_volume_mode($mode)?12:6;
-  $maxTriesPerCity=tvs_radar_is_volume_mode($mode)?6:3;
+  $maxTriesPerCity=tvs_radar_is_volume_mode($mode)?8:6;
 
   foreach($cities as $city){
     if($generated>=$maxPerCycle) break;
@@ -2223,21 +2418,28 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5){
     foreach($discovery as $idx=>$cand){
       $requested=(string)($cand['radar_requested_city']??$cand['city']??'');
       if($requested!==$city) continue;
+      if(!tvs_radar_enrichment_due($cand)) continue;
+
       $category=trim((string)($cand['category']??$cand['radar_pre_category']??''));
       if($category==='') $category=tvs_radar_candidate_category($cand);
-      if(!tvs_radar_category_room($city,$category,$readyCategories,$targetPerCity)) continue;
+
+      $used=(int)($readyCategories[$city][$category]??0);
+      $preferredCap=tvs_radar_final_category_cap($category,$targetPerCity);
+      $diversityPenalty=max(0,$used-$preferredCap+1);
 
       $cityCandidates[]=[
         'idx'=>$idx,
         'category'=>$category,
-        'category_used'=>(int)($readyCategories[$city][$category]??0),
+        'diversity_penalty'=>$diversityPenalty,
+        'sf_score'=>(int)($cand['sf_score']??0),
         'attempts'=>(int)($cand['pipeline_attempts']??0),
         'updated'=>(string)($cand['pipeline_updated_at']??$cand['pipeline_created_at']??'')
       ];
     }
 
     usort($cityCandidates,function($a,$b){
-      if($a['category_used']!==$b['category_used']) return $a['category_used']<=>$b['category_used'];
+      if($a['diversity_penalty']!==$b['diversity_penalty']) return $a['diversity_penalty']<=>$b['diversity_penalty'];
+      if($a['sf_score']!==$b['sf_score']) return $b['sf_score']<=>$a['sf_score'];
       if($a['attempts']!==$b['attempts']) return $a['attempts']<=>$b['attempts'];
       return strcmp($a['updated'],$b['updated']);
     });
@@ -2254,60 +2456,94 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5){
       $cand['pipeline_attempts']=(int)($cand['pipeline_attempts']??0)+1;
       $cand['pipeline_updated_at']=date('c');
 
-      // Pautas antigas da fila podem ter sido salvas ainda com URL do Google News.
-      // Reexecuta o resolvedor em cada ciclo para aproveitar fontes liberadas/corrigidas.
-      if(tvs_radar_is_google_news_url($cand['url']??'')){
-        $resolvedBatch=tvs_radar_resolve_candidate_urls([$cand]);
-        if(isset($resolvedBatch[0]) && is_array($resolvedBatch[0])){
-          $cand=$resolvedBatch[0];
-          $cand['pipeline_attempts']=(int)($discovery[$pick]['pipeline_attempts']??0);
-          $cand['pipeline_updated_at']=date('c');
-          $discovery[$pick]=$cand;
-        }
-      }
+      [$cand,$mat,$package]=tvs_radar_enrich_candidate($cand,$city);
+      $discovery[$pick]=$cand;
 
-      $mat=tvs_build_material_from_candidate($cand);
+      $sf=(int)($package['sf_score']??0);
+      $coreOk=!empty($package['core_4w_ok']);
       $sourceWords=tvs_radar_word_count($mat['text']??'');
+
       if(PHP_SAPI==='cli'){
         echo "PIPELINE_TRY city=".str_replace(' ','_',$city)
           ." source=".(tvs_radar_is_google_news_url($cand['url']??'')?'google':'original')
           ." words={$sourceWords}"
+          ." sf={$sf}"
+          ." core=".($coreOk?'ok':'missing')
           ." attempts=".(int)$cand['pipeline_attempts']
           ." title=".substr(preg_replace('/\s+/u',' ',(string)($cand['title']??'')),0,120)."\n";
       }
-      if($sourceWords<120){
-        $cand['pipeline_stage']='aguardando_enriquecimento';
-        $cand['pipeline_reason']='Material-base insuficiente: '.$sourceWords.' palavra(s).';
-        $discovery[$pick]=$cand;
-        tvs_radar_log_event($cand['title']??'', $cand['source']??'Fonte', $city, 'AGUARDANDO_ENRIQUECIMENTO', $cand['pipeline_reason'], $cand['url']??'');
+
+      if(tvs_radar_is_google_news_url($cand['url']??'')){
+        tvs_radar_schedule_enrichment(
+          $cand,
+          'Pauta válida, mas a URL original ainda não foi resolvida. Snippet não será usado como matéria.'
+        );
+        if(($cand['pipeline_stage']??'')==='expirada_sem_enriquecimento'){
+          tvs_radar_discard($cand,$city,'TTL de enriquecimento expirado após 7 dias sem fonte original resolvida.');
+          unset($discovery[$pick]);
+        } else {
+          $discovery[$pick]=$cand;
+        }
+        continue;
+      }
+
+      if($sf<70 || !$coreOk){
+        tvs_radar_schedule_enrichment(
+          $cand,
+          'Pacote factual ainda insuficiente: SF '.$sf.'/100; 4W básico '.($coreOk?'completo':'incompleto').'.'
+        );
+        if(($cand['pipeline_stage']??'')==='expirada_sem_enriquecimento'){
+          tvs_radar_discard($cand,$city,'TTL de enriquecimento expirado após 7 dias sem pacote factual suficiente.');
+          unset($discovery[$pick]);
+        } else {
+          $discovery[$pick]=$cand;
+          tvs_radar_log_event(
+            $cand['title']??'',
+            $cand['source']??'Fonte',
+            $city,
+            strtoupper((string)$cand['pipeline_stage']),
+            $cand['pipeline_reason'],
+            $cand['url']??''
+          );
+        }
         continue;
       }
 
       $cand['pipeline_stage']='pronta_para_redacao';
+      $cand['pipeline_reason']='Pacote factual aprovado: SF '.$sf.'/100.';
+      $cand['fact_package']=$package;
+      $cand['sf_score']=$sf;
+
       $article=tvs_generate_ready_article($city,$cand);
       if(is_array($article) && !empty($article['title']) && !empty($article['body'])){
         $articleCategory=trim((string)($article['category']??$cand['category']??'Cidade'));
         if($articleCategory==='') $articleCategory='Cidade';
 
-        if(!tvs_radar_category_room($city,$articleCategory,$readyCategories,$targetPerCity)){
-          $cand['pipeline_stage']='aguardando_diversidade';
-          $cand['pipeline_reason']='Editorias já suficientemente representadas na fila desta cidade.';
-          $discovery[$pick]=$cand;
-          tvs_radar_log_event($article['title']??'', $article['source']??($cand['source']??'Fonte'), $city, 'AGUARDANDO_DIVERSIDADE', $cand['pipeline_reason'], $cand['url']??'');
-          continue;
-        }
+        $article['sf_score']=$sf;
+        $article['fact_package']=$package;
+        $article['provenance_sources']=$package['sources']??[];
+        $article['diversity_overrepresented']=tvs_radar_category_room($city,$articleCategory,$readyCategories,$targetPerCity)?0:1;
 
         $approval[]=$article;
         unset($discovery[$pick]);
         $generated++;
         $ready[$city]=($ready[$city]??0)+1;
         $readyCategories[$city][$articleCategory]=($readyCategories[$city][$articleCategory]??0)+1;
-        tvs_radar_log_event($article['title']??'', $article['source']??($cand['source']??'Fonte'), $city, ($article['editorial_status']??'REVISÃO'), 'Repórter IA + Editor IA concluídos; matéria entrou na fila editorial com diversidade preservada.', $cand['url']??'');
+        tvs_radar_log_event(
+          $article['title']??'',
+          $article['source']??($cand['source']??'Fonte'),
+          $city,
+          ($article['editorial_status']??'REVISÃO'),
+          'Repórter IA + Editor IA concluídos; SF '.$sf.'/100; diversidade aplicada como preferência.',
+          $cand['url']??''
+        );
         break;
       }
 
-      $cand['pipeline_stage']='aguardando_enriquecimento';
-      $cand['pipeline_reason']='Não foi possível concluir uma matéria completa e segura neste ciclo.';
+      tvs_radar_schedule_enrichment(
+        $cand,
+        'Pacote factual suficiente, mas a redação/editoria não concluiu uma matéria segura neste ciclo.'
+      );
       $discovery[$pick]=$cand;
     }
   }
@@ -2317,6 +2553,7 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5){
   tvs_radar_enforce_queue_rules(true);
   return $generated;
 }
+
 function tvs_radar_update_queue($perCity=15,$mode='normal'){
   global $TVS_RADAR_MODE;
   $oldMode=$TVS_RADAR_MODE ?? 'normal';
