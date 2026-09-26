@@ -156,6 +156,7 @@ function tvs_gemini_generate_text($apiKey,$prompt,$generationConfig=[],$timeout=
         return ['ok'=>true,'text'=>$txt,'model'=>$model,'raw'=>$j];
     }
     $hub=tvs_centro_ia_generate_text($prompt,$generationConfig,max(30,(int)$timeout));
+    $GLOBALS['tvs_centro_ia_last_result']=$hub;
     if(!empty($hub['ok'])){
         tvs_ai_log('Fallback Centro IA acionado após falha do Gemini; modelo '.($hub['model']??'hub-routed').'.');
         return $hub;

@@ -3193,10 +3193,15 @@ function tvs_radar_retry_pending_editor_articles(&$approval,$limit=6){
       if(PHP_SAPI==='cli'){
         $diag=trim((string)($GLOBALS['tvs_ai_last_error']??'sem_detalhe'));
         $diag=preg_replace('/\\s+/u',' ',$diag);
+        $hub=(array)($GLOBALS['tvs_centro_ia_last_result']??[]);
+        $hubDiag=!empty($hub['ok'])
+          ? 'ok:'.(string)($hub['model']??'hub-routed')
+          : preg_replace('/\\s+/u',' ',(string)($hub['error']??'nao_acionado'));
         echo "EDITOR_RETRY_FAIL attempts=".(int)$item['ai_editor_attempts']
           ." city=".str_replace(' ','_',(string)($item['city']??'Região'))
           ." words=".tvs_radar_word_count((string)($item['body']??''))
-          ." reason=".substr($diag,0,260)
+          ." hub=".substr($hubDiag,0,260)
+          ." reason=".substr($diag,0,180)
           ." title=".substr(preg_replace('/\\s+/u',' ',(string)($item['title']??'')),0,120)."\n";
       }
       continue;
