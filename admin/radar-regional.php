@@ -2041,29 +2041,44 @@ function tvs_radar_liberal_city($city,$limit=8){
   // a home continua disponível e traz blocos "Explore por cidade".
   if($html==='') $html=tvs_fetch_url($base.'/');
   $out=[]; $seen=[];
+  $diag=['page_bytes'=>strlen((string)$html),'sitemap_bytes'=>0,'post_sitemaps'=>0,'sitemap_checked'=>0,'google_seen'=>0];
 
   // No Liberal, o título <h2> pode ficar fora do <a>. Associa cada heading ao
   // último link interno imediatamente anterior no card, em vez de exigir
   // texto dentro da âncora.
-  if($html!=='' && preg_match_all('~<h2\\b[^>]*>(.*?)</h2>~is',$html,$hm,PREG_OFFSET_CAPTURE)){
+  if($html!=='' && preg_match_all('~<h[2-4]\\b[^>]*>(.*?)</h[2-4]>~is',$html,$hm,PREG_OFFSET_CAPTURE)){
     foreach($hm[1] as $idx=>$capture){
       $title=tvs_clean_text((string)($capture[0]??''));
       $headingOffset=(int)($hm[0][$idx][1]??0);
       if(tvs_strlen($title)<25 || tvs_strlen($title)>220) continue;
       if(tvs_is_boilerplate($title)) continue;
 
-      $start=max(0,$headingOffset-2600);
-      $prefix=substr($html,$start,$headingOffset-$start);
-      if(!preg_match_all("~<a\\b[^>]*href=[\"']([^\"']+)[\"'][^>]*>~is",$prefix,$am)) continue;
+      $start=max(0,$headingOffset-3500);
+      $window=substr($html,$start,7000);
+      if(!preg_match_all("~<a\\b[^>]*href=[\"']([^\"']+)[\"'][^>]*>~is",$window,$am)) continue;
 
       $url='';
-      for($j=count($am[1])-1;$j>=0;$j--){
-        $candidate=tvs_radar_absolute_source_url($base,$am[1][$j]??'');
+      $bestScore=0;
+      foreach($am[1] as $rawHref){
+        $candidate=tvs_radar_absolute_source_url($base,$rawHref??'');
         if($candidate==='' || tvs_radar_source_host($candidate)!=='liberal.com.br') continue;
         if(isset($seen[$candidate])) continue;
+
+        $path=(string)(parse_url($candidate,PHP_URL_PATH)??'');
+        $last=(string)basename(trim($path,'/'));
+        if($last==='') continue;
+
+        $slugText=str_replace(['-','_'],' ',$last);
+        $score=tvs_radar_title_match_score($title,$slugText);
+        if($score<$bestScore) continue;
         if(!tvs_radar_is_article_path($candidate,$title,$city)) continue;
+
+        $bestScore=$score;
         $url=$candidate;
-        break;
+      }
+      if($url==='' || $bestScore<42){
+        $url=tvs_radar_find_article_on_source($base,$title,$city);
+        if($url==='') $url=tvs_radar_resolve_by_bing_site($base,$title,$city);
       }
       if($url==='') continue;
 
@@ -2106,9 +2121,89 @@ function tvs_radar_liberal_city($city,$limit=8){
     }
   }
 
-  // Fallback: se o HTML mudar, ainda abastece pela indexação do Google News.
-  // Aqui NÃO confirma a cidade automaticamente; o fato precisa mencionar a
-  // cidade-alvo antes de entrar na fila.
+  // Fallback direto pelo sitemap oficial do Liberal. É independente do HTML
+  // das editorias/home e continua funcionando quando essas páginas respondem 403
+  // ou mudam a marcação visual.
+  if(!$out){
+    $sitemapIndex=tvs_fetch_url($base.'/wp-sitemap.xml');
+    $diag['sitemap_bytes']=strlen((string)$sitemapIndex);
+    $postSitemaps=[];
+    if($sitemapIndex!=='' && preg_match_all('~<loc>\\s*(.*?)\\s*</loc>~is',$sitemapIndex,$sm)){
+      foreach($sm[1] as $rawLoc){
+        $loc=html_entity_decode(trim(strip_tags((string)$rawLoc)),ENT_QUOTES|ENT_HTML5,'UTF-8');
+        if($loc!=='' && tvs_radar_source_host($loc)==='liberal.com.br' && preg_match('~wp-sitemap-posts-post-[0-9]+\\.xml(?:\\?|$)~i',$loc)){
+          $postSitemaps[]=$loc;
+        }
+      }
+    }
+
+    if(!$postSitemaps){
+      $postSitemaps[]=$base.'/wp-sitemap-posts-post-1.xml';
+    }
+    $diag['post_sitemaps']=count($postSitemaps);
+
+    natsort($postSitemaps);
+    $postSitemaps=array_reverse(array_values($postSitemaps));
+    $checked=0;
+
+    foreach(array_slice($postSitemaps,0,2) as $postSitemap){
+      if($checked>=30 || count($out)>=$limit) break;
+      $xml=tvs_fetch_url($postSitemap);
+      if($xml==='' || !preg_match_all('~<loc>\\s*(.*?)\\s*</loc>~is',$xml,$lm)) continue;
+
+      $articleUrls=array_reverse(array_values($lm[1]));
+      foreach($articleUrls as $rawLoc){
+        if($checked>=30 || count($out)>=$limit) break 2;
+
+        $url=html_entity_decode(trim(strip_tags((string)$rawLoc)),ENT_QUOTES|ENT_HTML5,'UTF-8');
+        if($url==='' || isset($seen[$url]) || tvs_radar_source_host($url)!=='liberal.com.br') continue;
+
+        $path=(string)(parse_url($url,PHP_URL_PATH)??'');
+        $last=(string)basename(trim($path,'/'));
+        if($last==='' || count(array_filter(preg_split('~[-_]+~',$last)))<4) continue;
+
+        $slugTitle=str_replace(['-','_'],' ',$last);
+        $checked++;
+        $diag['sitemap_checked']=$checked;
+
+        $articleHtml=tvs_fetch_url($url);
+        if($articleHtml==='') continue;
+        $article=tvs_extract_article($url,$slugTitle);
+        $title=trim((string)($article['title']??''));
+        $desc=trim((string)($article['description']??''));
+        $body=trim((string)($article['body']??''));
+        if($title==='' || tvs_strlen($desc.' '.$body)<80) continue;
+
+        $published=tvs_radar_extract_published_at_from_html($articleHtml);
+        if($published==='') continue;
+
+        $candidate=[
+          'title'=>$title,
+          'url'=>$url,
+          'description'=>$desc!==''?$desc:tvs_substr(tvs_clean_text($body),0,420),
+          'published_at'=>$published,
+          'source'=>'Liberal',
+          'source_type'=>'Portal Regional',
+          'city'=>$city,
+          'image'=>$article['image']??'',
+          'source_city_confirmed'=>tvs_radar_text_mentions_city($title.' '.$desc.' '.$body,$city)?1:0,
+          'priority'=>2,
+          'source_domain'=>'https://liberal.com.br'
+        ];
+
+        if(empty($candidate['source_city_confirmed'])) continue;
+
+        $reason='';
+        if(!tvs_radar_candidate_region_ok($candidate,$city,$reason)) continue;
+
+        $seen[$url]=1;
+        $out[]=$candidate;
+      }
+    }
+  }
+
+  // Último fallback: indexação do Google News. Aqui NÃO confirma a cidade
+  // automaticamente; o fato precisa mencionar a cidade-alvo antes de entrar.
   if(!$out){
     $q='site:liberal.com.br "'.$city.'" when:3d';
     $feed='https://news.google.com/rss/search?q='
@@ -2116,6 +2211,7 @@ function tvs_radar_liberal_city($city,$limit=8){
       .'&hl=pt-BR&gl=BR&ceid=BR:pt-419';
 
     foreach(tvs_reporter_fetch_feed_compat($feed,max(6,(int)$limit)) as $it){
+      $diag['google_seen']++;
       $it['city']=$city;
       $it['source']='Liberal';
       $it['source_type']='Portal Regional';
@@ -2135,6 +2231,11 @@ function tvs_radar_liberal_city($city,$limit=8){
     echo 'LIBERAL_COLLECT city='.str_replace(' ','_',$city)
       .' accepted='.count($out)
       .' mode='.(isset($out[0]) && !tvs_radar_is_google_news_url($out[0]['url']??'')?'direct':'fallback')
+      .' page_bytes='.(int)$diag['page_bytes']
+      .' sitemap_bytes='.(int)$diag['sitemap_bytes']
+      .' post_sitemaps='.(int)$diag['post_sitemaps']
+      .' sitemap_checked='.(int)$diag['sitemap_checked']
+      .' google_seen='.(int)$diag['google_seen']
       ."\\n";
   }
 

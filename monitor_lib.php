@@ -144,19 +144,49 @@ function tvs_remove_boilerplate_from_html($html){
 
 function tvs_fetch_url($url){
   if(!function_exists('curl_init') || !function_exists('tvs_outbound_curl_options')) return '';
-  $options=tvs_outbound_curl_options($url,6);
-  if($options===null) return '';
-  $ch=curl_init((string)$url);
-  curl_setopt_array($ch,$options+[
-    CURLOPT_RETURNTRANSFER=>true,
-    CURLOPT_USERAGENT=>'TVSumareBot/2.0',
-    CURLOPT_HTTPHEADER=>['Accept: text/html,application/xhtml+xml,application/rss+xml']
-  ]);
-  $html=curl_exec($ch);
-  $http=(int)curl_getinfo($ch,CURLINFO_HTTP_CODE);
-  curl_close($ch);
-  if(!is_string($html) || $http<200 || $http>=300) return '';
-  return substr($html,0,2097152);
+
+  $current=trim((string)$url);
+  for($hop=0;$hop<3;$hop++){
+    $options=tvs_outbound_curl_options($current,6);
+    if($options===null) return '';
+
+    $location='';
+    $host=tvs_lower((string)(parse_url($current,PHP_URL_HOST)??''));
+    $userAgent=in_array($host,['liberal.com.br','www.liberal.com.br'],true)
+      ? 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/154 Safari/537.36'
+      : 'TVSumareBot/2.0';
+
+    $ch=curl_init($current);
+    curl_setopt_array($ch,$options+[
+      CURLOPT_RETURNTRANSFER=>true,
+      CURLOPT_USERAGENT=>$userAgent,
+      CURLOPT_HTTPHEADER=>['Accept: text/html,application/xhtml+xml,application/rss+xml'],
+      CURLOPT_HEADERFUNCTION=>function($ch,$line) use (&$location){
+        $len=strlen($line);
+        if(stripos($line,'Location:')===0) $location=trim(substr($line,9));
+        return $len;
+      }
+    ]);
+
+    $html=curl_exec($ch);
+    $http=(int)curl_getinfo($ch,CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if(is_string($html) && $http>=200 && $http<300){
+      return substr($html,0,2097152);
+    }
+
+    if($http<300 || $http>=400 || $location==='') return '';
+
+    $next=tvs_absolute_url($current,html_entity_decode($location,ENT_QUOTES|ENT_HTML5,'UTF-8'));
+    if($next==='' || $next===$current) return '';
+
+    // Cada salto é revalidado pela mesma política de saída antes de ser seguido.
+    if(tvs_outbound_curl_options($next,6)===null) return '';
+    $current=$next;
+  }
+
+  return '';
 }
 function tvs_absolute_url($base, $href){
   if(!$href) return '';
