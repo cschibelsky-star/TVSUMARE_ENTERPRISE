@@ -3185,10 +3185,28 @@ function tvs_radar_retry_pending_editor_articles(&$approval,$limit=6){
       'source'=>$item['source']??'Fonte consultada','source_url'=>$item['source_url']??'','origin'=>'radar_retry'
     ]) : null;
     if(!$edited){
+      $rawAiError=trim((string)($GLOBALS['tvs_ai_last_error']??''));
+      $aiErrorCode='editor_nao_concluiu';
+      $aiErrorLabel='Editor IA ainda não concluiu';
+      if(stripos($rawAiError,'texto insuficiente após edição')!==false){
+        $aiErrorCode='texto_insuficiente_pos_edicao';
+        $aiErrorLabel='Texto insuficiente após edição';
+      } elseif(stripos($rawAiError,'JSON')!==false){
+        $aiErrorCode='resposta_fora_formato';
+        $aiErrorLabel='Resposta da IA fora do formato esperado';
+      } elseif(stripos($rawAiError,'429')!==false){
+        $aiErrorCode='limite_temporario_provider';
+        $aiErrorLabel='Limite temporário do provider de IA';
+      } elseif(stripos($rawAiError,'Sem resposta')!==false || stripos($rawAiError,'HTTP Gemini')!==false || stripos($rawAiError,'Centro IA HTTP')!==false){
+        $aiErrorCode='provider_indisponivel';
+        $aiErrorLabel='Provider de IA não concluiu a chamada';
+      }
+      $item['ai_editor_last_error_code']=$aiErrorCode;
+      $item['ai_editor_last_error_label']=$aiErrorLabel;
       $item['queue_status']='processing'; $item['ai_editor_stage']='pending';
       $item['editorial_status']='Aguardando Editor IA'; $item['publication_eligible']=0;
       $item['queue_pending_reasons']=array_values(array_unique(array_filter(array_merge(
-        (array)($item['queue_pending_reasons']??[]),['Editor IA ainda não concluiu; nova tentativa automática será realizada']
+        (array)($item['queue_pending_reasons']??[]),[$aiErrorLabel.'; nova tentativa automática será realizada']
       ))));
       if(PHP_SAPI==='cli'){
         $diag=trim((string)($GLOBALS['tvs_ai_last_error']??'sem_detalhe'));
@@ -4000,7 +4018,31 @@ $totalReady=count($normalQueue);
 $totalSensitive=count($sensitiveQueue);
 $totalImageReview=count($imageReviewQueue);
 $totalPipelineCurrent=$totalSourcePending+$totalEditorPending+$totalReady+$totalSensitive+$totalImageReview;
+
+$factBlocks=['sem_auditoria'=>0,'fonte_nao_resolvida'=>0,'texto_insuficiente'=>0,'quatro_w_incompleto'=>0,'fonte_nao_confiavel'=>0,'fora_janela'=>0,'sem_interesse_editorial'=>0];
+foreach(tvs_radar_discovery_read() as $diagItem){
+  $audit=(array)($diagItem['fact_gate_audit']??[]);
+  if(!$audit){ $factBlocks['sem_auditoria']++; continue; }
+  if(empty($audit['source_original_resolved'])) $factBlocks['fonte_nao_resolvida']++;
+  if(empty($audit['content_usable'])) $factBlocks['texto_insuficiente']++;
+  if(empty($audit['core_4w_ok'])) $factBlocks['quatro_w_incompleto']++;
+  if(empty($audit['trusted_source'])) $factBlocks['fonte_nao_confiavel']++;
+  if(empty($audit['freshness_ok'])) $factBlocks['fora_janela']++;
+  if(empty($audit['editorial_interest'])) $factBlocks['sem_interesse_editorial']++;
+}
+$editorBlocks=[];
+foreach($processingQueue as $diagItem){
+  $k=tvs_radar_discovery_key($diagItem);
+  if(isset($sourcePendingKeys[$k])) continue;
+  $label=trim((string)($diagItem['ai_editor_last_error_label']??'Aguardando nova tentativa'));
+  $editorBlocks[$label]=($editorBlocks[$label]??0)+1;
+}
 ?><div class="notice">Pipeline atual: <?=$totalPipelineCurrent?> pauta(s) acompanhada(s) — <?=$totalSourcePending?> em fonte/enriquecimento · <?=$totalEditorPending?> aguardando Editor IA · <?=$totalSensitive?> em revisão obrigatória · <?=$totalImageReview?> em revisão de imagem · <?=$totalReady?> pronta(s) para aprovação.</div><div class="cards"><div class="stat"><span>Prontas para aprovação</span><b><?=$totalReady?></b><small>Editor IA e validação concluídos, sem pendência adicional</small></div><div class="stat"><span>Fonte / enriquecimento</span><b><?=$totalSourcePending?></b><small>resolução de origem ou conteúdo factual ainda insuficiente</small></div><div class="stat"><span>Aguardando Editor IA</span><b><?=$totalEditorPending?></b><small><a href="drafts.php">ver matérias e motivos</a></small></div><div class="stat"><span>Revisão obrigatória</span><b><?=$totalSensitive?></b><small>pautas sensíveis ou de alto impacto</small></div><div class="stat"><span>Revisão de imagem</span><b><?=$totalImageReview?></b><small>texto pronto; imagem precisa ser confirmada</small></div></div>
+<div class="settings-box"><strong>Diagnóstico do gargalo</strong><div style="margin-top:8px;display:flex;gap:7px;flex-wrap:wrap"><?php
+$factLabels=['sem_auditoria'=>'Ainda sem auditoria','fonte_nao_resolvida'=>'Fonte não resolvida','texto_insuficiente'=>'Conteúdo factual insuficiente','quatro_w_incompleto'=>'4W incompleto','fonte_nao_confiavel'=>'Fonte não confiável','fora_janela'=>'Fora da janela','sem_interesse_editorial'=>'Interesse editorial não detectado'];
+foreach($factBlocks as $key=>$count){ if($count>0): ?><span class="badge"><?=h($factLabels[$key])?>: <?=$count?></span><?php endif; }
+foreach($editorBlocks as $label=>$count){ if($count>0): ?><span class="badge" style="background:#f5f3ff;color:#6d28d9">Editor IA — <?=h($label)?>: <?=$count?></span><?php endif; }
+?></div><small class="muted">Uma pauta pode aparecer em mais de um motivo factual; os cards superiores continuam mutuamente exclusivos.</small></div>
 <?php if($sensitiveQueue): ?><section class="city-block"><h2>Revisão obrigatória <small class="muted">(<?=count($sensitiveQueue)?>)</small></h2><div class="queue-grid"><?php foreach($sensitiveQueue as $m): ?><article class="matter"><span class="badge" style="background:#fef2f2;color:#b91c1c">Revisão obrigatória</span><span class="badge"><?=h($m['editorial_status']??'Revisão')?></span><?php if(isset($m['editorial_score'])): ?><span class="badge">Score <?=h($m['editorial_score'])?></span><?php endif; ?><h3><?=h($m['title']??'Sem título')?></h3><p><?=h($m['subtitle']??($m['summary']??''))?></p><a class="btn orange" href="?edit=<?=h($m['id'])?>">Revisar</a></article><?php endforeach; ?></div></section><?php endif; ?>
 <?php if($imageReviewQueue): ?><section class="city-block"><h2>Revisão de imagem <small class="muted">(<?=count($imageReviewQueue)?>)</small></h2><div class="queue-grid"><?php foreach($imageReviewQueue as $m): ?><article class="matter"><span class="badge" style="background:#fff7ed;color:#c2410c">Imagem pendente</span><h3><?=h($m['title']??'Sem título')?></h3><p><?=h($m['image_review_reason']??'Revisar imagem antes da publicação.')?></p><a class="btn orange" href="?edit=<?=h($m['id'])?>">Corrigir imagem</a></article><?php endforeach; ?></div></section><?php endif; ?>
 <form id="bulk-form" method="post" class="settings-box bulk-row" onsubmit="return confirm('Aplicar a ação nas matérias selecionadas?');"><?=tvs_csrf_field()?><label class="check"><input type="checkbox" id="select-all-radar"> Selecionar todas visíveis</label><button class="btn orange" type="submit" name="action" value="bulk_approve">Aprovar selecionadas</button><button class="btn secondary" type="submit" name="action" value="bulk_review">Enviar para revisão</button><button class="btn secondary" type="submit" name="action" value="bulk_discard">Descartar selecionadas</button><span class="muted">Use os checkboxes dos cards para operar várias matérias de uma vez.</span></form>
