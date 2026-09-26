@@ -191,6 +191,28 @@ function tvs_source_priority($src){
   return 3;
 }
 
+function tvs_radar_trusted_source($cand,$url=''){
+  $url=trim((string)($url!==''?$url:($cand['url']??$cand['source_url']??'')));
+  $host=tvs_radar_source_host($url);
+  $trustedHosts=[
+    'sumare.sp.gov.br','hortolandia.sp.gov.br','paulinia.sp.gov.br',
+    'novaodessa.sp.gov.br','americana.sp.gov.br','campinas.sp.gov.br',
+    'saopaulo.sp.gov.br','agenciabrasil.ebc.com.br',
+    'g1.globo.com','ge.globo.com','portalhortolandia.com.br',
+    'horacampinas.com.br','sbnoticias.com.br','portaldesumare.com.br',
+    'noticiasumare.com.br','portalon.com.br','noticiafm.com','novomomento.com.br'
+  ];
+  if($host!=='' && in_array($host,$trustedHosts,true)) return true;
+
+  $source=(string)($cand['source']??'').' '.(string)($cand['source_type']??'');
+  return tvs_source_priority($source)===1;
+}
+
+function tvs_radar_freshness_gate($cand){
+  $status=tvs_radar_temporal_status($cand);
+  return !empty($status['ok']);
+}
+
 function tvs_radar_age_days($cand){
   $raw=''; foreach(['published_at','pubDate','date','data','created_at'] as $k){ if(!empty($cand[$k])){ $raw=(string)$cand[$k]; break; } }
   if($raw==='') return null;
@@ -912,17 +934,99 @@ function tvs_radar_find_article_on_source($domain,$title,$city=''){
   return $cache[$cacheKey]='';
 }
 
+function tvs_radar_resolution_cache_file(){
+  return dirname(__DIR__).'/data/radar_resolution_cache.json';
+}
+
+function tvs_radar_resolution_cache_read(){
+  $items=tvs_read_json_file(tvs_radar_resolution_cache_file());
+  return is_array($items)?$items:[];
+}
+
+function tvs_radar_resolution_cache_save($items){
+  if(!is_array($items)) $items=[];
+  if(count($items)>600){
+    uasort($items,function($a,$b){
+      return strcmp((string)($b['updated_at']??''),(string)($a['updated_at']??''));
+    });
+    $items=array_slice($items,0,600,true);
+  }
+  tvs_save_json_file(tvs_radar_resolution_cache_file(),$items);
+}
+
+function tvs_radar_resolution_cache_key($url){
+  return hash('sha256',trim((string)$url));
+}
+
+function tvs_radar_resolution_cache_lookup($url){
+  $cache=tvs_radar_resolution_cache_read();
+  $key=tvs_radar_resolution_cache_key($url);
+  $row=$cache[$key]??null;
+  if(!is_array($row)) return null;
+
+  $updated=strtotime((string)($row['updated_at']??''));
+  if($updated && (time()-$updated)>7*86400) return null;
+
+  return $row;
+}
+
+function tvs_radar_resolution_cache_record($url,$resolved='',$method='',$ok=false){
+  $cache=tvs_radar_resolution_cache_read();
+  $key=tvs_radar_resolution_cache_key($url);
+  $row=is_array($cache[$key]??null)?$cache[$key]:[];
+  $row['source_url']=trim((string)$url);
+  $row['updated_at']=date('c');
+  if($ok && $resolved!==''){
+    $row['resolved_url']=$resolved;
+    $row['method']=$method;
+    $row['failures']=0;
+    $row['ok']=1;
+  } else {
+    $row['failures']=(int)($row['failures']??0)+1;
+    $row['ok']=0;
+  }
+  $cache[$key]=$row;
+  tvs_radar_resolution_cache_save($cache);
+  return $row;
+}
+
+function tvs_radar_google_blob_url($url){
+  $path=(string)(parse_url((string)$url,PHP_URL_PATH)??'');
+  if(!preg_match('~/articles/([^/?]+)~',$path,$m)) return '';
+
+  $blob=strtr($m[1],'-_','+/');
+  $pad=strlen($blob)%4;
+  if($pad) $blob.=str_repeat('=',4-$pad);
+  $decoded=base64_decode($blob,true);
+  if(!is_string($decoded) || $decoded==='') return '';
+
+  if(preg_match('~https://[^\x00-\x20"\'<>]+~',$decoded,$u)){
+    $candidate=rtrim((string)$u[0],').,;');
+    if(tvs_radar_external_url_is_valid($candidate)) return $candidate;
+  }
+  return '';
+}
+
 function tvs_radar_resolve_google_news_url($url){
   static $cache=[];
 
   $url=trim((string)$url);
+  if(!tvs_radar_is_google_news_url($url)) return $url;
+  if(isset($cache[$url])) return $cache[$url];
 
-  if(!tvs_radar_is_google_news_url($url)){
-    return $url;
+  $persisted=tvs_radar_resolution_cache_lookup($url);
+  if(is_array($persisted) && !empty($persisted['ok'])){
+    $candidate=trim((string)($persisted['resolved_url']??''));
+    if(tvs_radar_external_url_is_valid($candidate)){
+      return $cache[$url]=$candidate;
+    }
   }
 
-  if(isset($cache[$url])){
-    return $cache[$url];
+  // Custo quase zero: tenta extrair URL embutida no blob /articles/... quando presente.
+  $blobUrl=tvs_radar_google_blob_url($url);
+  if($blobUrl!==''){
+    tvs_radar_resolution_cache_record($url,$blobUrl,'google_blob',true);
+    return $cache[$url]=$blobUrl;
   }
 
   $html='';
@@ -932,7 +1036,6 @@ function tvs_radar_resolve_google_news_url($url){
     $outboundOptions=tvs_outbound_curl_options($url,12);
     if($outboundOptions!==null){
       $ch=curl_init($url);
-
       curl_setopt_array($ch,$outboundOptions+[
         CURLOPT_RETURNTRANSFER=>true,
         CURLOPT_ENCODING=>'',
@@ -944,7 +1047,6 @@ function tvs_radar_resolve_google_news_url($url){
           'Accept-Language: pt-BR,pt;q=0.9,en;q=0.7'
         ]
       ]);
-
       $html=(string)curl_exec($ch);
       $effective=(string)curl_getinfo($ch,CURLINFO_EFFECTIVE_URL);
       curl_close($ch);
@@ -953,24 +1055,40 @@ function tvs_radar_resolve_google_news_url($url){
   }
 
   if(tvs_radar_external_url_is_valid($effective)){
+    tvs_radar_resolution_cache_record($url,$effective,'http_effective_url',true);
     return $cache[$url]=$effective;
   }
 
   if($html!==''){
-    // Redirecionamento por meta refresh.
+    // 1) Meta refresh.
     if(preg_match(
       '~<meta\b[^>]*http-equiv=["\']?refresh["\']?[^>]*content=["\'][^"\']*url=([^"\']+)["\']~iu',
-      $html,
-      $m
+      $html,$m
     )){
       $candidate=trim(html_entity_decode($m[1],ENT_QUOTES|ENT_HTML5,'UTF-8'));
-
       if(tvs_radar_external_url_is_valid($candidate)){
+        tvs_radar_resolution_cache_record($url,$candidate,'meta_refresh',true);
         return $cache[$url]=$candidate;
       }
     }
 
-    // URL canônica externa.
+    // 2) Open Graph URL.
+    if(preg_match_all('~<meta\b[^>]*>~is',$html,$metaTags)){
+      foreach($metaTags[0] as $tag){
+        if(
+          preg_match('~\bproperty=["\']og:url["\']~i',$tag) &&
+          preg_match('~\bcontent=["\']([^"\']+)["\']~i',$tag,$m)
+        ){
+          $candidate=html_entity_decode($m[1],ENT_QUOTES|ENT_HTML5,'UTF-8');
+          if(tvs_radar_external_url_is_valid($candidate)){
+            tvs_radar_resolution_cache_record($url,$candidate,'og_url',true);
+            return $cache[$url]=$candidate;
+          }
+        }
+      }
+    }
+
+    // 3) Canonical.
     if(preg_match_all('~<link\b[^>]*>~is',$html,$tags)){
       foreach($tags[0] as $tag){
         if(
@@ -978,15 +1096,15 @@ function tvs_radar_resolve_google_news_url($url){
           preg_match('~\bhref=["\']([^"\']+)["\']~i',$tag,$m)
         ){
           $candidate=html_entity_decode($m[1],ENT_QUOTES|ENT_HTML5,'UTF-8');
-
           if(tvs_radar_external_url_is_valid($candidate)){
+            tvs_radar_resolution_cache_record($url,$candidate,'canonical',true);
             return $cache[$url]=$candidate;
           }
         }
       }
     }
 
-    // Último recurso: primeiro endereço externo com aparência de matéria.
+    // 4) Endereço externo com aparência de matéria.
     if(preg_match_all(
       '~https?://[^\s"\'<>\\\\]+~iu',
       html_entity_decode($html,ENT_QUOTES|ENT_HTML5,'UTF-8'),
@@ -994,25 +1112,23 @@ function tvs_radar_resolve_google_news_url($url){
     )){
       foreach(array_unique($links[0]) as $candidate){
         $candidate=rtrim($candidate,').,;');
-
         if(!tvs_radar_external_url_is_valid($candidate)) continue;
 
         $path=(string)(parse_url($candidate,PHP_URL_PATH)??'');
-
-        if(
-          preg_match(
-            '~/(noticia|noticias|materia|cidade|politica|economia|'
-            .'esporte|cultura|educacao|saude|emprego|concursos?|'
-            .'campinas|sumare|hortolandia|paulinia|americana|nova-odessa)/~iu',
-            $path
-          )
-        ){
+        if(preg_match(
+          '~/(noticia|noticias|materia|cidade|politica|economia|'
+          .'esporte|cultura|educacao|saude|emprego|concursos?|'
+          .'campinas|sumare|hortolandia|paulinia|americana|nova-odessa)/~iu',
+          $path
+        )){
+          tvs_radar_resolution_cache_record($url,$candidate,'external_article_link',true);
           return $cache[$url]=$candidate;
         }
       }
     }
   }
 
+  tvs_radar_resolution_cache_record($url,'','',false);
   return $cache[$url]=$url;
 }
 
@@ -1064,18 +1180,23 @@ function tvs_radar_source_domain_hint($source,$title=''){
 function tvs_radar_resolve_candidate_urls($items){
   foreach($items as &$item){
     $current=trim((string)($item['url']??''));
-
-    if(!tvs_radar_is_google_news_url($current)){
-      continue;
-    }
+    if(!tvs_radar_is_google_news_url($current)) continue;
 
     $resolved=tvs_radar_known_current_url($item['title']??'');
     $method=$resolved!==''?'known_current_title':'';
 
-    /*
-     * Primeira tentativa: domínio informado pelo próprio RSS.
-     * É o método mais confiável porque limita a pesquisa ao veículo correto.
-     */
+    // 1) Tenta resolver o próprio link do Google News:
+    // cache persistente -> blob -> HTTP/meta refresh -> og:url -> canonical.
+    if($resolved===''){
+      $googleResolved=tvs_radar_resolve_google_news_url($current);
+      if($googleResolved!=='' && $googleResolved!==$current){
+        $resolved=$googleResolved;
+        $method='google_news_resolution';
+      }
+    }
+
+    // 2) Se o RSS informa/permite inferir o veículo, procura o título
+    // diretamente no domínio correto.
     $sourceDomain=trim((string)($item['source_domain']??''));
     if($sourceDomain===''){
       $sourceDomain=tvs_radar_source_domain_hint(
@@ -1090,14 +1211,10 @@ function tvs_radar_resolve_candidate_urls($items){
         $item['title']??'',
         $item['city']??''
       );
-
-      if($resolved!==''){
-        $method='source_domain_title_match';
-      }
+      if($resolved!=='') $method='source_domain_title_match';
     }
 
-    // Quando a busca interna do próprio portal falha, procura a mesma manchete
-    // no índice de notícias restrito ao domínio conhecido da fonte.
+    // 3) Índice de notícias restrito ao domínio.
     if($sourceDomain!=='' && $resolved===''){
       $resolved=tvs_radar_resolve_by_bing_site(
         $sourceDomain,
@@ -1107,32 +1224,13 @@ function tvs_radar_resolve_candidate_urls($items){
       if($resolved!=='') $method='bing_site_title_match';
     }
 
-    /*
-     * Segunda tentativa: redirecionamento ou dados internos do Google.
-     */
-    if($resolved===''){
-      $googleResolved=tvs_radar_resolve_google_news_url($current);
-
-      if(
-        $googleResolved!=='' &&
-        $googleResolved!==$current
-      ){
-        $resolved=$googleResolved;
-        $method='google_news_resolution';
-      }
-    }
-
-    /*
-     * Bing permanece apenas como último recurso. A fila nunca é alterada
-     * quando a busca não devolve uma correspondência segura.
-     */
+    // 4) Busca geral como último recurso.
     if($resolved===''){
       $bingResolved=tvs_radar_resolve_by_bing_news(
         $item['title']??'',
         $item['city']??'',
         $item['source']??''
       );
-
       if($bingResolved!==''){
         $resolved=$bingResolved;
         $method='bing_news_title_match';
@@ -1150,13 +1248,19 @@ function tvs_radar_resolve_candidate_urls($items){
       $item['url_resolved_at']=date(DATE_ATOM);
       $item['url_resolution_required']=0;
       $item['url_resolution_method']=$method;
+      $row=tvs_radar_resolution_cache_record($current,$resolved,$method,true);
+      $item['resolution_failure_count']=(int)($row['failures']??0);
     } else {
       $item['url_resolution_required']=1;
+      $row=tvs_radar_resolution_cache_lookup($current);
+      $item['resolution_failure_count']=(int)($row['failures']??0);
+      if($item['resolution_failure_count']>=3){
+        $item['resolution_priority_penalty']=min(6,$item['resolution_failure_count']-2);
+      }
     }
   }
 
   unset($item);
-
   return $items;
 }
 
@@ -1909,6 +2013,8 @@ function tvs_radar_fact_package($cand,$mat,$city,$extraSources=[]){
   $url=trim((string)($cand['url']??$mat['url']??''));
   $articleText=trim((string)(($mat['article']['description']??'').' '.($mat['article']['body']??'')));
   $sourceResolved=$url!=='' && !tvs_radar_is_google_news_url($url) && tvs_strlen($articleText)>=80;
+  $trustedSource=tvs_radar_trusted_source($cand,$url);
+  $freshnessOk=tvs_radar_freshness_gate($cand);
 
   $sources=[[
     'url'=>$url,
@@ -1968,10 +2074,14 @@ function tvs_radar_fact_package($cand,$mat,$city,$extraSources=[]){
     'sf_score'=>$score,
     'core_4w_ok'=>$coreOk?1:0,
     'source_original_resolved'=>$sourceResolved?1:0,
+    'trusted_source'=>$trustedSource?1:0,
+    'freshness_ok'=>$freshnessOk?1:0,
     'second_source_confirmed'=>$secondSource?1:0,
     'flags'=>[
       'single_source'=>$secondSource?0:1,
-      'official'=>((int)($cand['priority']??3)===1)?1:0
+      'official'=>((int)($cand['priority']??3)===1)?1:0,
+      'trusted_source'=>$trustedSource?1:0,
+      'freshness_ok'=>$freshnessOk?1:0
     ]
   ];
 }
@@ -2491,6 +2601,7 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5){
         'idx'=>$idx,
         'category'=>$category,
         'diversity_penalty'=>$diversityPenalty,
+        'resolution_penalty'=>(int)($cand['resolution_priority_penalty']??0),
         'sf_score'=>(int)($cand['sf_score']??0),
         'attempts'=>(int)($cand['pipeline_attempts']??0),
         'updated'=>(string)($cand['pipeline_updated_at']??$cand['pipeline_created_at']??'')
@@ -2499,6 +2610,7 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5){
 
     usort($cityCandidates,function($a,$b){
       if($a['diversity_penalty']!==$b['diversity_penalty']) return $a['diversity_penalty']<=>$b['diversity_penalty'];
+      if($a['resolution_penalty']!==$b['resolution_penalty']) return $a['resolution_penalty']<=>$b['resolution_penalty'];
       if($a['sf_score']!==$b['sf_score']) return $b['sf_score']<=>$a['sf_score'];
       if($a['attempts']!==$b['attempts']) return $a['attempts']<=>$b['attempts'];
       return strcmp($a['updated'],$b['updated']);
@@ -2548,15 +2660,26 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5){
       }
 
       $sourceResolved=!empty($package['source_original_resolved']);
+      $trustedSource=!empty($package['trusted_source']);
+      $freshnessOk=!empty($package['freshness_ok']);
       $factuallyReady=(
         ($sf>=70 && $coreOk)
-        || ($sf>=60 && $sf<70 && $coreOk && $sourceResolved)
+        || (
+          $sf>=60 && $sf<70
+          && $coreOk
+          && $sourceResolved
+          && $trustedSource
+          && $freshnessOk
+        )
       );
 
       if(!$factuallyReady){
         tvs_radar_schedule_enrichment(
           $cand,
-          'Pacote factual ainda insuficiente: SF '.$sf.'/100; 4W básico '.($coreOk?'completo':'incompleto').'; fonte original '.($sourceResolved?'resolvida':'não resolvida').'.'
+          'Pacote factual ainda insuficiente: SF '.$sf.'/100; 4W básico '.($coreOk?'completo':'incompleto')
+          .'; fonte original '.($sourceResolved?'resolvida':'não resolvida')
+          .'; fonte confiável '.($trustedSource?'sim':'não')
+          .'; atualidade '.($freshnessOk?'ok':'fora da janela').'.'
         );
         if(($cand['pipeline_stage']??'')==='expirada_sem_enriquecimento'){
           tvs_radar_discard($cand,$city,'TTL de enriquecimento expirado após 7 dias sem pacote factual suficiente.');
