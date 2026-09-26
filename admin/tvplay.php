@@ -9,7 +9,7 @@ $activeAdmin='tvplay';
 $msg=''; $err='';
 
 function tvp_admin_find_news($id){ foreach(tvp_read_json('noticias.json') as $n){ if(tvp_news_id($n)===$id) return $n; } return null; }
-function tvp_admin_redirect($params=[]){ $q=$params?('?'.http_build_query($params)):''; header('Location: tvplay.php'.$q); exit; }
+function tvp_admin_redirect($params=[]){ $q=$params?('?'.http_build_query($params)):''; header('Location: /admin/tvplay.php'.$q); exit; }
 if(isset($_GET['msg'])) $msg=(string)$_GET['msg'];
 if(isset($_GET['err'])) $err=(string)$_GET['err'];
 if(isset($_GET['yt_msg'])) $msg=(string)$_GET['yt_msg'];
