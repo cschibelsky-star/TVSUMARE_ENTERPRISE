@@ -25,7 +25,13 @@ if(($_SERVER['REQUEST_METHOD']??'GET')==='POST' && ($_POST['action']??'')==='pub
     }elseif(!function_exists('curl_init')){
         $publishResult=['ok'=>false,'message'=>'Publicação indisponível: extensão cURL não encontrada no container.'];
     }else{
-        $endpoint=$marketingEngineUrl.'/marketing/internal/publish-tv-sumare-facebook';
+        $endpoint=$marketingEngineUrl.'/api/internal/marketing/publisher/tv-sumare/facebook';
+        $payload=json_encode([
+            'url'=>$url,
+            'page_id'=>$metaPageId,
+            'format'=>'image',
+            'idempotency_key'=>hash('sha256','tvsumare|'.$id.'|facebook'),
+        ],JSON_UNESCAPED_SLASHES);
         $ch=curl_init($endpoint);
         curl_setopt_array($ch,[
             CURLOPT_POST=>true,
@@ -33,13 +39,10 @@ if(($_SERVER['REQUEST_METHOD']??'GET')==='POST' && ($_POST['action']??'')==='pub
             CURLOPT_TIMEOUT=>60,
             CURLOPT_HTTPHEADER=>[
                 'Accept: application/json',
-                'X-Marketing-Engine-Token: '.$marketingEngineToken,
+                'Content-Type: application/json',
+                'Authorization: Bearer '.$marketingEngineToken,
             ],
-            CURLOPT_POSTFIELDS=>[
-                'url'=>$url,
-                'page_id'=>$metaPageId,
-                'format'=>'image',
-            ],
+            CURLOPT_POSTFIELDS=>$payload,
         ]);
         $body=(string)curl_exec($ch);
         $status=(int)curl_getinfo($ch,CURLINFO_RESPONSE_CODE);
