@@ -1,56 +1,59 @@
 # Estado tecnico auditado
 
-## Situacao atual
+## Situacao atual — 2026-09-12
 
-- Baseline PHP legado importado de snapshot imutavel da HostGator.
-- 97 arquivos PHP validados no PHP 8.3, sem erros de sintaxe.
-- Runtime Apache/PHP 8.3 versionado.
-- Docker Compose validado e container local saudavel.
-- Dados, uploads, videos e logs separados em /srv/tvsumare/shared.
-- Configuracoes sensiveis substituidas por variaveis de ambiente.
-- Health check disponivel em /health.php.
-- Rede Docker interna, sem publicacao externa.
-- DNS e producao inalterados.
+- Homologacao publicada em `tv-hml.vitrineiapro.com.br`.
+- Runtime Apache/PHP 8.3 versionado em Docker.
+- `tvsumare_web` validado operacionalmente com health check.
+- `tvsumare_radar_scheduler` validado operacionalmente em homologacao.
+- Dados, uploads, videos e logs persistentes separados em `/srv/tvsumare/shared`.
+- Root filesystem dos containers em modo read-only, com `no-new-privileges`, limites de PID, memoria, CPU e descritores.
+- Configuracoes sensiveis fornecidas por variaveis de ambiente/runtime.
+- Health check disponivel em `/health.php`.
+- Producao ativa em `tvsumare.com.br` no HostGator.
+- Deploy de producao realizado de forma seletiva, preservando `data/`, `config/`, uploads e demais dados vivos.
+- Cron de producao para `admin/cron_radar.php` instalado com execucao horaria.
+- Backup integral e backup seletivo de producao obrigatorios antes de novas publicacoes.
+- Branch candidata consolidada: `reconcile/hostgator-tvsumare-20260911`.
+- CI dedicado adicionado em `.github/workflows/tvsumare-ci.yml`.
 
 ## Classificacao oficial
 
-HOMOLOGATION_LOCAL
+HOMOLOGATION_ACTIVE + PRODUCTION_ACTIVE
 
-O baseline esta funcional e isolado, mas ainda nao foi publicado em dominio de homologacao nem validado para producao.
+A base tecnica esta operacional. Alteracoes de codigo devem passar pela branch candidata/canonica, CI e homologacao antes de publicacao seletiva no HostGator.
+
+## Politica editorial
+
+- Regiao permitida: Sumare, Hortolandia, Paulinia, Nova Odessa, Americana e Campinas.
+- Evidencia regional deve vir do conteudo/fonte; o campo `city` isolado nao e suficiente.
+- Pautas sensiveis ou de alto impacto permanecem elegiveis por relevancia, mas exigem revisao humana antes da publicacao.
+- Materias sem imagem jornalistica confirmada exigem revisao de imagem.
+- Conteudo vencido ou fora da regiao nao deve permanecer em destaque/home.
+- Saneamento de dados historicos deve ser executado separadamente das regras de ingestao.
 
 ## Security hardening
 
-- /admin and /api blocked at HTTP layer.
-- Sensitive internal artifacts return HTTP 403.
-- Missing require_login() fixed in admin/aovivo.php.
-- Security headers validated.
-- Unauthorized POST returned 403 without changing persistent data.
-- Public routes remain HTTP 200.
-- Publication is pending DNS, certificate and explicit authorization.
+- CSRF habilitado nas superficies administrativas.
+- SameSite=Strict nas sessoes administrativas.
+- Requisicoes server-side sujeitas a allowlist e validacao de IP publico.
+- Verificacao TLS habilitada e redirects automaticos restringidos no outbound guard.
+- Container root read-only e capabilities reduzidas.
+- Execucao de scripts em uploads/videos bloqueada pela configuracao imutavel do Apache.
 
-## CSRF validation
+## Operacao Git
 
-- 256-bit session token enabled.
-- SameSite=Strict enabled for admin sessions.
-- 94 POST forms across 32 files protected.
-- Invalid login token redirects to erro=csrf.
-- Valid token with invalid credentials redirects to erro=credentials.
-- Invalid authenticated POST returns HTTP 419 and leaves data unchanged.
+- GitHub e a fonte de verdade do codigo.
+- Nao executar reset/clean/reconcile em arvore suja sem preservacao previa.
+- `main` deve receber somente estado validado e reproduzivel.
+- Alteracoes de producao feitas fora do Git devem ser reconciliadas imediatamente.
+- PRs de recovery intermediarios nao devem ser usados como baseline quando existir uma branch reconciliada posterior.
 
-## Outbound validation
+## Pendencias para fechamento 100%
 
-- Legacy HeyGen credentials removed from homologation.
-- Server-side requests restricted by allowlist and public-IP validation.
-- TLS verification enabled; automatic redirects disabled.
-- SSRF negative tests passed.
-- Public routes remain HTTP 200 and all administrative surfaces remain HTTP 403.
-
-## Runtime hardening
-
-- Read-only container root filesystem enabled.
-- no-new-privileges enabled.
-- Only NET_BIND_SERVICE, SETGID and SETUID capabilities retained.
-- PID, memory, CPU and open-file limits enabled.
-- Upload and video script execution blocked by immutable Apache configuration.
-- Persistent data remains writable; application root writes are blocked.
-- Runtime tests passed with zero restarts and no permission errors.
+1. Validar CI da branch reconciliada.
+2. Consolidar a branch reconciliada em `main` por fast-forward somente apos os checks.
+3. Sanear dados editoriais historicos fora da regiao, vencidos ou com editoria incorreta.
+4. Formalizar release/rollback do HostGator e registrar manifestos de release.
+5. Habilitar protecao/ruleset da branch canonica quando a permissao administrativa do conector permitir.
+6. Validar configuracao real do webhook de WhatsApp antes de considerar notificacao externa operacional.

@@ -1,0 +1,56 @@
+name: TV Sumare CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - reconcile/hostgator-tvsumare-20260911
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  php-quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP 8.3
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+
+      - name: PHP lint completo
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r -d '' file; do
+            php -l "$file" >/dev/null
+          done < <(find . -type f -name '*.php' -print0)
+          echo "PHP_LINT=PASS"
+
+      - name: Teste da politica editorial V3
+        run: php tests/editorial_policy_v3_test.php
+
+      - name: Validar regras editoriais criticas
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q "sensitive_review_required" admin/radar-regional.php
+          grep -q "image_review_required" admin/radar-regional.php
+          grep -q "cron-radar.log" admin/cron_radar.php
+          grep -q "tvs_v3_is_regional_news" includes/tvs_editorial_policy_v3.php
+          grep -q "mossor" includes/tvs_editorial_policy_v3.php
+          echo "EDITORIAL_GUARDS=PASS"
+
+  docker-smoke:
+    runs-on: ubuntu-latest
+    needs: php-quality
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build + aplicadores + smoke de homologacao
+        run: docker build -t tvsumare-ci .

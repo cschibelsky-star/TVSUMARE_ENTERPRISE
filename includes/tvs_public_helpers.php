@@ -31,9 +31,44 @@ function tvs_real_image($n){
   foreach($candidates as $img){ $img=trim((string)$img); if($img!=='' && !tvs_is_category_asset($img)) return $img; }
   return '';
 }
+function tvs_category_asset($n){
+  $category=tvs_lc(trim((string)($n['category']??'Cidade')));
+  $txt=tvs_lc(($n['category']??'').' '.($n['title']??'').' '.($n['subtitle']??'').' '.($n['summary']??'').' '.($n['body']??''));
+
+  $editorialKey='';
+  if(preg_match('~sa[uú]de|hospital|upa|ubs|vacina|medic|dengue|atendimento~iu',$txt)) $editorialKey='saude';
+  elseif(preg_match('~educa[cç][aã]o|escola|creche|aluno|professor|ensino|matr[ií]cula~iu',$txt)) $editorialKey='educacao';
+  elseif(preg_match('~seguran[cç]a|guarda|pol[ií]cia|crime|pris[aã]o|roubo|furto|tr[aá]fico~iu',$txt)) $editorialKey='seguranca';
+  elseif(preg_match('~pol[ií]tica|c[aâ]mara|vereador|prefeito|elei[cç][aã]o|projeto de lei|sess[aã]o~iu',$txt)) $editorialKey='politica';
+  elseif(preg_match('~esporte|futebol|campeonato|atleta|jogo|partida|torneio~iu',$txt)) $editorialKey='esportes';
+  elseif(preg_match('~infraestrutura|obra|asfalto|pavimenta[cç][aã]o|recape|vi[aá]rio|ponte|drenagem~iu',$txt)) $editorialKey='infraestrutura';
+
+  $editorial=[
+    'politica'=>'assets/thumb-politica.jpg',
+    'saude'=>'assets/thumb-saude.jpg',
+    'educacao'=>'assets/thumb-educacao.jpg',
+    'esportes'=>'assets/thumb-esportes.jpg',
+    'seguranca'=>'assets/thumb-seguranca.jpg',
+    'infraestrutura'=>'assets/thumb-infraestrutura.jpg'
+  ];
+  if($editorialKey!=='' && isset($editorial[$editorialKey]) && file_exists(__DIR__.'/../'.$editorial[$editorialKey])) return $editorial[$editorialKey];
+
+  $fallback=[
+    'cidade'=>'assets/cat-cidade.svg','cidades'=>'assets/cat-cidade.svg',
+    'política'=>'assets/cat-politica.svg','politica'=>'assets/cat-politica.svg',
+    'saúde'=>'assets/cat-saude.svg','saude'=>'assets/cat-saude.svg',
+    'educação'=>'assets/cat-educacao.svg','educacao'=>'assets/cat-educacao.svg',
+    'empregos'=>'assets/cat-empregos.svg','emprego'=>'assets/cat-empregos.svg',
+    'esportes'=>'assets/cat-esportes.svg','esporte'=>'assets/cat-esportes.svg',
+    'cultura'=>'assets/cat-cultura.svg',
+    'segurança'=>'assets/cat-seguranca.svg','seguranca'=>'assets/cat-seguranca.svg',
+    'economia'=>'assets/cat-economia.svg'
+  ];
+  return $fallback[$category]??'assets/cat-cidade.svg';
+}
 function tvs_display_image($n){
   $img=tvs_real_image($n);
-  return $img!=='' ? $img : 'assets/tvsumare-noticia-padrao.svg';
+  return $img!=='' ? $img : tvs_category_asset($n);
 }
 function tvs_clean_text($text){
   $text=trim(preg_replace('/\s+/',' ',strip_tags((string)$text)));
@@ -83,7 +118,15 @@ function tvs_category_match($n,$terms){
 function tvs_news_category($n){ return trim((string)($n['category']??'Notícia')); }
 function tvs_video_url($v){ return trim((string)($v['url']??$v['video_url']??$v['captioned_video_url']??$v['videoUrl']??'')); }
 function tvs_video_thumb($v){ $img=trim((string)($v['thumb']??$v['thumbnail']??$v['image']??'')); return tvs_is_category_asset($img)?'':$img; }
-function tvs_load_real_videos($limit=0){
+function tvs_video_title($v){
+  $title=trim((string)($v['title']??'Vídeo TV Sumaré'));
+  return preg_replace('~\bSumare\b~u','Sumaré',$title);
+}
+function tvs_video_age_days($v){
+  $ts=tvs_date_ts($v);
+  return max(0,(int)floor((time()-$ts)/86400));
+}
+function tvs_load_real_videos($limit=0,$maxDays=30){
   $raw=[];
   foreach(['data/videos.json','data/videos_ia.json'] as $file){
     $arr=tvs_json($file);
@@ -91,6 +134,7 @@ function tvs_load_real_videos($limit=0){
       $url=tvs_video_url($v);
       $status=tvs_lc($v['status']??'active');
       if($url==='' || in_array($status,['erro','error','failed','paused','rascunho','sugerido','roteiro','roteiro_revisao','aprovado_video','gerando','fila','pendente'],true)) continue;
+      if($maxDays>0 && tvs_video_age_days($v)>$maxDays) continue;
       $raw[]=$v;
     }
   }
@@ -124,30 +168,12 @@ function tvs_find_related_video($news){
   return null;
 }
 function tvs_expand_article_display($n,$minWords=380){
+  // Nunca completa uma matéria curta com parágrafos genéricos. A página pública
+  // exibe somente conteúdo factual efetivamente armazenado na matéria.
   $body=trim((string)($n['body']??''));
-  if(tvs_words($body)>=$minWords) return $body;
-  $title=trim((string)($n['title']??'Notícia regional'));
-  $summary=trim((string)($n['summary']??$n['subtitle']??$body));
-  $city=tvs_infer_city($n) ?: 'região';
-  $cat=trim((string)($n['category']??'Cidade'));
-  $source=trim((string)($n['source']??'fonte consultada'));
-  $paras=[];
-  $paras[]=$summary!==''?$summary:$title.'.';
-  $paras[]='A pauta envolve '.$city.' e integra a cobertura regional da TV Sumaré, com foco em informações de interesse público para moradores, trabalhadores, empresas e serviços da região.';
-  if(tvs_category_match($n,['emprego','vagas','economia','empresa','negócios','negocios'])){
-    $paras[]='Na área de empregos e negócios, a informação ganha relevância porque pode ajudar trabalhadores que buscam recolocação profissional, novas oportunidades de renda, capacitação e acompanhamento do desenvolvimento econômico local.';
-    $paras[]='Os interessados devem acompanhar os canais oficiais indicados pela fonte para confirmar prazos, documentos necessários, critérios de participação, endereço de atendimento e eventuais alterações na programação.';
-    $paras[]='Para empresas e comerciantes, pautas dessa natureza também ajudam a medir a movimentação do mercado de trabalho regional, principalmente quando envolvem vagas, processos seletivos, feirões, investimentos e ações de contratação.';
-  } elseif(tvs_category_match($n,['saúde','saude','educação','educacao','serviço','servicos','serviços','obras'])){
-    $paras[]='O tema também impacta quem depende de serviços públicos, acompanha ações municipais ou precisa de informações sobre atendimento, campanhas, obras, escolas, unidades de saúde e programas voltados à população.';
-    $paras[]='Moradores devem observar os canais oficiais para confirmar horários, locais, critérios de participação e possíveis mudanças na programação divulgada.';
-  } else {
-    $paras[]='O caso faz parte do monitoramento regional da TV Sumaré, que acompanha informações de interesse público em Sumaré, Hortolândia, Paulínia, Nova Odessa, Americana e Campinas.';
-    $paras[]='Novas informações poderão ser divulgadas por órgãos oficiais, entidades envolvidas e veículos regionais à medida que a pauta tiver desdobramentos.';
-  }
-  if($source!=='') $paras[]='Segundo as informações consultadas em '.$source.', a orientação é que o público acompanhe atualizações oficiais para detalhes complementares.';
-  $paras[]='A TV Sumaré seguirá acompanhando os principais acontecimentos da região e atualizará esta publicação sempre que houver novas informações relevantes.';
-  return trim(implode("\n\n", array_filter($paras)));
+  if($body!=='') return $body;
+  $summary=trim((string)($n['summary']??$n['subtitle']??''));
+  return $summary;
 }
 
 /* ===== TVSUMARE_ENTERPRISE_1.0_MASTER_BUILD_1.0.2 - Núcleo definitivo de notícias ===== */
@@ -217,7 +243,7 @@ function tvs_normalize_news_item($n){
   if(isset($n['body'])) $n['body']=trim((string)$n['body']);
   if(empty($n['city'])) $n['city']=tvs_infer_city($n);
   $img=tvs_real_image($n);
-  $n['display_image']=$img!==''?$img:'assets/tvsumare-noticia-padrao.svg';
+  $n['display_image']=$img!==''?$img:tvs_category_asset($n);
   return $n;
 }
 function tvs_prepare_public_news($news,$maxDays=30){
@@ -273,13 +299,58 @@ function tvs_is_regional_news_strict($n){
   if($outside!=='') return false;
   return tvs_region_city_detect($n)!=='';
 }
-function tvs_prepare_public_news_v2($news,$maxDays=21){
+function tvs_public_retention_days($n){
+  return function_exists('tvs_editorial_retention_days')
+    ? tvs_editorial_retention_days((array)$n)
+    : 90;
+}
+function tvs_public_is_active($n){
+  $age=tvs_news_age_days($n);
+  if($age===null) return false;
+  return $age<=tvs_public_retention_days($n);
+}
+function tvs_public_status_allowed($n){
+  $status=tvs_lc(trim((string)($n['status']??'')));
+  if($status==='') return true; // compatibilidade com acervo legado já publicado
+  $allowed=['publicado','publicada','published','aprovado','aprovada','approved','ativo','ativa','active'];
+  return in_array($status,$allowed,true);
+}
+function tvs_prepare_public_news_v2($news,$maxDays=90){
   $prepared=[];
   foreach((array)$news as $n){
     $n=tvs_normalize_news_item($n);
-    if(tvs_is_news_old($n,$maxDays)) continue;
-    if(!tvs_is_regional_news_strict($n)) continue;
-    $n['city']=tvs_region_city_detect($n) ?: ($n['city']??'Região');
+    if(!tvs_public_status_allowed($n)) continue;
+    $limit=min((int)$maxDays,tvs_public_retention_days($n));
+    if(tvs_is_news_old($n,$limit)) continue;
+    // A aprovação/publicação é a fronteira editorial. Depois disso, a matéria
+    // permanece ativa até sua janela de retenção, sem ser retirada por novas entradas.
+    $detected=tvs_region_city_detect($n);
+    if($detected!=='') $n['city']=$detected;
+    $img=tvs_real_image($n);
+    $fallback=tvs_category_asset($n);
+    $n['image_status']=$img!==''?'verified':'editorial_fallback';
+    $n['hero_eligible']=$img!=='' ? 1 : 0;
+    $n['home_eligible']=($img!=='' || $fallback!=='') ? 1 : 0;
+    $n['publication_eligible']=1;
+    $n['editorial_state']='published';
+    $n['retention_days']=$limit;
+    $prepared[]=$n;
+  }
+  $prepared=tvs_strict_dedupe_news($prepared);
+  usort($prepared,'tvs_sort_recent');
+  return $prepared;
+}
+function tvs_prepare_archived_news_v2($news){
+  $prepared=[];
+  foreach((array)$news as $n){
+    $n=tvs_normalize_news_item($n);
+    if(!tvs_public_status_allowed($n)) continue;
+    $limit=tvs_public_retention_days($n);
+    if(!tvs_is_news_old($n,$limit)) continue;
+    $detected=tvs_region_city_detect($n);
+    if($detected!=='') $n['city']=$detected;
+    $n['editorial_state']='archived';
+    $n['retention_days']=$limit;
     $prepared[]=$n;
   }
   $prepared=tvs_strict_dedupe_news($prepared);
@@ -294,13 +365,28 @@ function tvs_curated_sections($news){
     'Segurança'=>['segurança','seguranca','operação','operacao','defesa civil','polícia','policia','queimada'],
     'Cidade'=>['cidade','prefeitura','serviço','servico','obra','trânsito','transito','cultura','evento']
   ];
-  $out=[];$used=[];
+  $out=[];
   foreach($sections as $name=>$terms){
     $out[$name]=[];
     foreach($news as $n){
-      $id=(string)($n['id']??md5(json_encode($n)));
-      if(isset($used[$id])) continue;
-      if(tvs_category_match($n,$terms)){$out[$name][]=$n;$used[$id]=1; if(count($out[$name])>=3) break;}
+      if(tvs_category_match($n,$terms)){
+        $out[$name][]=$n;
+        if(count($out[$name])>=5) break;
+      }
+    }
+  }
+  return $out;
+}
+function tvs_city_sections($news,$perCity=5){
+  $cities=['Sumaré','Hortolândia','Paulínia','Nova Odessa','Americana','Campinas'];
+  $out=[];
+  foreach($cities as $city){
+    $out[$city]=[];
+    foreach($news as $n){
+      $detected=tvs_region_city_detect($n) ?: ($n['city']??'');
+      if(strcasecmp((string)$detected,$city)!==0) continue;
+      $out[$city][]=$n;
+      if(count($out[$city])>=$perCity) break;
     }
   }
   return $out;

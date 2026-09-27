@@ -7,6 +7,10 @@ function patch_once($path,$old,$new,$label){
     echo "{$label}: hardening já aplicado.\n";
     return;
   }
+  if($label==='Status CSRF' && $count===0 && strpos($code,'tvs_verify_csrf();')!==false){
+    echo "{$label}: hardening moderno já aplicado.\n";
+    return;
+  }
   if($count!==1){fwrite(STDERR,"{$label}: trecho esperado count={$count}; abortando\n");exit(2);}
   $code=str_replace($old,$new,$code);
   if(file_put_contents($path,$code,LOCK_EX)===false){fwrite(STDERR,"{$label}: falha ao gravar\n");exit(3);}

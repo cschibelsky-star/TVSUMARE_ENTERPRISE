@@ -3,6 +3,7 @@ require_once (is_file(__DIR__.'/includes/outbound_guard.php') ? __DIR__.'/includ
 function tvs_ai_substr($s,$start,$len=null){ if(function_exists('tvs_substr')) return tvs_substr($s,$start,$len); return function_exists('mb_substr') ? mb_substr((string)$s,$start,$len,'UTF-8') : substr((string)$s,$start,$len); }
 function tvs_ai_strlen($s){ if(function_exists('tvs_strlen')) return tvs_strlen($s); return function_exists('mb_strlen') ? mb_strlen((string)$s,'UTF-8') : strlen((string)$s); }
 function tvs_ai_log($msg){
+    $GLOBALS['tvs_ai_last_error']=(string)$msg;
     $file = dirname(__DIR__).'/data/ia_erros.log';
     @file_put_contents($file, '['.date('c').'] '.$msg."\n", FILE_APPEND);
 }
@@ -27,6 +28,70 @@ function tvs_gemini_extract_json($txt){
     $data=json_decode($txt,true);
     if(!is_array($data) && preg_match('/\{.*\}/s',$txt,$m)) $data=json_decode($m[0],true);
     return is_array($data) ? $data : null;
+}
+
+function tvs_centro_ia_generate_text($prompt,$generationConfig=[],$timeout=45){
+    if(!function_exists('curl_init')) return ['ok'=>false,'error'=>'cURL não está habilitado no servidor.'];
+
+    $token=trim((string)(getenv('CENTRO_IA_INTERNAL_TOKEN') ?: ''));
+    if($token==='') return ['ok'=>false,'error'=>'Token interno do Centro IA ausente.'];
+
+    // Serviço interno da Vitrine IA Pro: evita o gateway público e seu timeout.
+    // Host e rota são fixos; não aceitamos URL arbitrária para esta comunicação.
+    $url='http://vitrine_core_web_hml/api/internal/centro-ia/execute';
+    $safeTimeout=max(15,min((int)$timeout,180));
+    $outboundOptions=[
+        CURLOPT_PROTOCOLS=>CURLPROTO_HTTP,
+        CURLOPT_FOLLOWLOCATION=>false,
+        CURLOPT_CONNECTTIMEOUT=>5,
+        CURLOPT_TIMEOUT=>$safeTimeout
+    ];
+
+    $temperature=(float)($generationConfig['temperature']??0.25);
+    $payload=json_encode([
+        'project_id'=>'tvsumare',
+        'capability'=>'editorial_generation',
+        'input'=>[
+            'user'=>(string)$prompt,
+            'response_format'=>'json',
+            'temperature'=>$temperature
+        ]
+    ],JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+
+    $ch=curl_init($url);
+    curl_setopt_array($ch,$outboundOptions+[
+        CURLOPT_RETURNTRANSFER=>true,
+        CURLOPT_POST=>true,
+        CURLOPT_HTTPHEADER=>[
+            'Content-Type: application/json',
+            'Accept: application/json',
+            'Authorization: Bearer '.$token,
+            'X-Vitrine-Project: tvsumare'
+        ],
+        CURLOPT_POSTFIELDS=>$payload
+    ]);
+    $res=curl_exec($ch);
+    $curlErr=curl_error($ch);
+    $http=(int)curl_getinfo($ch,CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if($res===false || $res==='') return ['ok'=>false,'error'=>'Centro IA sem resposta'.($curlErr?': '.$curlErr:'')];
+    if(is_string($res) && strlen($res)>2097152) return ['ok'=>false,'error'=>'Resposta do Centro IA excedeu o limite seguro.'];
+
+    $j=json_decode((string)$res,true);
+    if($http>=400 || !is_array($j) || empty($j['ok'])){
+        return ['ok'=>false,'error'=>'Centro IA HTTP '.$http.': '.substr((string)$res,0,900)];
+    }
+
+    $txt=trim((string)($j['output_text']??''));
+    if($txt==='') return ['ok'=>false,'error'=>'Centro IA retornou texto vazio.'];
+
+    return [
+        'ok'=>true,
+        'text'=>$txt,
+        'model'=>'centro-ia/'.trim((string)($j['model']??'hub-routed')),
+        'raw'=>$j
+    ];
 }
 
 function tvs_gemini_generate_text($apiKey,$prompt,$generationConfig=[],$timeout=22){
@@ -94,7 +159,15 @@ function tvs_gemini_generate_text($apiKey,$prompt,$generationConfig=[],$timeout=
         }
         return ['ok'=>true,'text'=>$txt,'model'=>$model,'raw'=>$j];
     }
-    return ['ok'=>false,'error'=>$lastError ?: 'Falha desconhecida ao chamar Gemini.'];
+    $hub=tvs_centro_ia_generate_text($prompt,$generationConfig,max(120,(int)$timeout));
+    $GLOBALS['tvs_centro_ia_last_result']=$hub;
+    if(!empty($hub['ok'])){
+        tvs_ai_log('Fallback Centro IA acionado após falha do Gemini; modelo '.($hub['model']??'hub-routed').'.');
+        return $hub;
+    }
+    $hubError=(string)($hub['error']??'');
+    if($hubError!=='') tvs_ai_log('Falha fallback Centro IA: '.$hubError);
+    return ['ok'=>false,'error'=>trim(($lastError ?: 'Falha desconhecida ao chamar Gemini.').' | '.$hubError)];
 }
 
 function tvs_ai_style_rules($style, $approach='Informativa', $size='Média'){
@@ -198,6 +271,56 @@ function gemini_rewrite($apiKey, $input, $options=[]){
       if(empty($data['tags']) || !is_array($data['tags'])) $data['tags']=[];
     }
     return $data;
+}
+
+function tvs_ai_editor_process_article($apiKey,$article,$options=[]){
+    if(!is_array($article)) return null;
+    $city=trim((string)($options['city']??$article['city']??'Região')) ?: 'Região';
+    $source=trim((string)($options['source']??$article['source']??'Fonte consultada')) ?: 'Fonte consultada';
+    $sourceUrl=trim((string)($options['source_url']??$article['source_url']??''));
+    $category=trim((string)($options['category']??$article['category']??'Cidade')) ?: 'Cidade';
+    $rawTitle=trim((string)($article['title']??''));
+    if(function_exists('tvs_editorial_clean_title')) $rawTitle=tvs_editorial_clean_title($rawTitle,$source);
+    $input=
+      "TÍTULO BASE: ".$rawTitle."\n".
+      "SUBTÍTULO BASE: ".trim((string)($article['subtitle']??''))."\n".
+      "RESUMO BASE: ".trim((string)($article['summary']??''))."\n".
+      "CIDADE: ".$city."\n".
+      "CATEGORIA: ".$category."\n".
+      "FONTE: ".$source."\n".
+      "URL DA FONTE: ".$sourceUrl."\n\n".
+      "TEXTO BASE:\n".trim((string)($article['body']??''));
+
+    $edited=gemini_rewrite($apiKey,$input,[
+      'style'=>'Jornalístico profissional',
+      'approach'=>'Informativa',
+      'size'=>'Média',
+      'city'=>$city,
+      'source'=>$source,
+      'source_url'=>$sourceUrl,
+      'mode'=>'article'
+    ]);
+    if(!is_array($edited)) return null;
+
+    $edited['title']=function_exists('tvs_editorial_clean_title')
+      ? tvs_editorial_clean_title($edited['title']??$rawTitle,$source)
+      : trim((string)($edited['title']??$rawTitle));
+    $edited['city']=$city;
+    $edited['category']=trim((string)($edited['category']??$category)) ?: $category;
+    $edited['source']=$source;
+    $edited['source_url']=$sourceUrl;
+    foreach(['image','image_source_type','image_review_required','image_review_reason','image_credit'] as $k){
+      if(array_key_exists($k,$article)) $edited[$k]=$article[$k];
+    }
+    if(function_exists('tvs_editorial_body_is_thin') && tvs_editorial_body_is_thin($edited['title']??'',$edited['body']??'',$source)){
+      tvs_ai_log('Editor IA rejeitou matéria: texto insuficiente após edição.');
+      return null;
+    }
+    $edited['ai_editor_processed']=1;
+    $edited['ai_editor_processed_at']=date('c');
+    $edited['ai_editor_stage']='editor_materia_ia';
+    $edited['editorial_origin']=$options['origin']??($article['editorial_origin']??'unknown');
+    return $edited;
 }
 
 function gemini_reporter_article($apiKey, $material, $options=[]){
