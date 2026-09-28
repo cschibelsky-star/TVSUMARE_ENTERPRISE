@@ -11,6 +11,14 @@ require_once __DIR__.'/admin/monitor_lib.php';
 $_SERVER['REQUEST_METHOD']='CRON';
 require_once __DIR__.'/admin/radar-regional.php';
 
+$offlineResolutionMarker=__DIR__.'/data/source_resolution_offline_v12_done.json';
+if(!is_file($offlineResolutionMarker)){
+  $report=tvs_radar_resolve_google_backlog_offline(80);
+  tvs_save_json_file($offlineResolutionMarker,$report);
+  echo 'SOURCE_RESOLUTION_OFFLINE_V12 '.json_encode($report,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n";
+  exit(0);
+}
+
 $started=microtime(true);
 $cfg=function_exists('tvs_radar_config') ? tvs_radar_config() : ['per_city'=>20];
 $perCity=max(1,min(30,(int)($cfg['per_city']??20)));
