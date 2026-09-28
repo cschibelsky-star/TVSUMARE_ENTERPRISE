@@ -392,6 +392,14 @@ function gemini_rewrite($apiKey, $input, $options=[]){
     return $data;
 }
 
+function tvs_gemini_rewrite_result($apiKey,$input,$options=[]){
+    $data=gemini_rewrite($apiKey,$input,$options);
+    $raw=$GLOBALS['tvs_ai_last_result']??null;
+    $reason=(string)($GLOBALS['tvs_ai_last_reason']??'');
+    if(is_array($data)) return ['ok'=>true,'data'=>$data,'raw'=>$raw,'reason'=>''];
+    return ['ok'=>false,'reason'=>$reason!==''?$reason:'provider_error','raw'=>$raw];
+}
+
 function tvs_ai_editor_process_article($apiKey,$article,$options=[]){
     if(!is_array($article)) return null;
     $city=trim((string)($options['city']??$article['city']??'Região')) ?: 'Região';
@@ -419,6 +427,21 @@ function tvs_ai_editor_process_article($apiKey,$article,$options=[]){
       'source_url'=>$sourceUrl,
       'mode'=>'article'
     ]);
+
+    $firstReason=(string)($GLOBALS['tvs_ai_last_reason']??'');
+    if(!is_array($edited) && in_array($firstReason,['truncated','schema_invalid','unparseable'],true)){
+      $edited=gemini_rewrite($apiKey,$input,[
+        'style'=>'Jornalístico profissional',
+        'approach'=>'Informativa',
+        'size'=>'Média',
+        'city'=>$city,
+        'source'=>$source,
+        'source_url'=>$sourceUrl,
+        'mode'=>'article',
+        'max_output_tokens'=>$firstReason==='truncated'?4600:3600
+      ]);
+    }
+
     if(!is_array($edited)) return null;
 
     $edited['title']=function_exists('tvs_editorial_clean_title')
