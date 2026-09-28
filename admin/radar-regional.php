@@ -3141,17 +3141,17 @@ function tvs_radar_factually_ready($package){
   $freshnessOk=!empty($package['freshness_ok']);
   $contentUsable=!empty($package['content_usable']);
   $editorialInterest=!empty($package['editorial_interest']);
+  $contentWords=(int)($package['content_words']??0);
 
-  // Régua em camadas: primeiro os gates de elegibilidade factual/editorial;
-  // o score passa a ordenar/priorizar a pauta, e não a eliminar sozinho uma
-  // matéria regional legítima de fonte confiável.
+  // Gates duros: núcleo factual, fonte original, confiança e atualidade.
+  // Classificadores de conteúdo/interesse ajudam a priorizar, mas não podem
+  // bloquear sozinhos uma pauta regional robusta com material suficiente.
   $layeredEligible=
     $coreOk
     && $sourceResolved
     && $trustedSource
     && $freshnessOk
-    && $contentUsable
-    && $editorialInterest;
+    && ($contentUsable || $contentWords>=60);
 
   $ready=(
     ($layeredEligible && $sf>=55)
@@ -3183,8 +3183,22 @@ function tvs_radar_retry_pending_editor_articles(&$approval,$limit=6){
     if($attempted>=$limit) break;
     if(!is_array($item) || !empty($item['ai_editor_processed'])) continue;
     if(trim((string)($item['title']??''))==='' || trim((string)($item['body']??''))==='') continue;
+
+    $previousAttempts=(int)($item['ai_editor_attempts']??0);
+    if($previousAttempts>=3){
+      $item['queue_status']='processing';
+      $item['ai_editor_stage']='manual_review';
+      $item['editorial_status']='Revisão manual necessária';
+      $item['publication_eligible']=0;
+      $item['queue_pending_reasons']=array_values(array_unique(array_filter(array_merge(
+        (array)($item['queue_pending_reasons']??[]),
+        ['Editor IA não concluiu após 3 tentativas; revisar manualmente']
+      ))));
+      continue;
+    }
+
     $attempted++;
-    $item['ai_editor_attempts']=(int)($item['ai_editor_attempts']??0)+1;
+    $item['ai_editor_attempts']=$previousAttempts+1;
     $item['ai_editor_last_attempt_at']=date('c');
     $edited=function_exists('tvs_ai_editor_process_article') ? tvs_ai_editor_process_article($gemini_api_key??'',$item,[
       'city'=>$item['city']??'Região','category'=>$item['category']??'Cidade',
@@ -3281,6 +3295,7 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5,$options=[]
     foreach($discovery as $idx=>$cand){
       $requested=(string)($cand['radar_requested_city']??$cand['city']??'');
       if($requested!==$city) continue;
+      if(($cand['pipeline_stage']??'')==='revisao_manual_pipeline') continue;
       if($reprocessReason!=='' && ($cand['reprocess_reason']??'')===$reprocessReason && ($cand['editorial_rule_version']??'')===$ruleVersion) continue;
       if($onlyGoogleUnresolved && !tvs_radar_is_google_news_url($cand['url']??'')) continue;
       $candId=(string)($cand['id']??'');
@@ -3398,6 +3413,27 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5,$options=[]
       $factuallyReady=!empty($decision['ready']);
 
       if(!$factuallyReady){
+        if((int)($cand['pipeline_attempts']??0)>=5){
+          $cand['pipeline_stage']='revisao_manual_pipeline';
+          $cand['pipeline_reason']='Régua factual não concluiu a pauta após 5 tentativas automáticas; encaminhada para revisão pendente para evitar loop infinito.';
+          $cand['enrichment_next_retry_at']=date('c',time()+2592000);
+          $discovery[$pick]=$cand;
+          tvs_radar_log_event(
+            $cand['title']??'',
+            $cand['source']??'Fonte',
+            $city,
+            'REVISÃO',
+            $cand['pipeline_reason'],
+            $cand['url']??''
+          );
+          if(PHP_SAPI==='cli'){
+            echo "PIPELINE_MANUAL_REVIEW city=".str_replace(' ','_',$city)
+              ." attempts=".(int)($cand['pipeline_attempts']??0)
+              ." title=".substr(preg_replace('/\\s+/u',' ',(string)($cand['title']??'')),0,120)."\n";
+          }
+          continue;
+        }
+
         $contentUsable=!empty($decision['content_usable']);
         $editorialInterest=!empty($decision['editorial_interest']);
         $gateReason='Pacote factual ainda insuficiente: SF '.$sf.'/100; 4W básico '.($coreOk?'completo':'incompleto')
