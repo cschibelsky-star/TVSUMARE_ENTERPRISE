@@ -96,12 +96,12 @@ require_once __DIR__.'/radar-regional.php';
  * Executa somente resolução/validação de fonte; não chama Repórter IA, Editor IA
  * nem altera notícias publicadas. Substitui os antigos blocos automáticos v1.1/v2/v3.
  */
-$offlineResolutionMarker=dirname(__DIR__).'/data/source_resolution_offline_v12_done.json';
+$offlineResolutionMarker=dirname(__DIR__).'/data/source_resolution_offline_v13_done.json';
 if(!is_file($offlineResolutionMarker)){
   $report=tvs_radar_resolve_google_backlog_offline(80);
   tvs_save_json_file($offlineResolutionMarker,$report);
-  echo 'SOURCE_RESOLUTION_OFFLINE_V12 '.json_encode($report,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n";
-  @file_put_contents($cronLogFile,date('c').' SOURCE_RESOLUTION_OFFLINE_V12 '.json_encode($report,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n",FILE_APPEND|LOCK_EX);
+  echo 'SOURCE_RESOLUTION_OFFLINE_V13 '.json_encode($report,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n";
+  @file_put_contents($cronLogFile,date('c').' SOURCE_RESOLUTION_OFFLINE_V13 '.json_encode($report,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n",FILE_APPEND|LOCK_EX);
   exit(0);
 }
 
