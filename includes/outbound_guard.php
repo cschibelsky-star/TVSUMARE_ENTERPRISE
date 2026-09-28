@@ -8,6 +8,8 @@ function tvs_outbound_allowed_hosts(): array {
         'api.heygen.com',
         'api.anthropic.com',
         'news.google.com',
+        'api.feedbin.com',
+        'extract.feedbin.com',
         'agenciabrasil.ebc.com.br',
         'www.saopaulo.sp.gov.br',
         'portaldesumare.com.br',
