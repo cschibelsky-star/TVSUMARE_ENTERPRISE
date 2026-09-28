@@ -3436,7 +3436,10 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5,$options=[]
     foreach($discovery as $idx=>$cand){
       $requested=(string)($cand['radar_requested_city']??$cand['city']??'');
       if($requested!==$city) continue;
-      if(in_array(($cand['pipeline_stage']??''),['revisao_manual_pipeline','expirada_sem_enriquecimento'],true)) continue;
+      // Régua 1.2: backlog legado sem auditoria de entrada não entra no ciclo normal.
+      // Ele só pode avançar via simulação/piloto/reprocessamento retroativo autorizado.
+      if(empty($cand['entry_audit_status']) && empty($options['audit_backlog'])) continue;
+      if(in_array(($cand['pipeline_stage']??''),['revisao_manual_pipeline','expirada_sem_enriquecimento','aguardando_fonte'],true) && !$forceRetry) continue;
       if($reprocessReason!=='' && ($cand['reprocess_reason']??'')===$reprocessReason && ($cand['editorial_rule_version']??'')===$ruleVersion) continue;
       if($onlyGoogleUnresolved && !tvs_radar_is_google_news_url($cand['url']??'')) continue;
       $candId=(string)($cand['id']??'');
