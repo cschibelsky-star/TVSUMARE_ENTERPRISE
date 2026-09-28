@@ -7,7 +7,18 @@ $newsFile='data/noticias.json';
 $news=tvs_json($newsFile); if(!is_array($news)) $news=[];
 $n=null; $idx=null;
 foreach($news as $k=>$item){ if((string)($item['id']??'')===(string)$id){ $n=$item; $idx=$k; break; } }
-if(!$n){ http_response_code(404); echo 'Notícia não encontrada'; exit; }
+if(!$n){
+  // URLs legadas de matérias já removidas do dataset público não devem virar links quebrados.
+  // IDs com o formato canônico da TV Sumaré são encaminhados ao arquivo; entradas inválidas
+  // continuam respondendo 404 para não mascarar erros de URL.
+  if(preg_match('/^news_[a-f0-9]{8,}$/i',(string)$id)){
+    header('Location: noticias.php?arquivo=1', true, 301);
+    exit;
+  }
+  http_response_code(404);
+  echo 'Notícia não encontrada';
+  exit;
+}
 $n=tvs_normalize_news_item($n);
 $views=(int)($n['views']??0)+1;
 if($idx!==null){ $news[$idx]['views']=$views; @file_put_contents($newsFile,json_encode($news,JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)); }
