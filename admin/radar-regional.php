@@ -2841,6 +2841,11 @@ function tvs_radar_enrich_candidate($cand,$city){
 }
 
 function tvs_radar_enrichment_due($cand){
+  $resolutionNext=(string)($cand['url_resolution_next_attempt_at']??'');
+  if($resolutionNext!==''){
+    $resolutionTs=strtotime($resolutionNext);
+    if($resolutionTs && $resolutionTs>time()) return false;
+  }
   $next=(string)($cand['enrichment_next_retry_at']??'');
   if($next==='') return true;
   $ts=strtotime($next);
@@ -3643,10 +3648,10 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5,$options=[]
       }
 
       if(tvs_radar_is_google_news_url($cand['url']??'')){
-        $cand['source_resolution_attempts']=(int)($cand['source_resolution_attempts']??0)+1;
-        if($cand['source_resolution_attempts']>=4){
+        $resolutionStatus=(string)($cand['url_resolution_status']??'unresolved_retriable');
+        if($resolutionStatus==='unresolved_final'){
           $cand['pipeline_stage']='aguardando_fonte';
-          $cand['pipeline_reason']='Fonte original não resolvida após 4 tentativas; retirada da seleção normal e agendada para reavaliação semanal.';
+          $cand['pipeline_reason']='Fonte original não resolvida dentro do TTL; estado final preservado para auditoria.';
           $cand['enrichment_next_retry_at']=date('c',time()+604800);
           $discovery[$pick]=$cand;
           tvs_radar_log_event($cand['title']??'',$cand['source']??'Fonte',$city,'AGUARDANDO_FONTE',$cand['pipeline_reason'],$cand['url']??'');
@@ -3677,10 +3682,9 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5,$options=[]
           }
           continue;
         }
-        tvs_radar_schedule_enrichment(
-          $cand,
-          'Pauta regional válida, mas a URL original ainda não foi resolvida. Snippet não será usado como matéria.'
-        );
+        $cand['pipeline_stage']='aguardando_fonte';
+        $cand['pipeline_reason']='Pauta regional válida, mas a URL original ainda não foi resolvida. Snippet não será usado como matéria.';
+        $cand['enrichment_next_retry_at']=(string)($cand['url_resolution_next_attempt_at']??date('c',time()+3600));
         if(($cand['pipeline_stage']??'')==='expirada_sem_enriquecimento'){
           tvs_radar_discard($cand,$city,'TTL de enriquecimento expirado após 7 dias sem fonte original resolvida.');
           unset($discovery[$pick]);
