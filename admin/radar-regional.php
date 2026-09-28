@@ -3054,6 +3054,80 @@ function tvs_radar_discovery_key($item){
   if($url!=='') return 'url:'.$url;
   return 'title:'.md5(tvs_lower(trim((string)($item['city']??'').'|'.(string)($item['title']??''))));
 }
+
+function tvs_radar_entry_audit($cand,$requestedCity,$history=[]){
+  $status='aprovada_para_enriquecimento';
+  $reason='Auditoria de entrada concluída.';
+  if(!in_array((string)$requestedCity,tvs_radar_allowed_cities(),true)){
+    $status='descartada_regiao';
+    $reason='Cidade fora do recorte operacional do Radar.';
+  }
+
+  if($status==='aprovada_para_enriquecimento'){
+    $regionReason='';
+    $regionOk=tvs_radar_candidate_region_ok($cand,(string)$requestedCity,$regionReason)
+      || tvs_radar_source_matches_city($cand,(string)$requestedCity);
+    if(!$regionOk){
+      if(tvs_radar_has_outside_city_signal(tvs_radar_fact_text($cand))){
+        $status='descartada_regiao';
+        $reason=$regionReason!==''?$regionReason:'Fato associado a cidade fora da região monitorada.';
+      } else {
+        $status='precisa_resolver_fonte';
+        $reason='Cidade ainda depende da resolução da fonte original.';
+      }
+    }
+  }
+
+  if(in_array($status,['aprovada_para_enriquecimento','precisa_resolver_fonte'],true)){
+    $temporal=tvs_radar_temporal_status($cand);
+    if(empty($temporal['ok'])){
+      if(array_key_exists('age',$temporal) && $temporal['age']!==null){
+        $status='descartada_data';
+        $reason=$temporal['label']??'Pauta fora da janela editorial.';
+      } else {
+        $status='precisa_resolver_fonte';
+        $reason='Data da fonte ainda não confirmada; resolver origem antes de avaliar atualidade.';
+      }
+    }
+  }
+
+  if(in_array($status,['aprovada_para_enriquecimento','precisa_resolver_fonte'],true)
+     && tvs_radar_history_duplicate($cand,(array)$history)){
+    $status='duplicada';
+    $reason='Pauta já existe na fila ou no histórico publicado.';
+  }
+
+  if(in_array($status,['aprovada_para_enriquecimento','precisa_resolver_fonte'],true)
+     && tvs_is_non_news_candidate(
+       $cand['title']??'',
+       $cand['url']??$cand['source_url']??'',
+       ($cand['description']??'').' '.($cand['text']??'')
+     )){
+    $status='descartada_institucional';
+    $reason='Página institucional, genérica, comercial ou sem fato jornalístico identificável.';
+  }
+
+  if($status==='aprovada_para_enriquecimento'){
+    $url=trim((string)($cand['url']??$cand['source_url']??''));
+    $snippet=tvs_clean_text(($cand['description']??'').' '.($cand['text']??''));
+    if($url==='' || tvs_radar_is_google_news_url($url) || tvs_radar_word_count($snippet)<40){
+      $status='precisa_resolver_fonte';
+      $reason='Fonte original ou corpo completo precisa ser resolvido antes do enriquecimento.';
+    }
+  }
+
+  return ['status'=>$status,'reason'=>$reason,'checked_at'=>date('c'),'rule_version'=>'1.2'];
+}
+
+function tvs_radar_cursor_state(){
+  global $radarCursorFile;
+  $state=tvs_read_json_file($radarCursorFile);
+  return is_array($state)?$state:[];
+}
+function tvs_radar_cursor_save($state){
+  global $radarCursorFile;
+  tvs_save_json_file($radarCursorFile,(array)$state);
+}
 function tvs_radar_collect_discovery($mode='normal',$perCity=12){
   global $cities,$newsFile;
   $discovery=tvs_radar_discovery_read();
@@ -3080,10 +3154,22 @@ function tvs_radar_collect_discovery($mode='normal',$perCity=12){
       $cand['id']=$cand['id']??uniqid('pauta_');
       $cand['city']=$cand['city']??$city;
       $cand['radar_requested_city']=$city;
-      $cand['pipeline_stage']='pauta_encontrada';
       $cand['pipeline_attempts']=0;
+      $cand['source_resolution_attempts']=0;
+      $cand['extraction_attempts']=0;
+      $cand['second_source_attempts']=0;
       $cand['pipeline_created_at']=date('c');
       $cand['pipeline_updated_at']=date('c');
+      $audit=tvs_radar_entry_audit($cand,$city,$history);
+      $cand['entry_audit_status']=$audit['status'];
+      $cand['entry_audit_reason']=$audit['reason'];
+      $cand['entry_audit_at']=$audit['checked_at'];
+      $cand['editorial_rule_version']=$audit['rule_version'];
+      if(in_array($audit['status'],['descartada_regiao','descartada_data','duplicada','descartada_institucional'],true)){
+        tvs_radar_discard($cand,$city,$audit['reason']);
+        continue;
+      }
+      $cand['pipeline_stage']=$audit['status']==='precisa_resolver_fonte'?'precisa_resolver_fonte':'pauta_encontrada';
       $discovery[]=$cand;
       $seen[$key]=1;
       $cityAdded++;
@@ -3184,6 +3270,8 @@ function tvs_radar_retry_pending_editor_articles(&$approval,$limit=6){
     if(!is_array($item) || !empty($item['ai_editor_processed'])) continue;
     if(trim((string)($item['title']??''))==='' || trim((string)($item['body']??''))==='') continue;
 
+    $nextAiRetry=(string)($item['ai_editor_next_retry_at']??'');
+    if($nextAiRetry!=='' && ($nextAiTs=strtotime($nextAiRetry)) && $nextAiTs>time()) continue;
     $previousAttempts=(int)($item['ai_editor_attempts']??0);
     if($previousAttempts>=3){
       $item['queue_status']='processing';
@@ -3220,6 +3308,10 @@ function tvs_radar_retry_pending_editor_articles(&$approval,$limit=6){
       } elseif(stripos($rawAiError,'Sem resposta')!==false || stripos($rawAiError,'HTTP Gemini')!==false || stripos($rawAiError,'Centro IA HTTP')!==false){
         $aiErrorCode='provider_indisponivel';
         $aiErrorLabel='Provider de IA não concluiu a chamada';
+      }
+      if($aiErrorCode==='limite_temporario_provider'){
+        $item['ai_editor_attempts']=$previousAttempts;
+        $item['ai_editor_next_retry_at']=date('c',time()+3600);
       }
       $item['ai_editor_last_error_code']=$aiErrorCode;
       $item['ai_editor_last_error_label']=$aiErrorLabel;
@@ -3272,6 +3364,42 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5,$options=[]
   $approval=tvs_queue_read();
   $editorRetry=tvs_radar_retry_pending_editor_articles($approval,tvs_radar_is_volume_mode($mode)?8:4);
   $publishedHistory=tvs_read_json_file($newsFile); if(!is_array($publishedHistory)) $publishedHistory=[];
+
+  $auditHistory=array_merge($approval,$publishedHistory);
+  foreach($discovery as $auditIdx=>&$legacyCand){
+    if(!is_array($legacyCand)) continue;
+    $auditCity=(string)($legacyCand['radar_requested_city']??$legacyCand['city']??'');
+    if(empty($legacyCand['entry_audit_status'])){
+      $audit=tvs_radar_entry_audit($legacyCand,$auditCity,$auditHistory);
+      $legacyCand['entry_audit_status']=$audit['status'];
+      $legacyCand['entry_audit_reason']=$audit['reason'];
+      $legacyCand['entry_audit_at']=$audit['checked_at'];
+      $legacyCand['editorial_rule_version']=$legacyCand['editorial_rule_version']??$audit['rule_version'];
+      $legacyCand['reprocessed_at']=date('c');
+      $legacyCand['reprocess_reason']='retroactive_entry_audit';
+      $legacyCand['previous_pipeline_stage']=$legacyCand['pipeline_stage']??'legacy';
+      if(in_array($audit['status'],['descartada_regiao','descartada_data','duplicada','descartada_institucional'],true)){
+        tvs_radar_discard($legacyCand,$auditCity,$audit['reason']);
+        unset($discovery[$auditIdx]);
+        continue;
+      }
+      if($audit['status']==='precisa_resolver_fonte') $legacyCand['pipeline_stage']='precisa_resolver_fonte';
+    }
+    if((int)($legacyCand['pipeline_attempts']??0)>100){
+      if(tvs_radar_is_google_news_url($legacyCand['url']??'')){
+        $legacyCand['source_resolution_attempts']=max(4,(int)($legacyCand['source_resolution_attempts']??0));
+        $legacyCand['pipeline_stage']='aguardando_fonte';
+        $legacyCand['pipeline_reason']='Backlog legado com mais de 100 tentativas: pausado para evitar loop de resolução de fonte.';
+        $legacyCand['enrichment_next_retry_at']=date('c',time()+604800);
+      } else {
+        $legacyCand['pipeline_stage']='revisao_manual_pipeline';
+        $legacyCand['pipeline_reason']='Backlog legado com mais de 100 tentativas: encaminhado para revisão manual do pipeline.';
+      }
+    }
+  }
+  unset($legacyCand);
+  $discovery=array_values($discovery);
+
   $ready=tvs_radar_ready_count_by_city($approval);
   $readyCategories=tvs_radar_ready_categories_by_city($approval);
   $generated=0;
@@ -3286,8 +3414,16 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5,$options=[]
   $maxPerCycle=tvs_radar_is_volume_mode($mode)?12:6;
   if(!empty($options['max_generated'])) $maxPerCycle=max(1,(int)$options['max_generated']);
   $maxTriesPerCity=tvs_radar_is_volume_mode($mode)?8:6;
+  $cursor=tvs_radar_cursor_state();
+  $startCity=(int)($cursor['city_start']??0);
+  $cityCount=count($cities);
+  $cycleCities=$cities;
+  if($cityCount>0){
+    $startCity=$startCity%$cityCount;
+    $cycleCities=array_merge(array_slice($cities,$startCity),array_slice($cities,0,$startCity));
+  }
 
-  foreach($cities as $city){
+  foreach($cycleCities as $city){
     if($generated>=$maxPerCycle) break;
     if(($ready[$city]??0)>=$targetPerCity) continue;
 
@@ -3295,7 +3431,7 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5,$options=[]
     foreach($discovery as $idx=>$cand){
       $requested=(string)($cand['radar_requested_city']??$cand['city']??'');
       if($requested!==$city) continue;
-      if(($cand['pipeline_stage']??'')==='revisao_manual_pipeline') continue;
+      if(in_array(($cand['pipeline_stage']??''),['revisao_manual_pipeline','expirada_sem_enriquecimento'],true)) continue;
       if($reprocessReason!=='' && ($cand['reprocess_reason']??'')===$reprocessReason && ($cand['editorial_rule_version']??'')===$ruleVersion) continue;
       if($onlyGoogleUnresolved && !tvs_radar_is_google_news_url($cand['url']??'')) continue;
       $candId=(string)($cand['id']??'');
@@ -3367,6 +3503,15 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5,$options=[]
       }
 
       if(tvs_radar_is_google_news_url($cand['url']??'')){
+        $cand['source_resolution_attempts']=(int)($cand['source_resolution_attempts']??0)+1;
+        if($cand['source_resolution_attempts']>=4){
+          $cand['pipeline_stage']='aguardando_fonte';
+          $cand['pipeline_reason']='Fonte original não resolvida após 4 tentativas; retirada da seleção normal e agendada para reavaliação semanal.';
+          $cand['enrichment_next_retry_at']=date('c',time()+604800);
+          $discovery[$pick]=$cand;
+          tvs_radar_log_event($cand['title']??'',$cand['source']??'Fonte',$city,'AGUARDANDO_FONTE',$cand['pipeline_reason'],$cand['url']??'');
+          continue;
+        }
         $factText=tvs_radar_fact_text($cand);
         $detectedAllowed=tvs_radar_detect_city_from_text($factText,'');
         if($detectedAllowed!=='' && in_array($detectedAllowed,tvs_radar_allowed_cities(),true) && $detectedAllowed!==$city){
@@ -3413,28 +3558,27 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5,$options=[]
       $factuallyReady=!empty($decision['ready']);
 
       if(!$factuallyReady){
-        if((int)($cand['pipeline_attempts']??0)>=5){
-          $cand['pipeline_stage']='revisao_manual_pipeline';
-          $cand['pipeline_reason']='Régua factual não concluiu a pauta após 5 tentativas automáticas; encaminhada para revisão pendente para evitar loop infinito.';
-          $cand['enrichment_next_retry_at']=date('c',time()+2592000);
+        $contentUsable=!empty($decision['content_usable']);
+        $stageField='factual_gate_attempts';
+        $stageMax=3;
+        $stageWait='aguardando_enriquecimento';
+        if(!$sourceResolved){
+          $stageField='source_resolution_attempts'; $stageMax=4; $stageWait='aguardando_fonte';
+        } elseif(!$contentUsable || $sourceWords<60){
+          $stageField='extraction_attempts'; $stageMax=3; $stageWait='aguardando_fonte';
+        } elseif($sf>=40 && $sf<60){
+          $stageField='second_source_attempts'; $stageMax=3; $stageWait='aguardando_enriquecimento';
+        }
+        $cand[$stageField]=(int)($cand[$stageField]??0)+1;
+        if($cand[$stageField]>=$stageMax){
+          $cand['pipeline_stage']=$stageWait;
+          $cand['pipeline_reason']='Limite da etapa '.$stageField.' atingido ('.$stageMax.'); pauta retirada da seleção normal e mantida para reavaliação auditável.';
+          $cand['enrichment_next_retry_at']=date('c',time()+604800);
           $discovery[$pick]=$cand;
-          tvs_radar_log_event(
-            $cand['title']??'',
-            $cand['source']??'Fonte',
-            $city,
-            'REVISÃO',
-            $cand['pipeline_reason'],
-            $cand['url']??''
-          );
-          if(PHP_SAPI==='cli'){
-            echo "PIPELINE_MANUAL_REVIEW city=".str_replace(' ','_',$city)
-              ." attempts=".(int)($cand['pipeline_attempts']??0)
-              ." title=".substr(preg_replace('/\\s+/u',' ',(string)($cand['title']??'')),0,120)."\n";
-          }
+          tvs_radar_log_event($cand['title']??'',$cand['source']??'Fonte',$city,strtoupper($stageWait),$cand['pipeline_reason'],$cand['url']??'');
           continue;
         }
 
-        $contentUsable=!empty($decision['content_usable']);
         $editorialInterest=!empty($decision['editorial_interest']);
         $gateReason='Pacote factual ainda insuficiente: SF '.$sf.'/100; 4W básico '.($coreOk?'completo':'incompleto')
           .'; fonte original '.($sourceResolved?'resolvida':'não resolvida')
@@ -3573,6 +3717,11 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5,$options=[]
 
   tvs_queue_save($approval);
   tvs_radar_discovery_save(array_values($discovery));
+  if(!empty($cities)){
+    $cursor['city_start']=($startCity+1)%count($cities);
+    $cursor['updated_at']=date('c');
+    tvs_radar_cursor_save($cursor);
+  }
   tvs_radar_enforce_queue_rules(true);
   return $generated;
 }
@@ -4063,8 +4212,13 @@ $totalPipelineCurrent=$totalSourcePending+$totalEditorPending+$totalReady+$total
 
 $factBlocks=['sem_auditoria'=>0,'fonte_nao_resolvida'=>0,'texto_insuficiente'=>0,'quatro_w_incompleto'=>0,'fonte_nao_confiavel'=>0,'fora_janela'=>0,'sem_interesse_editorial'=>0];
 foreach(tvs_radar_discovery_read() as $diagItem){
+  $entryStatus=(string)($diagItem['entry_audit_status']??'');
   $audit=(array)($diagItem['fact_gate_audit']??[]);
-  if(!$audit){ $factBlocks['sem_auditoria']++; continue; }
+  if($entryStatus===''){ $factBlocks['sem_auditoria']++; continue; }
+  if(!$audit){
+    if($entryStatus==='precisa_resolver_fonte') $factBlocks['fonte_nao_resolvida']++;
+    continue;
+  }
   if(empty($audit['source_original_resolved'])) $factBlocks['fonte_nao_resolvida']++;
   if(empty($audit['content_usable'])) $factBlocks['texto_insuficiente']++;
   if(empty($audit['core_4w_ok'])) $factBlocks['quatro_w_incompleto']++;
