@@ -593,6 +593,10 @@ function tvs_radar_normalize_title_for_match($title){
 }
 
 function tvs_radar_title_match_score($expected,$candidate){
+  if(function_exists('tvs_radar_clean_google_title')){
+    $expected=tvs_radar_clean_google_title($expected);
+    $candidate=tvs_radar_clean_google_title($candidate);
+  }
   $a=tvs_radar_normalize_title_for_match($expected);
   $b=tvs_radar_normalize_title_for_match($candidate);
 
@@ -603,7 +607,6 @@ function tvs_radar_title_match_score($expected,$candidate){
     explode(' ',$a),
     static fn($word)=>tvs_strlen($word)>=4
   )));
-
   $wb=array_values(array_unique(array_filter(
     explode(' ',$b),
     static fn($word)=>tvs_strlen($word)>=4
@@ -612,9 +615,39 @@ function tvs_radar_title_match_score($expected,$candidate){
   if(!$wa || !$wb) return 0;
 
   $common=count(array_intersect($wa,$wb));
-  $base=max(1,min(count($wa),count($wb)));
+  $union=count(array_unique(array_merge($wa,$wb)));
+  if($union<1) return 0;
 
-  return (int)round(($common/$base)*100);
+  return (int)round(($common/$union)*100);
+}
+
+function tvs_radar_strong_entity_score($expected,$candidate,$city=''){
+  $expectedText=tvs_clean_text((string)$expected);
+  $candidateText=tvs_clean_text((string)$candidate);
+  $checks=[];
+
+  preg_match_all('~\b\d+(?:[\.,]\d+)?\b~u',$expectedText,$nums);
+  $numbers=array_values(array_unique($nums[0]??[]));
+  if($numbers){
+    $matched=0;
+    foreach($numbers as $n){ if(stripos($candidateText,$n)!==false) $matched++; }
+    $checks[]=$matched/count($numbers);
+  }
+
+  preg_match_all('~\b\p{Lu}[\p{L}]{2,}(?:\s+\p{Lu}[\p{L}]{2,})*\b~u',$expectedText,$names);
+  $proper=array_values(array_unique(array_filter($names[0]??[],static fn($x)=>tvs_strlen($x)>=4)));
+  if($proper){
+    $matched=0;
+    foreach($proper as $name){ if(stripos($candidateText,$name)!==false) $matched++; }
+    $checks[]=$matched/count($proper);
+  }
+
+  if(trim((string)$city)!==''){
+    $checks[]=stripos(tvs_lower($candidateText),tvs_lower((string)$city))!==false?1:0;
+  }
+
+  if(!$checks) return 100;
+  return (int)round((array_sum($checks)/count($checks))*100);
 }
 
 function tvs_radar_resolve_by_bing_news($title,$city='',$source=''){
@@ -876,67 +909,102 @@ function tvs_radar_is_article_path($url,$title='',$city=''){
   return $slugScore>=42;
 }
 
-function tvs_radar_validate_resolved_article($url,$expectedTitle,$city=''){
+function tvs_radar_validate_resolved_article($url,$expectedTitle,$city='',$expectedDomain='',$expectedPublishedAt='',$method=''){
   if(!tvs_radar_external_url_is_valid($url)){
-    return [
-      'ok'=>false,
-      'reason'=>'URL externa inválida'
-    ];
+    return ['ok'=>false,'reason'=>'URL externa inválida','confidence'=>0];
   }
 
   if(!tvs_radar_is_article_path($url,$expectedTitle,$city)){
-    return [
-      'ok'=>false,
-      'reason'=>'URL corresponde a seção, categoria ou página genérica'
-    ];
+    return ['ok'=>false,'reason'=>'URL corresponde a seção, categoria ou página genérica','confidence'=>0];
   }
 
-  $article=tvs_extract_article($url,$expectedTitle);
+  $resolvedHost=tvs_radar_source_host($url);
+  $expectedHost=tvs_radar_source_host($expectedDomain);
+  $domainScore=100;
+  if($expectedHost!==''){
+    $sameDomain=$resolvedHost===$expectedHost
+      || str_ends_with($resolvedHost,'.'.$expectedHost)
+      || str_ends_with($expectedHost,'.'.$resolvedHost);
+    $domainScore=$sameDomain?100:0;
+  }
 
+  $html=tvs_fetch_url($url);
+  $article=tvs_extract_article($url,$expectedTitle);
   $articleTitle=trim((string)($article['title']??''));
   $body=trim((string)($article['body']??''));
+  $titleScore=tvs_radar_title_match_score($expectedTitle,$articleTitle);
+  $entityScore=tvs_radar_strong_entity_score($expectedTitle,$articleTitle.' '.tvs_substr($body,0,2200),$city);
 
-  $titleScore=tvs_radar_title_match_score(
-    $expectedTitle,
-    $articleTitle
-  );
+  $publishedAt=$html!=='' ? tvs_radar_extract_published_at_from_html($html) : '';
+  $dateScore=70;
+  if(trim((string)$expectedPublishedAt)!==''){
+    $a=strtotime((string)$expectedPublishedAt);
+    $b=$publishedAt!==''?strtotime($publishedAt):false;
+    if($a && $b){
+      $hours=abs($a-$b)/3600;
+      if($hours<=24) $dateScore=100;
+      elseif($hours<=72) $dateScore=85;
+      elseif($hours<=168) $dateScore=65;
+      else $dateScore=20;
+    } else {
+      $dateScore=40;
+    }
+  }
 
-  if($titleScore<60){
-    return [
-      'ok'=>false,
-      'reason'=>'Título da página não corresponde à pauta',
-      'title_score'=>$titleScore
-    ];
+  $canonical='';
+  if($html!=='' && preg_match('~<link\b[^>]*rel=["\'][^"\']*canonical[^"\']*["\'][^>]*href=["\']([^"\']+)["\']~i',$html,$m)){
+    $canonical=tvs_radar_absolute_source_url($url,html_entity_decode(trim((string)$m[1]),ENT_QUOTES|ENT_HTML5,'UTF-8'));
+  }
+  $canonicalHost=$canonical!==''?tvs_radar_source_host($canonical):'';
+  if($expectedHost!=='' && $canonicalHost!=='' && $canonicalHost!==$expectedHost && !str_ends_with($canonicalHost,'.'.$expectedHost)){
+    $domainScore=min($domainScore,25);
   }
 
   if(tvs_strlen($body)<80){
-    return [
-      'ok'=>false,
-      'reason'=>'Página sem conteúdo factual mínimo para validação da fonte',
-      'title_score'=>$titleScore
-    ];
+    return ['ok'=>false,'reason'=>'Página sem conteúdo factual mínimo para validação da fonte','title_score'=>$titleScore,'domain_score'=>$domainScore,'date_score'=>$dateScore,'entity_score'=>$entityScore,'confidence'=>0];
   }
 
-  $cityText=tvs_lower(
-    $articleTitle.' '.
-    tvs_substr($body,0,1800)
+  $methodBase=[
+    'source_domain_title_match'=>86,
+    'source_sitemap_title_match'=>84,
+    'bing_site_title_match'=>88,
+    'google_news_resolution'=>92,
+    'bing_news_title_match'=>92,
+    'known_current_title'=>82
+  ];
+  $threshold=$methodBase[$method]??86;
+
+  $confidence=(int)round(
+    ($titleScore*0.45)+
+    ($domainScore*0.25)+
+    ($dateScore*0.15)+
+    ($entityScore*0.15)
   );
 
-  if(
-    trim((string)$city)!=='' &&
-    stripos($cityText,tvs_lower((string)$city))===false
-  ){
-    return [
-      'ok'=>false,
-      'reason'=>'Cidade esperada não encontrada no artigo',
-      'title_score'=>$titleScore
-    ];
+  if($titleScore<55){
+    return ['ok'=>false,'reason'=>'Título da página não corresponde à pauta','title_score'=>$titleScore,'domain_score'=>$domainScore,'date_score'=>$dateScore,'entity_score'=>$entityScore,'confidence'=>$confidence];
+  }
+  if($expectedHost!=='' && $domainScore<80){
+    return ['ok'=>false,'reason'=>'Domínio resolvido não corresponde ao veículo esperado','title_score'=>$titleScore,'domain_score'=>$domainScore,'date_score'=>$dateScore,'entity_score'=>$entityScore,'confidence'=>$confidence];
+  }
+  if($confidence<$threshold){
+    return ['ok'=>false,'reason'=>'Confiança insuficiente para aceitar resolução','title_score'=>$titleScore,'domain_score'=>$domainScore,'date_score'=>$dateScore,'entity_score'=>$entityScore,'confidence'=>$confidence,'threshold'=>$threshold];
   }
 
   return [
     'ok'=>true,
     'article'=>$article,
-    'title_score'=>$titleScore
+    'title_score'=>$titleScore,
+    'domain_score'=>$domainScore,
+    'date_score'=>$dateScore,
+    'entity_score'=>$entityScore,
+    'confidence'=>$confidence,
+    'threshold'=>$threshold,
+    'published_at'=>$publishedAt,
+    'canonical'=>$canonical,
+    'resolved_domain'=>$resolvedHost,
+    'expected_domain'=>$expectedHost,
+    'method'=>$method
   ];
 }
 
