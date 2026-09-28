@@ -3150,9 +3150,12 @@ function tvs_radar_factually_ready($package){
     && $sourceResolved
     && $trustedSource
     && $freshnessOk
-    && $contentUsable
-    && $editorialInterest;
+    && $contentUsable;
 
+  // Interesse editorial classifica e prioriza, mas não bloqueia sozinho uma
+  // pauta regional factual de fonte confiável. Isso evita perder serviços
+  // públicos, assistência social, direitos, bibliotecas e pautas comunitárias
+  // que não casam com a taxonomia temática atual.
   $ready=(
     ($layeredEligible && $sf>=55)
     || (
@@ -3504,6 +3507,12 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5,$options=[]
           $article['ai_editor_last_attempt_at']=date('c');
           $approval[]=$article;
           unset($discovery[$pick]);
+          // A pauta já saiu da descoberta e entrou efetivamente na fila editorial.
+          // Conta como encaminhada mesmo que o Editor IA ainda esteja processando;
+          // publication_eligible continua 0 até a conclusão obrigatória do editor.
+          $generated++;
+          $ready[$city]=($ready[$city]??0)+1;
+          $readyCategories[$city][$articleCategory]=($readyCategories[$city][$articleCategory]??0)+1;
           tvs_radar_log_event($article['title']??($cand['title']??''),$article['source']??($cand['source']??'Fonte'),$city,'PROCESSAMENTO',$pendingReasons ? implode('; ',$pendingReasons) : 'Aguardando conclusão e validação do Editor IA.',$cand['url']??'');
           continue;
         }
