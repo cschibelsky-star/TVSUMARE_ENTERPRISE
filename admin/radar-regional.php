@@ -3431,24 +3431,33 @@ function tvs_radar_retry_pending_editor_articles(&$approval,$limit=6){
     ]) : null;
     if(!$edited){
       $rawAiError=trim((string)($GLOBALS['tvs_ai_last_error']??''));
+      $typedReason=trim((string)($GLOBALS['tvs_ai_last_reason']??''));
       $aiErrorCode='editor_nao_concluiu';
       $aiErrorLabel='Editor IA ainda não concluiu';
-      if(stripos($rawAiError,'texto insuficiente após edição')!==false){
-        $aiErrorCode='texto_insuficiente_pos_edicao';
-        $aiErrorLabel='Texto insuficiente após edição';
-      } elseif(stripos($rawAiError,'JSON')!==false){
+
+      if($typedReason==='truncated'){
+        $aiErrorCode='resposta_truncada';
+        $aiErrorLabel='Resposta da IA truncada por limite de tokens';
+      } elseif($typedReason==='schema_invalid'){
+        $aiErrorCode='schema_invalido';
+        $aiErrorLabel='Resposta da IA fora do schema esperado';
+      } elseif($typedReason==='unparseable'){
         $aiErrorCode='resposta_fora_formato';
         $aiErrorLabel='Resposta da IA fora do formato esperado';
-      } elseif(stripos($rawAiError,'429')!==false){
+      } elseif($typedReason==='provider_limit'){
         $aiErrorCode='limite_temporario_provider';
         $aiErrorLabel='Limite temporário do provider de IA';
-      } elseif(stripos($rawAiError,'Sem resposta')!==false || stripos($rawAiError,'HTTP Gemini')!==false || stripos($rawAiError,'Centro IA HTTP')!==false){
+      } elseif($typedReason==='provider_error'){
         $aiErrorCode='provider_indisponivel';
         $aiErrorLabel='Provider de IA não concluiu a chamada';
+      } elseif(stripos($rawAiError,'texto insuficiente após edição')!==false){
+        $aiErrorCode='texto_insuficiente_pos_edicao';
+        $aiErrorLabel='Texto insuficiente após edição';
       }
-      if($aiErrorCode==='limite_temporario_provider'){
+
+      if(in_array($aiErrorCode,['limite_temporario_provider','resposta_truncada','provider_indisponivel'],true)){
         $item['ai_editor_attempts']=$previousAttempts;
-        $item['ai_editor_next_retry_at']=date('c',time()+3600);
+        $item['ai_editor_next_retry_at']=date('c',time()+($aiErrorCode==='limite_temporario_provider'?3600:900));
       }
       $item['ai_editor_last_error_code']=$aiErrorCode;
       $item['ai_editor_last_error_label']=$aiErrorLabel;
