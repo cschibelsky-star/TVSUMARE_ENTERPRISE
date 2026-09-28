@@ -1564,6 +1564,54 @@ function tvs_radar_resolve_candidate_urls($items){
   return $items;
 }
 
+function tvs_radar_resolve_google_backlog_offline($limit=60){
+  $items=tvs_radar_discovery_read();
+  $resolved=0; $unresolved=0; $processed=0;
+  $byMethod=[]; $byDomain=[]; $confidenceBands=['90_100'=>0,'80_89'=>0,'70_79'=>0,'lt_70'=>0];
+
+  foreach($items as $idx=>&$item){
+    if($processed>=$limit) break;
+    if(!is_array($item) || !tvs_radar_is_google_news_url($item['url']??'')) continue;
+
+    $beforeUrl=(string)($item['url']??'');
+    $batch=tvs_radar_resolve_candidate_urls([$item]);
+    if(empty($batch[0]) || !is_array($batch[0])) continue;
+    $item=$batch[0];
+    $processed++;
+
+    if(!tvs_radar_is_google_news_url($item['url']??'')){
+      $resolved++;
+      $method=(string)($item['url_resolution_method']??'unknown');
+      $domain=(string)($item['resolved_domain']??tvs_radar_source_host($item['url']??''));
+      $confidence=(int)($item['url_resolution_confidence']??0);
+      $byMethod[$method]=($byMethod[$method]??0)+1;
+      if($domain!=='') $byDomain[$domain]=($byDomain[$domain]??0)+1;
+      if($confidence>=90) $confidenceBands['90_100']++;
+      elseif($confidence>=80) $confidenceBands['80_89']++;
+      elseif($confidence>=70) $confidenceBands['70_79']++;
+      else $confidenceBands['lt_70']++;
+    } else {
+      $unresolved++;
+    }
+  }
+  unset($item);
+
+  tvs_radar_discovery_save($items);
+  $report=[
+    'executed_at'=>date('c'),
+    'mode'=>'resolver_only',
+    'processed'=>$processed,
+    'resolved'=>$resolved,
+    'unresolved'=>$unresolved,
+    'resolution_rate'=>$processed>0?round(($resolved/$processed)*100,2):0,
+    'by_method'=>$byMethod,
+    'by_domain'=>$byDomain,
+    'confidence_bands'=>$confidenceBands
+  ];
+  tvs_save_json_file(dirname(__DIR__).'/data/source_resolution_offline_report.json',$report);
+  return $report;
+}
+
 function tvs_radar_google_news($city,$limit=36){
   $themes=[
     'cultura eventos agenda show teatro música festival',
