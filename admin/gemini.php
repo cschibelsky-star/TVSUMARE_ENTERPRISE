@@ -7,6 +7,25 @@ function tvs_ai_log($msg){
     $file = dirname(__DIR__).'/data/ia_erros.log';
     @file_put_contents($file, '['.date('c').'] '.$msg."\n", FILE_APPEND);
 }
+function tvs_ai_trace_response($provider,$model,$raw,$text){
+    $candidate=is_array($raw) ? (array)($raw['candidates'][0]??[]) : [];
+    $usage=is_array($raw) ? (array)($raw['usageMetadata']??[]) : [];
+    $row=[
+        'observed_at'=>date('c'),
+        'provider'=>(string)$provider,
+        'model'=>(string)$model,
+        'finish_reason'=>(string)($candidate['finishReason']??''),
+        'finish_message'=>(string)($candidate['finishMessage']??''),
+        'usage_metadata'=>$usage,
+        'text'=>(string)$text
+    ];
+    $file=dirname(__DIR__).'/data/ai_response_debug.jsonl';
+    @file_put_contents(
+        $file,
+        json_encode($row,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n",
+        FILE_APPEND|LOCK_EX
+    );
+}
 
 function tvs_gemini_models(){
     $models=[];
@@ -84,6 +103,7 @@ function tvs_centro_ia_generate_text($prompt,$generationConfig=[],$timeout=45){
     }
 
     $txt=trim((string)($j['output_text']??''));
+    tvs_ai_trace_response('centro-ia',(string)($j['model']??'hub-routed'),$j,$txt);
     if($txt==='') return ['ok'=>false,'error'=>'Centro IA retornou texto vazio.'];
 
     return [
@@ -152,6 +172,7 @@ function tvs_gemini_generate_text($apiKey,$prompt,$generationConfig=[],$timeout=
         }
         $txt=$j['candidates'][0]['content']['parts'][0]['text']??'';
         $txt=trim((string)$txt);
+        tvs_ai_trace_response('gemini',$model,$j,$txt);
         if($txt===''){
             $lastError='Gemini retornou texto vazio no modelo '.$model.'.';
             tvs_ai_log($lastError);
