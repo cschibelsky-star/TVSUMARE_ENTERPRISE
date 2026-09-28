@@ -15,6 +15,7 @@ function tvs_admin_link($key,$href,$label,$active){
     <?=tvs_admin_link('dashboard','index.php','Dashboard',$activeAdmin)?>
     <?=tvs_admin_link('status','status.php','Status do Sistema',$activeAdmin)?>
     <?=tvs_admin_link('fontes_status','fontes-status.php','Saúde das Fontes',$activeAdmin)?>
+    <?=tvs_admin_link('metricas','metricas.php','Métricas de Acesso',$activeAdmin)?>
 
     <span class="menu-group">Redação</span>
     <?=tvs_admin_link('radar','radar-regional.php','Aprovações',$activeAdmin)?>
