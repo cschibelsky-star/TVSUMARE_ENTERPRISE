@@ -345,24 +345,50 @@ function gemini_rewrite($apiKey, $input, $options=[]){
 
     if($mode === 'social'){
       $prompt="Você é social media de um portal regional de notícias. Crie conteúdo para divulgação de uma matéria da TV Sumaré.\nRetorne SOMENTE JSON válido, sem markdown. Campos: instagram_caption, whatsapp_text, hashtags.\nRegras: legenda curta, jornalística, sem sensacionalismo; inclua chamada para ler a matéria; hashtags em array; não invente informações.\n\nMatéria:\n".$input;
-      $gen=['temperature'=>0.35,'maxOutputTokens'=>900];
+      $gen=['temperature'=>0.35,'maxOutputTokens'=>1200,'responseMimeType'=>'application/json'];
     } else {
       $prompt="Você é EDITOR-CHEFE de um portal regional profissional chamado TV Sumaré. Sua tarefa é transformar o material abaixo em uma matéria jornalística completa, pronta para o editor humano apenas revisar e aprovar.\n\n".
       tvs_ai_style_rules($style,$approach,$size)."\nCIDADE/REGIÃO PRIORITÁRIA: {$city}\nFONTE CONSULTADA: {$source}\nLINK DA FONTE: {$sourceUrl}\n\nFORMATO DE SAÍDA OBRIGATÓRIO:\nRetorne SOMENTE JSON válido, sem markdown, sem comentários e sem texto fora do JSON.\nCampos obrigatórios: title, subtitle, summary, body, category, tags, seo_title, meta_description, slug, instagram_caption, whatsapp_text.\n\nPADRÃO JORNALÍSTICO OBRIGATÓRIO:\n- A matéria deve parecer escrita por uma redação profissional de portal regional.\n- Comece direto pelo fato. NÃO use introduções artificiais.\n- O primeiro parágrafo deve responder claramente: quem, o quê, quando, onde e impacto/serviço quando disponível.\n- Use parágrafos curtos, objetivos e bem organizados.\n- Inclua contexto local e utilidade ao leitor quando o material permitir.\n- Quando houver inscrições, evento, serviço, atendimento, prazo ou mudança pública, inclua um parágrafo específico com orientação prática.\n- Título específico, informativo e sem clickbait.\n- Subtítulo complementar, sem repetir o título.\n- Summary com até 180 caracteres.\n- Meta description com até 155 caracteres.\n- Slug minúsculo, sem acento, com hífens.\n\nPROIBIÇÕES ABSOLUTAS:\n- Não use: 'A TV Sumaré identificou', 'a TV Sumaré preparou', 'rascunho', 'monitor regional', 'pauta encontrada', 'atualização regional', 'conteúdo gerado automaticamente'.\n- Não mencione IA, robô, automação, revisão editorial ou que o texto será revisado.\n- Não copie menus, rodapés, cabeçalhos, botões, links de redes sociais ou navegação.\n- Não invente fatos, números, datas, nomes, cargos, declarações ou locais.\n- Não use opinião, adjetivos exagerados ou propaganda, exceto quando o estilo for Publieditorial.\n- Não coloque crédito da fonte dentro do corpo da matéria; o sistema exibirá a fonte separadamente.\n\nCATEGORIAS PERMITIDAS:\nCidades, Política, Segurança, Saúde, Educação, Esportes, Cultura, Empregos, Trânsito, Economia, Turismo, Utilidade Pública, Publicidade.\n\nTAGS:\nRetorne tags como array com 3 a 7 termos úteis, incluindo cidade quando fizer sentido.\n\nMATERIAL BASE:\n".$input;
-      $gen=['temperature'=>0.28,'maxOutputTokens'=>2200];
+      $gen=['temperature'=>0.20,'maxOutputTokens'=>(int)($options['max_output_tokens']??3200),'responseMimeType'=>'application/json','responseSchema'=>tvs_ai_article_schema()];
     }
 
-    $r=tvs_gemini_generate_text($apiKey,$prompt,$gen,24);
-    if(empty($r['ok'])){ tvs_ai_log('Falha gemini_rewrite: '.($r['error']??'sem detalhe')); return null; }
+    $r=tvs_gemini_generate_text($apiKey,$prompt,$gen,32);
+    $GLOBALS['tvs_ai_last_result']=$r;
+    if(empty($r['ok'])){
+      $err=(string)($r['error']??'sem detalhe');
+      $GLOBALS['tvs_ai_last_reason']=(stripos($err,'429')!==false)?'provider_limit':'provider_error';
+      tvs_ai_log('Falha gemini_rewrite ['.$GLOBALS['tvs_ai_last_reason'].']: '.$err);
+      return null;
+    }
+
+    $finish=(string)($r['finish_reason']??($r['raw']['candidates'][0]['finishReason']??''));
+    if($finish==='MAX_TOKENS'){
+      $GLOBALS['tvs_ai_last_reason']='truncated';
+      tvs_ai_log('Falha gemini_rewrite [truncated]: finishReason=MAX_TOKENS');
+      return null;
+    }
+
     $data=tvs_gemini_extract_json($r['text']??'');
-    if(!is_array($data)) { tvs_ai_log('Texto Gemini sem JSON válido: '.substr((string)($r['text']??''),0,1000)); return null; }
+    if(!is_array($data)){
+      $GLOBALS['tvs_ai_last_reason']='unparseable';
+      tvs_ai_log('Falha gemini_rewrite [unparseable]: resposta completa registrada em ai_response_debug.jsonl');
+      return null;
+    }
 
     if($mode !== 'social'){
-      if(!empty($data['discard'])){ tvs_ai_log('Gemini descartou pauta: '.($data['reason']??'sem motivo')); return null; }
-      foreach(['title','subtitle','body'] as $field){ if(empty($data[$field])) { tvs_ai_log('Campo ausente no JSON Gemini: '.$field); return null; } }
-      if(empty($data['category'])) $data['category']='Cidades';
-      if(empty($data['tags']) || !is_array($data['tags'])) $data['tags']=[];
+      if(!empty($data['discard'])){
+        $GLOBALS['tvs_ai_last_reason']='editorial_discard';
+        tvs_ai_log('Gemini descartou pauta: '.($data['reason']??'sem motivo'));
+        return null;
+      }
+      $validation=tvs_ai_validate_article_payload($data);
+      if(empty($validation['ok'])){
+        $GLOBALS['tvs_ai_last_reason']='schema_invalid';
+        tvs_ai_log('Falha gemini_rewrite [schema_invalid]: '.($validation['error']??'schema'));
+        return null;
+      }
     }
+    $GLOBALS['tvs_ai_last_reason']='';
     return $data;
 }
 
