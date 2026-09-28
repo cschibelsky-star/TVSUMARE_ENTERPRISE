@@ -96,17 +96,79 @@ require_once __DIR__.'/radar-regional.php';
  * Executa somente resolução/validação de fonte; não chama Repórter IA, Editor IA
  * nem altera notícias publicadas. Substitui os antigos blocos automáticos v1.1/v2/v3.
  */
-$offlineResolutionMarker=dirname(__DIR__).'/data/source_resolution_offline_v13_done.json';
+$offlineResolutionMarker=dirname(__DIR__).'/data/source_resolution_offline_v14_done.json';
 if(!is_file($offlineResolutionMarker)){
   $report=tvs_radar_resolve_google_backlog_offline(80);
   tvs_save_json_file($offlineResolutionMarker,$report);
-  echo 'SOURCE_RESOLUTION_OFFLINE_V13 '.json_encode($report,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n";
-  @file_put_contents($cronLogFile,date('c').' SOURCE_RESOLUTION_OFFLINE_V13 '.json_encode($report,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n",FILE_APPEND|LOCK_EX);
+  echo 'SOURCE_RESOLUTION_OFFLINE_V14 '.json_encode($report,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n";
+  @file_put_contents($cronLogFile,date('c').' SOURCE_RESOLUTION_OFFLINE_V14 '.json_encode($report,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n",FILE_APPEND|LOCK_EX);
   exit(0);
 }
 
-// O backlog editorial legado permanece congelado. Fluxos v1.1/v2/v3 abaixo são
-// preservados apenas como histórico e não executam mais automaticamente.
+/*
+ * RADAR 1.2 — reprocessamento retroativo canônico.
+ * Ordem obrigatória: simulação somente leitura -> piloto de 10 -> lotes de 10.
+ * Nenhuma etapa publica automaticamente. O restante só é liberado se o piloto
+ * persistir todas as pautas selecionadas sem salto de estado ou violação dura.
+ */
+$currentSimulationFile=dirname(__DIR__).'/data/radar_backlog_simulation_v12.json';
+if(!is_file($currentSimulationFile)){
+  $sim=tvs_radar_simulate_backlog_v11();
+  $simMetrics=(array)($sim['metrics']??[]);
+  $payload=[
+    'generated_at'=>date('c'),
+    'rule_version'=>'1.2',
+    'metrics'=>$simMetrics,
+    'rows'=>$sim['rows']??[]
+  ];
+  tvs_save_json_file($currentSimulationFile,$payload);
+  tvs_radar_record_run_telemetry([
+    'run_id'=>'simulation_'.date('Ymd_His'),
+    'started_at'=>$payload['generated_at'],
+    'finished_at'=>date('c'),
+    'mode'=>'dry_run',
+    'retroactive_stage'=>'simulation',
+    'selected_count'=>(int)($simMetrics['total']??0),
+    'processed_count'=>(int)($simMetrics['total']??0),
+    'changed_count'=>0,
+    'unchanged_count'=>(int)($simMetrics['total']??0),
+    'persisted_count'=>0,
+    'error_count'=>0,
+    'first_item_id'=>'',
+    'last_item_id'=>'',
+    'cursor_before'=>null,
+    'cursor_after'=>null,
+    'rule_version'=>'1.2'
+  ]);
+  echo 'RADAR_V12_RETRO_SIM '.json_encode($simMetrics,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n";
+  @file_put_contents($cronLogFile,date('c').' RADAR_V12_RETRO_SIM '.json_encode($simMetrics,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n",FILE_APPEND|LOCK_EX);
+  exit(0);
+}
+
+$currentPilotFile=dirname(__DIR__).'/data/radar_backlog_pilot_v12.json';
+if(!is_file($currentPilotFile)){
+  $pilot=tvs_radar_run_backlog_pilot_v12(10);
+  echo 'RADAR_V12_RETRO_PILOT '.json_encode($pilot,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n";
+  @file_put_contents($cronLogFile,date('c').' RADAR_V12_RETRO_PILOT '.json_encode($pilot,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n",FILE_APPEND|LOCK_EX);
+  exit(0);
+}
+
+if(!tvs_radar_pilot_allows_backlog_v12()){
+  $pilot=tvs_read_json_file($currentPilotFile);
+  echo 'RADAR_V12_RETRO_HALT reason=pilot_not_approved '.json_encode($pilot,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n";
+  @file_put_contents($cronLogFile,date('c').' RADAR_V12_RETRO_HALT reason=pilot_not_approved '.json_encode($pilot,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n",FILE_APPEND|LOCK_EX);
+  goto AFTER_LEGACY_RETRO;
+}
+
+$batch=tvs_radar_run_backlog_batch_v12(10);
+if((int)($batch['selected']??0)>0){
+  echo 'RADAR_V12_RETRO_BATCH '.json_encode($batch,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n";
+  @file_put_contents($cronLogFile,date('c').' RADAR_V12_RETRO_BATCH '.json_encode($batch,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n",FILE_APPEND|LOCK_EX);
+  exit(0);
+}
+
+echo "RADAR_V12_RETRO_COMPLETE remaining=0\n";
+@file_put_contents($cronLogFile,date('c')." RADAR_V12_RETRO_COMPLETE remaining=0\n",FILE_APPEND|LOCK_EX);
 goto AFTER_LEGACY_RETRO;
 
 /*

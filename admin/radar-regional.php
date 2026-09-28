@@ -4295,6 +4295,73 @@ function tvs_radar_run_backlog_pilot_v12($limit=10){
   return $result;
 }
 
+function tvs_radar_pilot_allows_backlog_v12(){
+  $file=dirname(__DIR__).'/data/radar_backlog_pilot_v12.json';
+  $pilot=tvs_read_json_file($file);
+  if(!is_array($pilot)) return false;
+  return (string)($pilot['pilot_status']??'')==='aprovado'
+    && (int)($pilot['selected']??0)>0
+    && (int)($pilot['processed']??0)===(int)($pilot['selected']??0)
+    && (int)($pilot['persistence_failures']??0)===0
+    && (int)($pilot['skipped_state_transition']??0)===0
+    && (int)($pilot['hard_rule_violations']??0)===0
+    && (int)($pilot['auto_published']??0)===0;
+}
+
+function tvs_radar_run_backlog_batch_v12($limit=10){
+  if(!tvs_radar_pilot_allows_backlog_v12()){
+    return [
+      'allowed'=>0,'selected'=>0,'processed'=>0,'persisted'=>0,
+      'generated'=>0,'status'=>'bloqueado_pelo_piloto'
+    ];
+  }
+
+  $ids=tvs_radar_select_backlog_pilot_ids($limit);
+  if(!$ids){
+    return [
+      'allowed'=>1,'selected'=>0,'processed'=>0,'persisted'=>0,
+      'generated'=>0,'status'=>'backlog_concluido'
+    ];
+  }
+
+  $generated=tvs_radar_process_discovery('normal',5,[
+    'force_retry'=>true,
+    'max_candidates'=>count($ids),
+    'max_generated'=>count($ids),
+    'only_ids'=>$ids,
+    'editorial_rule_version'=>'1.2',
+    'reprocess_reason'=>'retroactive_rule_upgrade_backlog',
+    'retroactive_stage'=>'backlog',
+    'audit_backlog'=>true,
+    'skip_editor_retry'=>true
+  ]);
+
+  $metrics=(array)($GLOBALS['TVS_RADAR_LAST_PROCESS_METRICS']??[]);
+  $result=[
+    'allowed'=>1,
+    'selected'=>count($ids),
+    'processed'=>(int)($metrics['processed_count']??0),
+    'persisted'=>(int)($metrics['persisted_count']??0),
+    'generated'=>$generated,
+    'errors'=>(int)($metrics['error_count']??0),
+    'first_item_id'=>(string)($metrics['first_item_id']??''),
+    'last_item_id'=>(string)($metrics['last_item_id']??''),
+    'status'=>((int)($metrics['processed_count']??0)===count($ids)
+      && (int)($metrics['error_count']??0)===0)
+        ? 'lote_concluido'
+        : 'lote_parcial'
+  ];
+
+  $stateFile=dirname(__DIR__).'/data/radar_backlog_batches_v12.json';
+  $state=tvs_read_json_file($stateFile);
+  if(!is_array($state)) $state=[];
+  $state[]=['executed_at'=>date('c'),'rule_version'=>'1.2']+$result;
+  if(count($state)>120) $state=array_slice($state,-120);
+  tvs_save_json_file($stateFile,array_values($state));
+
+  return $result;
+}
+
 function tvs_radar_simulate_backlog_v11(){
   global $newsFile;
   $discovery=tvs_radar_discovery_read();
