@@ -2609,6 +2609,54 @@ function tvs_radar_builtin_regional_sources($city){
   return $sources;
 }
 
+function tvs_radar_resolve_and_hydrate_candidate($item,$city=''){
+  if(!is_array($item)) return $item;
+
+  $originalUrl=trim((string)($item['url']??''));
+  if(!tvs_radar_is_google_news_url($originalUrl)) return $item;
+
+  $batch=tvs_radar_resolve_candidate_urls([$item]);
+  if(empty($batch[0]) || !is_array($batch[0])) return $item;
+  $item=$batch[0];
+
+  $resolvedUrl=trim((string)($item['url']??''));
+  if($resolvedUrl==='' || tvs_radar_is_google_news_url($resolvedUrl)) return $item;
+
+  $article=tvs_extract_article($resolvedUrl,(string)($item['title']??''));
+  if(!is_array($article)) return $item;
+
+  $articleTitle=trim((string)($article['title']??''));
+  $articleDesc=trim((string)($article['description']??''));
+  $articleBody=trim((string)($article['body']??''));
+  $articleImage=trim((string)($article['image']??''));
+
+  if($articleTitle!=='' && tvs_radar_title_match_score((string)($item['title']??''),$articleTitle)>=45){
+    $item['title']=$articleTitle;
+  }
+
+  if($articleDesc!==''){
+    $item['description']=$articleDesc;
+  } elseif($articleBody!==''){
+    $item['description']=tvs_substr(tvs_clean_text($articleBody),0,600);
+  }
+
+  if($articleBody!=='') $item['text']=$articleBody;
+  if($articleImage!=='') $item['image']=$articleImage;
+
+  $published=trim((string)($item['resolved_published_at']??''));
+  if($published===''){
+    $html=tvs_fetch_url($resolvedUrl);
+    $published=$html!=='' ? tvs_radar_extract_published_at_from_html($html) : '';
+  }
+  if($published!=='') $item['published_at']=$published;
+
+  $item['source_original_resolved']=1;
+  $item['source_url']=$resolvedUrl;
+  $item['city']=$city!==''?$city:($item['city']??'');
+
+  return $item;
+}
+
 function tvs_radar_candidates_for_city($city){
   $volumeMode=tvs_radar_is_volume_mode();
   $fontes=tvs_read_json_file(dirname(__DIR__).'/data/fontes.json');
@@ -2653,6 +2701,15 @@ function tvs_radar_candidates_for_city($city){
     $url=$it['url']??''; $title=$it['title']??'';
     if(!$url || !$title || isset($seen[$url])) continue;
     if(tvs_is_boilerplate($title)) continue;
+
+    // Google News é somente descoberta. Resolve e hidrata a fonte original
+    // ANTES dos gates geográfico e temporal, para que eles avaliem o fato
+    // publicado pelo veículo em vez do snippet incompleto do agregador.
+    if(tvs_radar_is_google_news_url($url)){
+      $it=tvs_radar_resolve_and_hydrate_candidate($it,$city);
+      $url=$it['url']??$url;
+      $title=$it['title']??$title;
+    }
 
     $falseReason='';
     if(tvs_radar_obvious_false_positive($it,$city,$falseReason)){
@@ -2715,8 +2772,9 @@ function tvs_radar_candidates_for_city($city){
     $city
   );
 
-  // Resolve apenas o pequeno conjunto final aprovado pela régua.
-  return tvs_radar_resolve_candidate_urls($selected);
+  // Google News já foi resolvido/hidratado antes dos gates. Candidatos
+  // ainda não resolvidos permanecem rastreáveis para novas tentativas no pipeline.
+  return $selected;
 }
 function tvs_is_google_news_candidate($cand){
   $src=tvs_lower(($cand['source']??'').' '.($cand['source_type']??'').' '.($cand['url']??''));
@@ -3424,7 +3482,7 @@ function tvs_radar_collect_discovery($mode='normal',$perCity=12){
       $cand['city']=$cand['city']??$city;
       $cand['radar_requested_city']=$city;
       $cand['pipeline_attempts']=0;
-      $cand['source_resolution_attempts']=0;
+      $cand['source_resolution_attempts']=(int)($cand['source_resolution_attempts']??0);
       $cand['extraction_attempts']=0;
       $cand['second_source_attempts']=0;
       $cand['pipeline_created_at']=date('c');
