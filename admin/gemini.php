@@ -243,7 +243,14 @@ function tvs_gemini_generate_text($apiKey,$prompt,$generationConfig=[],$timeout=
             tvs_ai_log($lastError);
             continue;
         }
-        return ['ok'=>true,'text'=>$txt,'model'=>$model,'raw'=>$j];
+        return [
+            'ok'=>true,
+            'text'=>$txt,
+            'model'=>$model,
+            'raw'=>$j,
+            'finish_reason'=>(string)($j['candidates'][0]['finishReason']??''),
+            'usage_metadata'=>(array)($j['usageMetadata']??[])
+        ];
     }
     $hub=tvs_centro_ia_generate_text($prompt,$generationConfig,max(120,(int)$timeout));
     $GLOBALS['tvs_centro_ia_last_result']=$hub;
