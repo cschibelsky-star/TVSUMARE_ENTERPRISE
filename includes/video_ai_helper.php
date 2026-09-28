@@ -96,12 +96,13 @@ if (!function_exists('tvp_video_score')) {
   }
   function tvp_video_engine_decide($item,$requested='auto'){
     $requested=tvp_text_lc(trim((string)$requested));
-    if(in_array($requested,['veo','heygen'],true)) return $requested;
+    if($requested==='heygen') return 'heygen';
+    if(in_array($requested,['veo','orchestrated','ia','centro_ia'],true)) return 'orchestrated';
     $txt=tvp_text_lc(($item['title']??'').' '.($item['category']??'').' '.($item['summary']??'').' '.($item['editorial_style']??''));
     if(preg_match('~últimas? notícias|ultimas? noticias|última hora|ultima hora|boletim|apresentador|apresentadora|âncora|ancora|repórter|reporter|avatar~u',$txt)) return 'heygen';
-    return 'veo';
+    return 'orchestrated';
   }
-  function tvp_video_engine_label($engine){ return $engine==='heygen'?'HeyGen • apresentador':'VEO • vídeo visual'; }
+  function tvp_video_engine_label($engine){ return $engine==='heygen'?'HeyGen • apresentador':'Centro IA • vídeo orquestrado'; }
 }
 
 if (!function_exists('tvp_load_video_jobs')) {
@@ -178,8 +179,8 @@ if (!function_exists('tvp_generate_script')) {
       $script=tvp_script_opening_for_profile($profile,$job['category']??'',$job).' '.$script;
     }
     $engine=tvp_video_engine_decide($job,$job['video_engine']??'auto');
-    if($engine==='veo'){
-      // VEO é vídeo visual institucional: nunca usa identidade ou assinatura pessoal.
+    if($engine!=='heygen'){
+      // Vídeo visual orquestrado é institucional: nunca usa identidade ou assinatura pessoal.
       $script=preg_replace('/\bEu\s+sou\s+Cristian\s+Schibelsky\.?/iu','',$script);
       $script=preg_replace('/\bEdi[cç][aã]o:\s*Cristian\s+Schibelsky[^\.]*\.?/iu','',$script);
       $script=preg_replace('/\bCristian\s+Schibelsky\b/iu','TV Sumaré',$script);
@@ -255,13 +256,13 @@ if (!function_exists('tvp_generate_script')) {
     $opening=tvp_script_opening_for_profile($profile,$job['category']??'',$job);
     $body=tvp_clean(($job['body']??'').' '.($job['summary']??''));
     $engine=tvp_video_engine_decide($job,$job['video_engine']??'auto');
-    $identityRule=$engine==='veo'
-      ? "MOTOR VEO: vídeo visual institucional. Não use nome de apresentador, não use primeira pessoa, não cite Cristian Schibelsky e encerre de forma institucional com 'Acompanhe mais informações na TV Sumaré.'.\n"
+    $identityRule=$engine!=='heygen'
+      ? "MOTOR ORQUESTRADO: vídeo visual institucional. O Centro IA escolherá automaticamente o melhor provedor/modelo. Não use nome de apresentador, não use primeira pessoa, não cite Cristian Schibelsky e encerre de forma institucional com 'Acompanhe mais informações na TV Sumaré.'.\n"
       : "MOTOR HEYGEN: use a identidade do apresentador somente quando o perfil configurado exigir.\n";
     $prompt="Você é redator-chefe de telejornal regional da TV Sumaré. Gere APENAS o texto final que será falado/narrado no vídeo, sem markdown, sem tópicos, sem rótulos e sem explicar o formato.\n\n".
       "REGRA ATEMPORAL OBRIGATÓRIA: nunca use 'bom dia', 'boa tarde' ou 'boa noite'. O vídeo pode ser assistido em qualquer horário.\n".
       $identityRule.
-      "APRESENTADOR/ASSINATURA: ".($engine==='veo'?'TV Sumaré — institucional':$presenter).".\n".
+      "APRESENTADOR/ASSINATURA: ".($engine!=='heygen'?'TV Sumaré — institucional':$presenter).".\n".
       "ABERTURA OBRIGATÓRIA: {$opening}\n\n".
       "OBJETIVO: roteiro natural de telejornal regional, com 60 a 90 segundos, frases curtas, pausas naturais e linguagem humana.\n\n".
       "ESTRUTURA INTERNA DO TEXTO, mas sem escrever estes títulos: abertura curta, informação principal, contexto regional, serviço ao cidadão quando houver e encerramento natural. Não pronuncie domínio, URL, ponto com ou ponto br.\n\n".
@@ -275,7 +276,7 @@ if (!function_exists('tvp_generate_script')) {
       "Fonte: ".($job['source']??'')."\n".
       "URL: ".($job['source_url']??'')."\n".
       "Conteúdo disponível: {$body}\n\n".
-      ($engine==='veo'
+      ($engine!=='heygen'
         ? "Finalize obrigatoriamente com: 'Acompanhe mais informações na TV Sumaré.'"
         : ($profile==='cristian_editor'
           ? "Finalize com: 'Eu sou Cristian Schibelsky. Até o próximo boletim.'"
@@ -498,6 +499,192 @@ if (!function_exists('tvp_veo_config')) {
     if($done<count($ops)) return ['ok'=>true,'status'=>'gerando','progress'=>(int)floor(($done/count($ops))*100)];
     $final=tvp_veo_finalize($uris,$job['id']??uniqid('veo_')); if(empty($final['ok'])) return $final;
     return ['ok'=>true,'status'=>'pronto','progress'=>100,'video_url'=>$final['video_url'],'bytes'=>$final['bytes']??0];
+  }
+}
+
+if (!function_exists('tvp_send_video_orchestrated')) {
+  function tvp_centro_ia_execute($capability,$input,$timeout=180){
+    $base=rtrim((string)(getenv('CENTRO_IA_URL')?:''),'/');
+    $token=trim((string)(getenv('CENTRO_IA_INTERNAL_TOKEN')?:''));
+    if($base==='' || $token==='') return ['ok'=>false,'error'=>'Centro IA não configurado para mídia.'];
+    $suffix='/api/internal/centro-ia/execute';
+    $url=str_ends_with($base,$suffix)?$base:($base.$suffix);
+    $outbound=tvs_outbound_curl_options($url,$timeout);
+    if($outbound===null) return ['ok'=>false,'error'=>'Centro IA bloqueado pela política de saída.'];
+    $payload=[
+      'project_id'=>'tvsumare',
+      'capability'=>(string)$capability,
+      'input'=>(array)$input
+    ];
+    $ch=curl_init($url);
+    curl_setopt_array($ch,$outbound+[
+      CURLOPT_RETURNTRANSFER=>true,
+      CURLOPT_POST=>true,
+      CURLOPT_HTTPHEADER=>[
+        'Accept: application/json',
+        'Content-Type: application/json',
+        'Authorization: Bearer '.$token,
+        'X-Vitrine-Project: tvsumare'
+      ],
+      CURLOPT_POSTFIELDS=>json_encode($payload,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)
+    ]);
+    $res=curl_exec($ch); $err=curl_error($ch); $http=(int)curl_getinfo($ch,CURLINFO_HTTP_CODE); curl_close($ch);
+    if($res===false || $res==='') return ['ok'=>false,'http'=>$http,'error'=>'Centro IA sem resposta. '.$err];
+    $json=json_decode((string)$res,true);
+    if($http<200 || $http>=300 || !is_array($json) || empty($json['ok'])){
+      $reason=is_array($json)?trim((string)($json['error']??$json['message']??'')):'';
+      return ['ok'=>false,'http'=>$http,'error'=>'Centro IA HTTP '.$http.($reason!==''?': '.$reason:'')];
+    }
+    return ['ok'=>true,'http'=>$http,'data'=>$json];
+  }
+
+  function tvp_media_scene_prompts($job){
+    return tvp_veo_scene_prompts($job);
+  }
+
+  function tvp_media_finalize($uris,$jobId){
+    return tvp_veo_finalize($uris,$jobId);
+  }
+
+  function tvp_normalize_legacy_media_operation($op){
+    if(is_array($op)) return $op;
+    $ref=trim((string)$op);
+    if($ref==='') return [];
+    if(str_starts_with($ref,'completed:')){
+      $payload=json_decode((string)base64_decode(substr($ref,strlen('completed:')),true),true);
+      return [
+        'job_ref'=>'',
+        'status'=>'completed',
+        'asset_url'=>trim((string)($payload['asset_url']??'')),
+        'provider'=>'legacy_completed',
+        'model'=>''
+      ];
+    }
+    if(str_starts_with($ref,'centroia:')){
+      $payload=json_decode((string)base64_decode(substr($ref,strlen('centroia:')),true),true);
+      return [
+        'job_ref'=>trim((string)($payload['job_ref']??'')),
+        'status'=>'processing',
+        'asset_url'=>'',
+        'provider'=>'centro_ia',
+        'model'=>trim((string)($payload['model']??''))
+      ];
+    }
+    return ['job_ref'=>$ref,'status'=>'processing','asset_url'=>'','provider'=>'centro_ia','model'=>''];
+  }
+
+  function tvp_send_video_orchestrated($job,$qualityProfile='balanced'){
+    $profile=strtolower(trim((string)$qualityProfile));
+    if(!in_array($profile,['economy','balanced','quality','fast'],true)) $profile='balanced';
+    $ops=[]; $allCompleted=true; $models=[]; $providers=[];
+    foreach(tvp_media_scene_prompts($job) as $i=>$prompt){
+      $r=tvp_centro_ia_execute('video_generation',[
+        'user'=>(string)$prompt,
+        'material_type'=>'regional_news_video_scene',
+        'quality_profile'=>$profile,
+        'duration_seconds'=>8,
+        'aspect_ratio'=>'16:9'
+      ],180);
+      if(empty($r['ok'])) return ['ok'=>false,'error'=>'Centro IA não iniciou a cena '.($i+1).': '.($r['error']??'erro de orquestração')];
+      $d=(array)($r['data']??[]);
+      $status=strtolower(trim((string)($d['media_status']??'processing')));
+      $jobRef=trim((string)($d['job_ref']??''));
+      $assetUrl=trim((string)($d['asset_url']??''));
+      $provider=trim((string)($d['provider']??''));
+      $model=trim((string)($d['model']??''));
+      if($status==='completed' && $assetUrl==='') return ['ok'=>false,'error'=>'Centro IA concluiu a cena '.($i+1).' sem asset de vídeo.'];
+      if($status!=='completed' && $jobRef==='') return ['ok'=>false,'error'=>'Centro IA não retornou referência de job para a cena '.($i+1).'.'];
+      if($status!=='completed') $allCompleted=false;
+      if($provider!=='') $providers[$provider]=true;
+      if($model!=='') $models[$model]=true;
+      $ops[]=[
+        'scene'=>$i+1,
+        'job_ref'=>$jobRef,
+        'status'=>$status,
+        'asset_url'=>$assetUrl,
+        'provider'=>$provider,
+        'model'=>$model,
+        'routing'=>(array)($d['routing']??[])
+      ];
+    }
+    return [
+      'ok'=>true,
+      'operations'=>$ops,
+      'status'=>$allCompleted?'pronto_para_compor':'gerando',
+      'provider'=>'centro_ia',
+      'models'=>array_keys($models),
+      'providers'=>array_keys($providers),
+      'quality_profile'=>$profile
+    ];
+  }
+
+  function tvp_check_video_orchestrated($job){
+    $ops=(array)($job['media_operations']??[]);
+    if(!$ops && !empty($job['veo_operations'])){
+      foreach((array)$job['veo_operations'] as $legacy){
+        $normalized=tvp_normalize_legacy_media_operation($legacy);
+        if($normalized) $ops[]=$normalized;
+      }
+    }
+    if(!$ops) return ['ok'=>false,'error'=>'Job de vídeo sem operações do Centro IA.'];
+
+    $updated=[]; $uris=[]; $done=0; $models=[]; $providers=[];
+    foreach($ops as $i=>$raw){
+      $op=tvp_normalize_legacy_media_operation($raw);
+      $status=strtolower(trim((string)($op['status']??'processing')));
+      $assetUrl=trim((string)($op['asset_url']??''));
+      $jobRef=trim((string)($op['job_ref']??''));
+
+      if($status!=='completed' || $assetUrl===''){
+        if($jobRef==='') return ['ok'=>false,'error'=>'Operação de vídeo sem referência de job na cena '.($i+1).'.','operations'=>$updated?:$ops];
+        $r=tvp_centro_ia_execute('video_generation',[
+          'user'=>'Atualize o estado desta geração de vídeo regional.',
+          'operation'=>'refresh',
+          'job_ref'=>$jobRef
+        ],45);
+        if(empty($r['ok'])) return ['ok'=>false,'error'=>'Centro IA não atualizou a cena '.($i+1).': '.($r['error']??'falha de refresh'),'operations'=>$updated?:$ops];
+        $d=(array)($r['data']??[]);
+        $status=strtolower(trim((string)($d['media_status']??'processing')));
+        $assetUrl=trim((string)($d['asset_url']??''));
+        $op['status']=$status;
+        $op['asset_url']=$assetUrl;
+        if(!empty($d['provider'])) $op['provider']=(string)$d['provider'];
+        if(!empty($d['model'])) $op['model']=(string)$d['model'];
+      }
+
+      if($status==='failed') return ['ok'=>false,'error'=>'Centro IA informou falha na geração da cena '.($i+1).'.','operations'=>array_merge($updated,[$op])];
+      if($status==='completed'){
+        if($assetUrl==='') return ['ok'=>false,'error'=>'Centro IA concluiu a cena '.($i+1).' sem URL do vídeo.','operations'=>array_merge($updated,[$op])];
+        $uris[]=$assetUrl; $done++;
+      }
+      if(!empty($op['provider'])) $providers[(string)$op['provider']]=true;
+      if(!empty($op['model'])) $models[(string)$op['model']]=true;
+      $updated[]=$op;
+    }
+
+    if($done<count($ops)){
+      return [
+        'ok'=>true,
+        'status'=>'gerando',
+        'progress'=>(int)floor(($done/count($ops))*100),
+        'operations'=>$updated,
+        'providers'=>array_keys($providers),
+        'models'=>array_keys($models)
+      ];
+    }
+
+    $final=tvp_media_finalize($uris,$job['id']??uniqid('media_'));
+    if(empty($final['ok'])) return $final+['operations'=>$updated,'providers'=>array_keys($providers),'models'=>array_keys($models)];
+    return [
+      'ok'=>true,
+      'status'=>'pronto',
+      'progress'=>100,
+      'video_url'=>$final['video_url'],
+      'bytes'=>$final['bytes']??0,
+      'operations'=>$updated,
+      'providers'=>array_keys($providers),
+      'models'=>array_keys($models)
+    ];
   }
 }
 
