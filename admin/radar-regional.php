@@ -1640,7 +1640,8 @@ function tvs_radar_resolve_candidate_urls($items){
 function tvs_radar_resolve_google_backlog_offline($limit=60){
   $items=tvs_radar_discovery_read();
   $resolved=0; $unresolved=0; $processed=0;
-  $byMethod=[]; $byDomain=[]; $confidenceBands=['90_100'=>0,'80_89'=>0,'70_79'=>0,'lt_70'=>0];
+  $byMethod=[]; $byDomain=[]; $unresolvedByDomain=[]; $missingSourceDomain=0;
+  $confidenceBands=['90_100'=>0,'80_89'=>0,'70_79'=>0,'lt_70'=>0];
 
   foreach($items as $idx=>&$item){
     if($processed>=$limit) break;
@@ -1665,6 +1666,14 @@ function tvs_radar_resolve_google_backlog_offline($limit=60){
       else $confidenceBands['lt_70']++;
     } else {
       $unresolved++;
+      $hint=trim((string)($item['source_domain']??''));
+      if($hint==='') $hint=tvs_radar_source_domain_hint($item['source']??'',$item['title']??'');
+      $host=tvs_radar_source_host($hint);
+      if($host===''){
+        $missingSourceDomain++;
+        $host='sem_dominio_origem';
+      }
+      $unresolvedByDomain[$host]=($unresolvedByDomain[$host]??0)+1;
     }
   }
   unset($item);
@@ -1679,6 +1688,8 @@ function tvs_radar_resolve_google_backlog_offline($limit=60){
     'resolution_rate'=>$processed>0?round(($resolved/$processed)*100,2):0,
     'by_method'=>$byMethod,
     'by_domain'=>$byDomain,
+    'unresolved_by_domain'=>$unresolvedByDomain,
+    'missing_source_domain'=>$missingSourceDomain,
     'confidence_bands'=>$confidenceBands
   ];
   tvs_save_json_file(dirname(__DIR__).'/data/source_resolution_offline_report.json',$report);
