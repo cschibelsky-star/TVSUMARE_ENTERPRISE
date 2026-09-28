@@ -92,6 +92,24 @@ $_SERVER['REQUEST_METHOD']='CRON';
 require_once __DIR__.'/radar-regional.php';
 
 /*
+ * RADAR 1.2 — resolvedor offline do backlog Google News.
+ * Executa somente resolução/validação de fonte; não chama Repórter IA, Editor IA
+ * nem altera notícias publicadas. Substitui os antigos blocos automáticos v1.1/v2/v3.
+ */
+$offlineResolutionMarker=dirname(__DIR__).'/data/source_resolution_offline_v12_done.json';
+if(!is_file($offlineResolutionMarker)){
+  $report=tvs_radar_resolve_google_backlog_offline(80);
+  tvs_save_json_file($offlineResolutionMarker,$report);
+  echo 'SOURCE_RESOLUTION_OFFLINE_V12 '.json_encode($report,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n";
+  @file_put_contents($cronLogFile,date('c').' SOURCE_RESOLUTION_OFFLINE_V12 '.json_encode($report,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n",FILE_APPEND|LOCK_EX);
+  exit(0);
+}
+
+// O backlog editorial legado permanece congelado. Fluxos v1.1/v2/v3 abaixo são
+// preservados apenas como histórico e não executam mais automaticamente.
+goto AFTER_LEGACY_RETRO;
+
+/*
  * EDITORIAL RULE v1.1 — retroactive backlog simulation.
  * Read-only over discovery/approval/news. Network resolution runs in dry-run mode
  * and does not persist cache/backlog mutations.
@@ -563,6 +581,8 @@ if(empty($v3['complete']) && empty($v3['halted'])){
     @file_put_contents($sourceResolutionV3State,json_encode($v3,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_PRETTY_PRINT),LOCK_EX);
   }
 }
+
+AFTER_LEGACY_RETRO:
 
 /*
  * QUALITY REPAIR 2026-09-25 — one-shot.
