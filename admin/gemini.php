@@ -39,14 +39,79 @@ function tvs_gemini_models(){
     return $out;
 }
 
+function tvs_json_balanced_object($txt){
+    $txt=(string)$txt;
+    $len=strlen($txt);
+    $start=-1; $depth=0; $inString=false; $escape=false;
+    for($i=0;$i<$len;$i++){
+        $ch=$txt[$i];
+        if($start<0){
+            if($ch==='{'){ $start=$i; $depth=1; }
+            continue;
+        }
+        if($inString){
+            if($escape){ $escape=false; continue; }
+            if($ch==='\\'){ $escape=true; continue; }
+            if($ch==='"') $inString=false;
+            continue;
+        }
+        if($ch==='"'){ $inString=true; continue; }
+        if($ch==='{') $depth++;
+        elseif($ch==='}'){
+            $depth--;
+            if($depth===0) return substr($txt,$start,$i-$start+1);
+        }
+    }
+    return '';
+}
+
 function tvs_gemini_extract_json($txt){
     $txt=trim((string)$txt);
     $txt=preg_replace('/^```json\s*/i','',$txt);
     $txt=preg_replace('/^```\s*/','',$txt);
     $txt=preg_replace('/\s*```$/','',$txt);
     $data=json_decode($txt,true);
-    if(!is_array($data) && preg_match('/\{.*\}/s',$txt,$m)) $data=json_decode($m[0],true);
-    return is_array($data) ? $data : null;
+    if(is_array($data)) return $data;
+    $balanced=tvs_json_balanced_object($txt);
+    if($balanced!==''){
+        $data=json_decode($balanced,true);
+        if(is_array($data)) return $data;
+    }
+    return null;
+}
+
+function tvs_ai_article_schema(){
+    return [
+        'type'=>'OBJECT',
+        'properties'=>[
+            'title'=>['type'=>'STRING'],
+            'subtitle'=>['type'=>'STRING'],
+            'summary'=>['type'=>'STRING'],
+            'body'=>['type'=>'STRING'],
+            'category'=>['type'=>'STRING'],
+            'tags'=>['type'=>'ARRAY','items'=>['type'=>'STRING']],
+            'seo_title'=>['type'=>'STRING'],
+            'meta_description'=>['type'=>'STRING'],
+            'slug'=>['type'=>'STRING'],
+            'instagram_caption'=>['type'=>'STRING'],
+            'whatsapp_text'=>['type'=>'STRING'],
+            'discard'=>['type'=>'BOOLEAN'],
+            'reason'=>['type'=>'STRING']
+        ],
+        'required'=>['title','subtitle','summary','body','category','tags','seo_title','meta_description','slug','instagram_caption','whatsapp_text']
+    ];
+}
+
+function tvs_ai_validate_article_payload($data){
+    if(!is_array($data)) return ['ok'=>false,'error'=>'payload_not_array'];
+    foreach(['title','subtitle','summary','body','category','seo_title','meta_description','slug','instagram_caption','whatsapp_text'] as $field){
+        if(!isset($data[$field]) || !is_string($data[$field]) || trim($data[$field])===''){
+            return ['ok'=>false,'error'=>'field_invalid:'.$field];
+        }
+    }
+    if(tvs_ai_strlen(trim((string)$data['body']))<160) return ['ok'=>false,'error'=>'body_too_short'];
+    if(!isset($data['tags']) || !is_array($data['tags'])) return ['ok'=>false,'error'=>'tags_not_array'];
+    return ['ok'=>true];
 }
 
 function tvs_centro_ia_generate_text($prompt,$generationConfig=[],$timeout=45){
