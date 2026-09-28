@@ -870,15 +870,21 @@ if(!is_file($policyMarker)){
   echo 'EDITORIAL_POLICY_MIGRATION '.json_encode($result,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n";
 }
 
-$cleanup = function_exists('tvs_radar_enforce_queue_rules')
-  ? tvs_radar_enforce_queue_rules(true)
-  : ['removed'=>0,'changed'=>0,'total'=>0];
+// Radar 1.2: backlog editorial congelado durante homologação do resolvedor.
+// Não recalcula nem persiste score/status nesta manutenção.
+$cleanupQueue=function_exists('tvs_queue_read') ? tvs_queue_read() : [];
+$cleanup=[
+  'removed'=>0,
+  'changed'=>0,
+  'total'=>is_array($cleanupQueue)?count($cleanupQueue):0,
+  'mode'=>'frozen_read_only'
+];
 @file_put_contents(
   $cronLogFile,
-  date('c')." BACKLOG_CLEANUP removed=".(int)($cleanup['removed']??0)." changed=".(int)($cleanup['changed']??0)." total=".(int)($cleanup['total']??0)."\n",
+  date('c')." BACKLOG_CLEANUP_FROZEN removed=0 changed=0 total=".(int)$cleanup['total']."\n",
   FILE_APPEND|LOCK_EX
 );
-echo "BACKLOG_CLEANUP removed=".(int)($cleanup['removed']??0)." changed=".(int)($cleanup['changed']??0)." total=".(int)($cleanup['total']??0)."\n";
+echo "BACKLOG_CLEANUP_FROZEN removed=0 changed=0 total=".(int)$cleanup['total']."\n";
 
 /*
  * Retenção editorial pós-publicação.
