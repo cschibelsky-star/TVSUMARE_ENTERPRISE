@@ -966,6 +966,7 @@ function tvs_radar_validate_resolved_article($url,$expectedTitle,$city='',$expec
 
   $methodBase=[
     'source_domain_title_match'=>86,
+    'source_feed_title_match'=>84,
     'source_sitemap_title_match'=>84,
     'bing_site_title_match'=>88,
     'google_news_resolution'=>92,
@@ -1092,6 +1093,62 @@ function tvs_radar_find_article_in_html($domain,$html,$title){
   return $bestScore>=55 ? $bestUrl : '';
 }
 
+function tvs_radar_source_feed_candidates($domain,$title,$city=''){
+  static $feedCache=[];
+  $domain=rtrim(trim((string)$domain),'/');
+  $host=tvs_radar_source_host($domain);
+  if($host==='' || trim((string)$title)==='') return [];
+
+  $feedUrls=[
+    $domain.'/feed/',
+    $domain.'/feed',
+    $domain.'/rss',
+    $domain.'/rss.xml',
+    $domain.'/feed.xml',
+    $domain.'/atom.xml'
+  ];
+  $items=[];
+  foreach(array_values(array_unique($feedUrls)) as $feedUrl){
+    $cacheKey=$host.'|'.$feedUrl;
+    if(!array_key_exists($cacheKey,$feedCache)){
+      $xml=tvs_fetch_url($feedUrl);
+      $feedCache[$cacheKey]=is_string($xml)?$xml:'';
+    }
+    $xml=$feedCache[$cacheKey];
+    if($xml==='') continue;
+
+    libxml_use_internal_errors(true);
+    $sx=@simplexml_load_string($xml,'SimpleXMLElement',LIBXML_NOCDATA);
+    if(!$sx) continue;
+    $nodes=[];
+    if(isset($sx->channel->item)) $nodes=$sx->channel->item;
+    elseif(isset($sx->entry)) $nodes=$sx->entry;
+
+    foreach($nodes as $it){
+      $candidateTitle=tvs_clean_text((string)($it->title??''));
+      $candidateUrl='';
+      if(isset($it->link['href'])) $candidateUrl=(string)$it->link['href'];
+      else $candidateUrl=(string)($it->link??'');
+      $candidateUrl=tvs_radar_absolute_source_url($domain,$candidateUrl);
+      if($candidateTitle==='' || $candidateUrl==='') continue;
+      if(tvs_radar_source_host($candidateUrl)!==$host) continue;
+      if(!tvs_radar_is_article_path($candidateUrl,$title,$city)) continue;
+      $score=tvs_radar_title_match_score($title,$candidateTitle);
+      if($score<45) continue;
+      $published=(string)($it->pubDate??$it->published??$it->updated??'');
+      $items[]=[
+        'url'=>$candidateUrl,
+        'title'=>$candidateTitle,
+        'score'=>$score,
+        'published_at'=>$published
+      ];
+    }
+  }
+
+  usort($items,static fn($a,$b)=>(int)($b['score']??0)<=>(int)($a['score']??0));
+  return array_slice($items,0,8);
+}
+
 function tvs_radar_find_article_on_source($domain,$title,$city=''){
   static $cache=[];
 
@@ -1119,6 +1176,22 @@ function tvs_radar_find_article_on_source($domain,$title,$city=''){
     $domain.'/?s='.rawurlencode($title),
     $domain.'/search?q='.rawurlencode($title)
   ];
+
+  foreach(tvs_radar_source_feed_candidates($domain,$title,$city) as $feedCandidate){
+    $candidateUrl=(string)($feedCandidate['url']??'');
+    if($candidateUrl==='') continue;
+    $validation=tvs_radar_validate_resolved_article(
+      $candidateUrl,
+      $title,
+      $city,
+      $domain,
+      (string)($feedCandidate['published_at']??''),
+      'source_feed_title_match'
+    );
+    if(!empty($validation['ok'])){
+      return $cache[$cacheKey]=$candidateUrl;
+    }
+  }
 
   foreach(tvs_radar_source_section_urls($domain,$city) as $section){
     $queries[]=$section;
