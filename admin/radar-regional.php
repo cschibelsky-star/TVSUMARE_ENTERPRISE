@@ -1403,97 +1403,161 @@ function tvs_radar_source_domain_hint($source,$title=''){
   return '';
 }
 
+function tvs_radar_resolution_attempt_log($itemId,$method,$domain,$status,$confidence=0,$latencyMs=0,$httpStatus=0){
+  $row=[
+    'item_id'=>(string)$itemId,
+    'method'=>(string)$method,
+    'domain'=>(string)$domain,
+    'status'=>(string)$status,
+    'confidence'=>(int)$confidence,
+    'latency_ms'=>(int)$latencyMs,
+    'http_status'=>(int)$httpStatus,
+    'created_at'=>date('c')
+  ];
+  @file_put_contents(
+    dirname(__DIR__).'/data/resolution_attempts.jsonl',
+    json_encode($row,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n",
+    FILE_APPEND|LOCK_EX
+  );
+}
+
+function tvs_radar_resolution_next_attempt($attempts){
+  $attempts=max(1,(int)$attempts);
+  $hours=$attempts<=1?1:($attempts===2?6:24);
+  return date('c',time()+($hours*3600));
+}
+
 function tvs_radar_resolve_candidate_urls($items){
   foreach($items as &$item){
     $current=trim((string)($item['url']??''));
     if(!tvs_radar_is_google_news_url($current)) continue;
 
-    $resolved=tvs_radar_known_current_url($item['title']??'');
-    $method=$resolved!==''?'known_current_title':'';
-
-    // 1) Tenta resolver o próprio link do Google News:
-    // cache persistente -> blob -> HTTP/meta refresh -> og:url -> canonical.
-    if($resolved===''){
-      $googleResolved=tvs_radar_resolve_google_news_url($current);
-      if($googleResolved!=='' && $googleResolved!==$current){
-        $resolved=$googleResolved;
-        $method='google_news_resolution';
-      }
-    }
-
-    // 2) Se o RSS informa/permite inferir o veículo, procura o título
-    // diretamente no domínio correto.
+    $itemId=(string)($item['id']??md5($current.'|'.($item['title']??'')));
+    $expectedTitle=(string)($item['title']??'');
+    $city=(string)($item['city']??'');
+    $expectedPublishedAt=(string)($item['published_at']??'');
     $sourceDomain=trim((string)($item['source_domain']??''));
     if($sourceDomain===''){
-      $sourceDomain=tvs_radar_source_domain_hint(
-        $item['source']??'',
-        $item['title']??''
-      );
+      $sourceDomain=tvs_radar_source_domain_hint($item['source']??'',$expectedTitle);
     }
 
-    if($sourceDomain!=='' && $resolved===''){
-      $resolved=tvs_radar_find_article_on_source(
+    $resolved='';
+    $method='';
+    $validation=null;
+
+    $tryCandidate=function($candidate,$candidateMethod) use (&$resolved,&$method,&$validation,$expectedTitle,$city,$sourceDomain,$expectedPublishedAt,$itemId){
+      $candidate=trim((string)$candidate);
+      if($candidate==='') return false;
+      $started=microtime(true);
+      $check=tvs_radar_validate_resolved_article(
+        $candidate,
+        $expectedTitle,
+        $city,
         $sourceDomain,
-        $item['title']??'',
-        $item['city']??''
+        $expectedPublishedAt,
+        $candidateMethod
       );
-      if($resolved!=='') $method='source_domain_title_match';
+      $latency=(int)round((microtime(true)-$started)*1000);
+      tvs_radar_resolution_attempt_log(
+        $itemId,
+        $candidateMethod,
+        tvs_radar_source_host($candidate),
+        !empty($check['ok'])?'resolved':'rejected',
+        (int)($check['confidence']??0),
+        $latency,
+        0
+      );
+      if(empty($check['ok'])) return false;
+      $resolved=$candidate;
+      $method=$candidateMethod;
+      $validation=$check;
+      return true;
+    };
+
+    // 1) Domínio informado pelo próprio RSS é o caminho principal.
+    if($sourceDomain!==''){
+      $candidate=tvs_radar_find_article_on_source($sourceDomain,$expectedTitle,$city);
+      $tryCandidate($candidate,'source_domain_title_match');
     }
 
-    // 3) Sitemaps do veículo (WordPress e portais oficiais).
-    if($sourceDomain!=='' && $resolved===''){
-      $resolved=tvs_radar_resolve_by_sitemap(
-        $sourceDomain,
-        $item['title']??'',
-        $item['city']??''
-      );
-      if($resolved!=='') $method='source_sitemap_title_match';
+    // 2) Sitemap/feed do veículo.
+    if($resolved==='' && $sourceDomain!==''){
+      $candidate=tvs_radar_resolve_by_sitemap($sourceDomain,$expectedTitle,$city);
+      $tryCandidate($candidate,'source_sitemap_title_match');
     }
 
-    // 4) Índice de notícias restrito ao domínio.
-    if($sourceDomain!=='' && $resolved===''){
-      $resolved=tvs_radar_resolve_by_bing_site(
-        $sourceDomain,
-        $item['title']??'',
-        $item['city']??''
-      );
-      if($resolved!=='') $method='bing_site_title_match';
+    // 3) Índice restrito ao domínio.
+    if($resolved==='' && $sourceDomain!==''){
+      $candidate=tvs_radar_resolve_by_bing_site($sourceDomain,$expectedTitle,$city);
+      $tryCandidate($candidate,'bing_site_title_match');
     }
 
-    // 5) Busca geral como último recurso.
+    // 4) Mapeamentos conhecidos.
     if($resolved===''){
-      $bingResolved=tvs_radar_resolve_by_bing_news(
-        $item['title']??'',
-        $item['city']??'',
-        $item['source']??''
-      );
-      if($bingResolved!==''){
-        $resolved=$bingResolved;
-        $method='bing_news_title_match';
+      $candidate=tvs_radar_known_current_url($expectedTitle);
+      $tryCandidate($candidate,'known_current_title');
+    }
+
+    // 5) Resolver o link Google apenas como fallback.
+    if($resolved===''){
+      $candidate=tvs_radar_resolve_google_news_url($current);
+      if($candidate!=='' && $candidate!==$current){
+        $tryCandidate($candidate,'google_news_resolution');
       }
     }
 
-    if(
-      $resolved!=='' &&
-      $resolved!==$current &&
-      tvs_radar_external_url_is_valid($resolved)
-    ){
+    // 6) Busca geral é o último recurso e exige confiança mais alta.
+    if($resolved===''){
+      $candidate=tvs_radar_resolve_by_bing_news($expectedTitle,$city,$item['source']??'');
+      $tryCandidate($candidate,'bing_news_title_match');
+    }
+
+    $attempts=(int)($item['source_resolution_attempts']??0)+1;
+    $item['source_resolution_attempts']=$attempts;
+    $firstAttempt=(string)($item['source_resolution_first_attempt_at']??'');
+    if($firstAttempt===''){
+      $firstAttempt=date('c');
+      $item['source_resolution_first_attempt_at']=$firstAttempt;
+    }
+
+    if($resolved!=='' && is_array($validation) && !empty($validation['ok'])){
       $item['google_news_url']=$current;
       $item['url']=$resolved;
       $item['source_url']=$resolved;
-      $item['url_resolved_at']=date(DATE_ATOM);
+      $item['url_resolved_at']=date('c');
       $item['url_resolution_required']=0;
       $item['url_resolution_method']=$method;
+      $item['url_resolution_status']='resolved';
+      $item['url_resolution_confidence']=(int)($validation['confidence']??0);
+      $item['url_resolution_next_attempt_at']='';
+      $item['resolved_domain']=$validation['resolved_domain']??tvs_radar_source_host($resolved);
+      $item['resolved_published_at']=$validation['published_at']??'';
       $row=tvs_radar_resolution_cache_record($current,$resolved,$method,true);
       $item['resolution_failure_count']=(int)($row['failures']??0);
-    } else {
-      $item['url_resolution_required']=1;
-      $row=tvs_radar_resolution_cache_lookup($current);
-      $item['resolution_failure_count']=(int)($row['failures']??0);
-      if($item['resolution_failure_count']>=3){
-        $item['resolution_priority_penalty']=min(6,$item['resolution_failure_count']-2);
-      }
+      continue;
     }
+
+    $firstTs=strtotime($firstAttempt);
+    $ageHours=$firstTs?(time()-$firstTs)/3600:0;
+    $final=$ageHours>=72 || $attempts>=6;
+
+    $item['url_resolution_required']=1;
+    $item['url_resolution_status']=$final?'unresolved_final':'unresolved_retriable';
+    $item['url_resolution_next_attempt_at']=$final?'':tvs_radar_resolution_next_attempt($attempts);
+    $item['resolution_failure_count']=$attempts;
+    if($attempts>=3){
+      $item['resolution_priority_penalty']=min(6,$attempts-2);
+    }
+    tvs_radar_resolution_attempt_log(
+      $itemId,
+      'all_methods',
+      tvs_radar_source_host($sourceDomain),
+      $item['url_resolution_status'],
+      0,
+      0,
+      0
+    );
+    tvs_radar_resolution_cache_record($current,'','',false);
   }
 
   unset($item);
