@@ -106,69 +106,20 @@ if(!is_file($offlineResolutionMarker)){
 }
 
 /*
- * RADAR 1.2 — reprocessamento retroativo canônico.
- * Ordem obrigatória: simulação somente leitura -> piloto de 10 -> lotes de 20.
- * Nenhuma etapa publica automaticamente. O restante só é liberado se o piloto
- * persistir todas as pautas selecionadas sem salto de estado ou violação dura.
+ * RADAR 1.3 — processador único do backlog.
+ * O piloto v1.2 foi encerrado e não bloqueia mais o fluxo. Cada ciclo trabalha
+ * diretamente sobre pautas auditadas, elegíveis e com retry/TTL disponível.
+ * Nenhuma etapa publica automaticamente.
  */
-$currentSimulationFile=dirname(__DIR__).'/data/radar_backlog_simulation_v12.json';
-if(!is_file($currentSimulationFile)){
-  $sim=tvs_radar_simulate_backlog_v11();
-  $simMetrics=(array)($sim['metrics']??[]);
-  $payload=[
-    'generated_at'=>date('c'),
-    'rule_version'=>'1.2',
-    'metrics'=>$simMetrics,
-    'rows'=>$sim['rows']??[]
-  ];
-  tvs_save_json_file($currentSimulationFile,$payload);
-  tvs_radar_record_run_telemetry([
-    'run_id'=>'simulation_'.date('Ymd_His'),
-    'started_at'=>$payload['generated_at'],
-    'finished_at'=>date('c'),
-    'mode'=>'dry_run',
-    'retroactive_stage'=>'simulation',
-    'selected_count'=>(int)($simMetrics['total']??0),
-    'processed_count'=>(int)($simMetrics['total']??0),
-    'changed_count'=>0,
-    'unchanged_count'=>(int)($simMetrics['total']??0),
-    'persisted_count'=>0,
-    'error_count'=>0,
-    'first_item_id'=>'',
-    'last_item_id'=>'',
-    'cursor_before'=>null,
-    'cursor_after'=>null,
-    'rule_version'=>'1.2'
-  ]);
-  echo 'RADAR_V12_RETRO_SIM '.json_encode($simMetrics,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n";
-  @file_put_contents($cronLogFile,date('c').' RADAR_V12_RETRO_SIM '.json_encode($simMetrics,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n",FILE_APPEND|LOCK_EX);
-  exit(0);
-}
+$batch=tvs_radar_run_backlog_batch_v13(20);
+echo 'RADAR_V13_BACKLOG_BATCH '.json_encode($batch,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n";
+@file_put_contents(
+  $cronLogFile,
+  date('c').' RADAR_V13_BACKLOG_BATCH '.json_encode($batch,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n",
+  FILE_APPEND|LOCK_EX
+);
 
-$currentPilotFile=dirname(__DIR__).'/data/radar_backlog_pilot_v12.json';
-if(!is_file($currentPilotFile)){
-  $pilot=tvs_radar_run_backlog_pilot_v12(10);
-  echo 'RADAR_V12_RETRO_PILOT '.json_encode($pilot,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n";
-  @file_put_contents($cronLogFile,date('c').' RADAR_V12_RETRO_PILOT '.json_encode($pilot,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n",FILE_APPEND|LOCK_EX);
-  exit(0);
-}
-
-if(!tvs_radar_pilot_allows_backlog_v12()){
-  $pilot=tvs_read_json_file($currentPilotFile);
-  echo 'RADAR_V12_RETRO_HALT reason=pilot_not_approved '.json_encode($pilot,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n";
-  @file_put_contents($cronLogFile,date('c').' RADAR_V12_RETRO_HALT reason=pilot_not_approved '.json_encode($pilot,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n",FILE_APPEND|LOCK_EX);
-  goto AFTER_LEGACY_RETRO;
-}
-
-$batch=tvs_radar_run_backlog_batch_v12(20);
-if((int)($batch['selected']??0)>0){
-  echo 'RADAR_V12_RETRO_BATCH '.json_encode($batch,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n";
-  @file_put_contents($cronLogFile,date('c').' RADAR_V12_RETRO_BATCH '.json_encode($batch,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n",FILE_APPEND|LOCK_EX);
-  exit(0);
-}
-
-echo "RADAR_V12_RETRO_COMPLETE remaining=0\n";
-@file_put_contents($cronLogFile,date('c')." RADAR_V12_RETRO_COMPLETE remaining=0\n",FILE_APPEND|LOCK_EX);
+// O restante da manutenção segue normalmente; o backlog não monopoliza o cron.
 goto AFTER_LEGACY_RETRO;
 
 /*
