@@ -4413,58 +4413,241 @@ function tvs_radar_pilot_allows_backlog_v12(){
   return is_array(tvs_radar_last_approved_pilot_v12());
 }
 
-function tvs_radar_run_backlog_batch_v12($limit=10){
-  if(!tvs_radar_pilot_allows_backlog_v12()){
-    return [
-      'allowed'=>0,'selected'=>0,'processed'=>0,'persisted'=>0,
-      'generated'=>0,'status'=>'bloqueado_pelo_piloto'
+function tvs_radar_backlog_candidate_eligible_v13($cand){
+  if(!is_array($cand)) return false;
+
+  $audit=(string)($cand['entry_audit_status']??'');
+  if(!in_array($audit,['aprovada_para_enriquecimento','precisa_resolver_fonte'],true)) return false;
+
+  $stage=(string)($cand['pipeline_stage']??'pauta_encontrada');
+  if(in_array($stage,[
+    'pronta_para_redacao','revisao_manual_pipeline','expirada_sem_enriquecimento'
+  ],true)) return false;
+
+  if(!tvs_radar_enrichment_due($cand)) return false;
+
+  $isGoogle=tvs_radar_is_google_news_url($cand['url']??$cand['source_url']??'');
+  if($isGoogle && (int)($cand['source_resolution_attempts']??0)>=4) return false;
+
+  $package=(array)($cand['fact_package']??[]);
+  if($package){
+    $decision=tvs_radar_factually_ready($package);
+    if(!empty($decision['ready'])) return true;
+
+    $sf=(int)($decision['sf']??0);
+    $sourceResolved=!empty($decision['source_original_resolved']);
+    $coreOk=!empty($decision['core_4w_ok']);
+    $trusted=!empty($decision['trusted_source']);
+    $usable=!empty($decision['content_usable']);
+
+    if(!$sourceResolved) return (int)($cand['source_resolution_attempts']??0)<4;
+    if(($sf>=40 && $sf<60) || ($sf>=60 && (!$coreOk || !$trusted))){
+      return (int)($cand['second_source_attempts']??0)<3;
+    }
+    if(!$usable) return (int)($cand['extraction_attempts']??0)<3;
+    return (int)($cand['factual_gate_attempts']??0)<3;
+  }
+
+  return true;
+}
+
+function tvs_radar_select_backlog_ids_v13($limit=20){
+  global $cities;
+  $limit=max(1,min(100,(int)$limit));
+  $discovery=tvs_radar_discovery_read();
+  $byCity=[]; foreach($cities as $city) $byCity[$city]=[];
+
+  foreach($discovery as $cand){
+    if(!tvs_radar_backlog_candidate_eligible_v13($cand)) continue;
+    $city=(string)($cand['radar_requested_city']??$cand['city']??'');
+    if(!isset($byCity[$city])) continue;
+
+    $isGoogle=tvs_radar_is_google_news_url($cand['url']??$cand['source_url']??'');
+    $package=(array)($cand['fact_package']??[]);
+    $resolved=!empty($package['source_original_resolved']) || !$isGoogle;
+    $byCity[$city][]=[
+      'id'=>(string)($cand['id']??''),
+      'resolved'=>$resolved?1:0,
+      'sf'=>(int)($cand['sf_score']??($package['sf_score']??0)),
+      'attempts'=>(int)($cand['pipeline_attempts']??0),
+      'updated'=>(string)($cand['pipeline_updated_at']??$cand['pipeline_created_at']??'')
     ];
   }
 
-  $ids=tvs_radar_select_backlog_pilot_ids($limit);
+  foreach($byCity as &$items){
+    usort($items,function($a,$b){
+      if($a['resolved']!==$b['resolved']) return $b['resolved']<=>$a['resolved'];
+      if($a['sf']!==$b['sf']) return $b['sf']<=>$a['sf'];
+      if($a['attempts']!==$b['attempts']) return $a['attempts']<=>$b['attempts'];
+      return strcmp($a['updated'],$b['updated']);
+    });
+  }
+  unset($items);
+
+  $ids=[];
+  while(count($ids)<$limit){
+    $progress=false;
+    foreach($cities as $city){
+      if(count($ids)>=$limit) break;
+      if(empty($byCity[$city])) continue;
+      $row=array_shift($byCity[$city]);
+      if(!empty($row['id'])) $ids[]=$row['id'];
+      $progress=true;
+    }
+    if(!$progress) break;
+  }
+  return $ids;
+}
+
+function tvs_radar_run_backlog_batch_v13($limit=20){
+  $ids=tvs_radar_select_backlog_ids_v13($limit);
   if(!$ids){
-    return [
+    $result=[
       'allowed'=>1,'selected'=>0,'processed'=>0,'persisted'=>0,
-      'generated'=>0,'status'=>'backlog_concluido'
+      'generated'=>0,'advanced'=>0,'stalled'=>0,'errors'=>0,
+      'status'=>'sem_pautas_elegiveis','reasons'=>[]
     ];
+    tvs_radar_record_run_telemetry([
+      'run_id'=>'backlog_v13_'.date('Ymd_His'),
+      'started_at'=>date('c'),'finished_at'=>date('c'),
+      'mode'=>'controlled_backlog','retroactive_stage'=>'backlog_v13',
+      'selected_count'=>0,'processed_count'=>0,'persisted_count'=>0,
+      'changed_count'=>0,'unchanged_count'=>0,'error_count'=>0,
+      'advanced_count'=>0,'stalled_count'=>0,'rule_version'=>'1.3'
+    ]);
+    return $result;
   }
 
+  $beforeRows=tvs_radar_discovery_read();
+  $before=[];
+  foreach($beforeRows as $row){
+    $id=(string)($row['id']??'');
+    if($id!=='' && in_array($id,$ids,true)){
+      $before[$id]=[
+        'stage'=>(string)($row['pipeline_stage']??'pauta_encontrada'),
+        'attempts'=>(int)($row['pipeline_attempts']??0)
+      ];
+    }
+  }
+
+  $batchToken='backlog_v13_'.date('Ymd_His').'_'.substr(md5(uniqid('',true)),0,8);
   $generated=tvs_radar_process_discovery('normal',5,[
     'force_retry'=>true,
     'max_candidates'=>count($ids),
     'max_generated'=>count($ids),
     'only_ids'=>$ids,
-    'editorial_rule_version'=>'1.2',
-    'reprocess_reason'=>'retroactive_rule_upgrade_backlog',
-    'retroactive_stage'=>'backlog',
-    'audit_backlog'=>true,
+    'editorial_rule_version'=>'1.3',
+    'reprocess_reason'=>$batchToken,
+    'retroactive_stage'=>'backlog_v13',
+    'audit_backlog'=>false,
     'skip_editor_retry'=>true
   ]);
 
   $metrics=(array)($GLOBALS['TVS_RADAR_LAST_PROCESS_METRICS']??[]);
+  $afterRows=tvs_radar_discovery_read();
+  $after=[];
+  foreach($afterRows as $row){
+    $id=(string)($row['id']??'');
+    if($id!=='') $after[$id]=$row;
+  }
+
+  $queueIds=[];
+  foreach(tvs_queue_read() as $row){
+    $id=(string)($row['source_candidate_id']??'');
+    if($id!=='') $queueIds[$id]=true;
+  }
+  $discardedIds=[];
+  $discarded=tvs_read_json_file(dirname(__DIR__).'/data/pautas_descartadas.json');
+  if(is_array($discarded)) foreach($discarded as $row){
+    $id=(string)($row['original_id']??'');
+    if($id!=='') $discardedIds[$id]=true;
+  }
+
+  $advanced=0; $stalled=0; $reasons=[];
+  foreach($ids as $id){
+    if(isset($queueIds[$id])){
+      $advanced++;
+      $reasons['fila_editorial']=($reasons['fila_editorial']??0)+1;
+      continue;
+    }
+    if(isset($discardedIds[$id])){
+      $advanced++;
+      $reasons['descartada_com_motivo']=($reasons['descartada_com_motivo']??0)+1;
+      continue;
+    }
+    if(isset($after[$id])){
+      $newStage=(string)($after[$id]['pipeline_stage']??'pauta_encontrada');
+      $oldStage=(string)($before[$id]['stage']??'pauta_encontrada');
+      if($newStage!==$oldStage){
+        $advanced++;
+        $reasons[$newStage]=($reasons[$newStage]??0)+1;
+      } else {
+        $stalled++;
+        $reason=trim((string)($after[$id]['pipeline_reason']??'sem_avanco_de_estado'));
+        if($reason==='') $reason='sem_avanco_de_estado';
+        $reason=mb_substr($reason,0,140,'UTF-8');
+        $reasons[$reason]=($reasons[$reason]??0)+1;
+      }
+      continue;
+    }
+    $stalled++;
+    $reasons['estado_nao_localizado']=($reasons['estado_nao_localizado']??0)+1;
+  }
+
+  $processed=(int)($metrics['processed_count']??0);
+  $persisted=(int)($metrics['persisted_count']??0);
+  $errors=(int)($metrics['error_count']??0);
   $result=[
     'allowed'=>1,
     'selected'=>count($ids),
-    'processed'=>(int)($metrics['processed_count']??0),
-    'persisted'=>(int)($metrics['persisted_count']??0),
+    'processed'=>$processed,
+    'persisted'=>$persisted,
     'generated'=>$generated,
-    'errors'=>(int)($metrics['error_count']??0),
+    'advanced'=>$advanced,
+    'stalled'=>$stalled,
+    'errors'=>$errors,
     'first_item_id'=>(string)($metrics['first_item_id']??''),
     'last_item_id'=>(string)($metrics['last_item_id']??''),
-    'status'=>((int)($metrics['processed_count']??0)===count($ids)
-      && (int)($metrics['error_count']??0)===0)
-        ? 'lote_concluido'
-        : 'lote_parcial'
+    'status'=>($processed===count($ids) && $errors===0 && $persisted===count($ids))
+      ? 'lote_concluido' : 'lote_parcial',
+    'reasons'=>$reasons
   ];
 
-  $stateFile=dirname(__DIR__).'/data/radar_backlog_batches_v12.json';
+  $stateFile=dirname(__DIR__).'/data/radar_backlog_batches_v13.json';
   $state=tvs_read_json_file($stateFile);
   if(!is_array($state)) $state=[];
-  $state[]=['executed_at'=>date('c'),'rule_version'=>'1.2']+$result;
+  $state[]=['executed_at'=>date('c'),'rule_version'=>'1.3','batch_token'=>$batchToken]+$result;
   if(count($state)>120) $state=array_slice($state,-120);
   tvs_save_json_file($stateFile,array_values($state));
 
+  tvs_radar_record_run_telemetry([
+    'run_id'=>$batchToken,
+    'started_at'=>(string)($metrics['started_at']??date('c')),
+    'finished_at'=>date('c'),
+    'mode'=>'controlled_backlog',
+    'retroactive_stage'=>'backlog_v13',
+    'selected_count'=>count($ids),
+    'processed_count'=>$processed,
+    'persisted_count'=>$persisted,
+    'changed_count'=>$advanced,
+    'unchanged_count'=>$stalled,
+    'error_count'=>$errors,
+    'advanced_count'=>$advanced,
+    'stalled_count'=>$stalled,
+    'reasons'=>$reasons,
+    'first_item_id'=>(string)($metrics['first_item_id']??''),
+    'last_item_id'=>(string)($metrics['last_item_id']??''),
+    'cursor_before'=>$metrics['cursor_before']??null,
+    'cursor_after'=>$metrics['cursor_after']??null,
+    'rule_version'=>'1.3'
+  ]);
+
   return $result;
+}
+
+// Compatibilidade temporária para chamadas antigas; sem gate de piloto.
+function tvs_radar_run_backlog_batch_v12($limit=20){
+  return tvs_radar_run_backlog_batch_v13($limit);
 }
 
 function tvs_radar_simulate_backlog_v11(){
@@ -4819,28 +5002,25 @@ if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'){
       .(int)($metrics['google_unresolved']??0).' Google News não resolvido(s); '
       .(int)($metrics['hard_blocked']??0).' bloqueada(s) por regra dura.';
   } elseif($action==='pilot_backlog'){
-    $pilot=tvs_radar_run_backlog_pilot_v12(10);
-    $notice='Piloto controlado '.strtoupper((string)($pilot['pilot_status']??'indefinido')).': '
-      .(int)($pilot['selected']??0).' selecionada(s); '
-      .(int)($pilot['processed']??0).' processada(s); '
-      .(int)($pilot['persisted']??0).' persistida(s); '
-      .(int)($pilot['generated']??0).' chegaram à fila pronta; '
-      .(int)($pilot['persistence_failures']??0).' falha(s) de persistência; '
-      .(int)($pilot['skipped_state_transition']??0).' salto(s) de estado; '
-      .(int)($pilot['hard_rule_violations']??0).' violação(ões) de regra dura. Nenhuma publicação automática foi executada.';
+    $notice='O piloto retroativo foi encerrado. O Radar 1.3 processa diretamente as pautas auditadas pendentes em lotes controlados.';
   } elseif($action==='process_backlog_batch'){
-    $batch=tvs_radar_run_backlog_batch_v12(20);
-    if(empty($batch['allowed'])){
-      $error='Lote de 20 bloqueado: o piloto de 10 ainda não atende aos critérios de liberação.';
-    } elseif(($batch['status']??'')==='backlog_concluido'){
-      $notice='Reprocessamento retroativo concluído: não há mais pautas legadas sem auditoria para este lote.';
+    $batch=tvs_radar_run_backlog_batch_v13(20);
+    if(($batch['status']??'')==='sem_pautas_elegiveis'){
+      $notice='Backlog 1.3: não há pautas elegíveis para processamento neste momento. Itens em espera respeitam retry/TTL e não são forçados.';
     } else {
-      $notice='Lote retroativo de 20 '.strtoupper((string)($batch['status']??'indefinido')).': '
+      $reasonText='';
+      foreach((array)($batch['reasons']??[]) as $reason=>$count){
+        $reasonText.=' · '.(int)$count.' '.(string)$reason;
+      }
+      $notice='Backlog 1.3 '.strtoupper((string)($batch['status']??'indefinido')).': '
         .(int)($batch['selected']??0).' selecionada(s); '
         .(int)($batch['processed']??0).' processada(s); '
         .(int)($batch['persisted']??0).' persistida(s); '
-        .(int)($batch['generated']??0).' chegaram à fila pronta; '
-        .(int)($batch['errors']??0).' erro(s). Nenhuma publicação automática foi executada.';
+        .(int)($batch['advanced']??0).' avançaram; '
+        .(int)($batch['stalled']??0).' permaneceram no mesmo estado; '
+        .(int)($batch['generated']??0).' chegaram à fila editorial; '
+        .(int)($batch['errors']??0).' erro(s).'.$reasonText
+        .' Nenhuma publicação automática foi executada.';
     }
   } elseif($action==='clean_invalid'){
     [$rq,$rn]=tvs_clean_invalid_generated_content();
@@ -4990,7 +5170,7 @@ $editReadiness=$editItem && function_exists('tvs_radar_queue_item_readiness')
 $editCanApprove=$editItem && !empty($editItem['ai_editor_processed']) && !empty($editReadiness['ready']);
 ?>
 <!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Matérias para Aprovação | TV Sumaré</title><link rel="stylesheet" href="admin.css?v=132"><style>.queue-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}.matter{background:#fff;border:1px solid #e5e7eb;border-radius:18px;padding:14px;box-shadow:0 8px 22px rgba(15,23,42,.06)}.matter img{width:100%;height:150px;object-fit:cover;border-radius:14px;background:#eef2ff}.matter h3{margin:10px 0 6px;font-size:18px}.matter p{color:#475569;font-size:14px}.badge{display:inline-flex;border-radius:999px;background:#eef2ff;color:#1d4ed8;padding:5px 9px;font-size:12px;font-weight:800;margin:6px 5px 6px 0}.city-block{margin:24px 0}.matter-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.edit-form{background:#fff;border-radius:18px;padding:18px;border:1px solid #e5e7eb}.edit-form input,.edit-form textarea,.edit-form select{width:100%;padding:11px;border:1px solid #cbd5e1;border-radius:12px;margin:5px 0 12px}.edit-form textarea{min-height:320px}.muted{color:#64748b}.settings-box{background:#fff;border:1px solid #e5e7eb;border-radius:18px;padding:14px;margin:14px 0}.settings-inline{display:flex;gap:12px;align-items:end;flex-wrap:wrap}.settings-inline label{display:flex;flex-direction:column;font-size:13px;color:#334155}.settings-inline input[type=number]{width:110px;padding:10px;border:1px solid #cbd5e1;border-radius:12px}.settings-inline .check{flex-direction:row;gap:8px;align-items:center}.top-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.bulk-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.bulk-row .check,.bulk-check{display:flex;align-items:center;gap:7px;font-weight:800;color:#334155}.bulk-check{margin-bottom:8px}.bulk-check input{width:18px;height:18px}@media(max-width:1000px){.queue-grid{grid-template-columns:1fr}.matter img{height:190px}}</style></head><body><div class="admin"><?php include __DIR__.'/_menu.php'; ?><main class="main"><div class="top"><div><span class="eyebrow">Centro de Redação • Radar 2.0</span><h1>Matérias para Aprovação</h1><p class="muted">O Radar abastece a redação com mais opções. Você aprova o que achar relevante para a TV Sumaré.</p></div><div class="top-actions"><form method="post"><?=tvs_csrf_field()?><input type="hidden" name="action" value="update_radar"><button class="btn orange" type="submit" onclick="return confirm('Atualizar o Radar agora? Isso pode levar alguns segundos.');">Atualizar Agora</button></form><form method="post"><?=tvs_csrf_field()?><input type="hidden" name="action" value="update_radar_volume"><button class="btn secondary" type="submit" onclick="return confirm('Ativar Modo Volume Máximo? Mais pautas entrarão como revisão humana, não como publicação automática.');">Modo Volume Máximo</button></form></div></div>
-<div class="settings-box"><form method="post" class="settings-inline"><?=tvs_csrf_field()?><input type="hidden" name="action" value="save_settings"><label class="check"><input type="checkbox" name="auto_daily" value="1" <?=!empty($radarCfg['auto_daily'])?'checked':''?>> Atualização automática diária</label><label>Meta de matérias por cidade<input type="number" min="1" max="40" name="per_city" value="<?=h($radarCfg['per_city']??20)?>"></label><button class="btn secondary" type="submit">Salvar configuração</button><span class="muted">Última atualização: <?=!empty($radarStatus['last_run'])?h(date('d/m/Y H:i',strtotime($radarStatus['last_run']))):'ainda não executada'?> <?=!empty($radarStatus['last_mode'])?'• '.h($radarStatus['last_mode']):''?></span></form><div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px"><form method="post"><?=tvs_csrf_field()?><input type="hidden" name="action" value="simulate_backlog"><button class="btn secondary" type="submit">Simular backlog</button></form><form method="post" onsubmit="return confirm('Reprocessar somente uma batelada piloto de 10 pautas, sem publicar automaticamente?');"><?=tvs_csrf_field()?><input type="hidden" name="action" value="pilot_backlog"><button class="btn secondary" type="submit">Piloto 10 pautas</button></form><form method="post" onsubmit="return confirm('Processar o próximo lote retroativo de até 20 pautas? Nenhuma publicação será feita automaticamente.');"><?=tvs_csrf_field()?><input type="hidden" name="action" value="process_backlog_batch"><button class="btn secondary" type="submit">Processar próximo lote de 20</button></form><form method="post" onsubmit="return confirm('Remover automaticamente matérias realmente inválidas como menu, rodapé e texto genérico?');"><?=tvs_csrf_field()?><input type="hidden" name="action" value="clean_invalid"><button class="btn secondary" type="submit">Limpar matérias inválidas</button></form><span class="muted">Reprocessamento retroativo segue: simulação → piloto de 10 → lotes de 20. Nenhuma etapa publica automaticamente.</span></div></div>
+<div class="settings-box"><form method="post" class="settings-inline"><?=tvs_csrf_field()?><input type="hidden" name="action" value="save_settings"><label class="check"><input type="checkbox" name="auto_daily" value="1" <?=!empty($radarCfg['auto_daily'])?'checked':''?>> Atualização automática diária</label><label>Meta de matérias por cidade<input type="number" min="1" max="40" name="per_city" value="<?=h($radarCfg['per_city']??20)?>"></label><button class="btn secondary" type="submit">Salvar configuração</button><span class="muted">Última atualização: <?=!empty($radarStatus['last_run'])?h(date('d/m/Y H:i',strtotime($radarStatus['last_run']))):'ainda não executada'?> <?=!empty($radarStatus['last_mode'])?'• '.h($radarStatus['last_mode']):''?></span></form><div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px"><form method="post"><?=tvs_csrf_field()?><input type="hidden" name="action" value="simulate_backlog"><button class="btn secondary" type="submit">Simular backlog</button></form><form method="post" onsubmit="return confirm('Processar as próximas pautas auditadas elegíveis em um lote de até 20? Retry, TTL e regras editoriais serão respeitados e nenhuma publicação será feita automaticamente.');"><?=tvs_csrf_field()?><input type="hidden" name="action" value="process_backlog_batch"><button class="btn secondary" type="submit">Processar próximo lote de 20</button></form><form method="post" onsubmit="return confirm('Remover automaticamente matérias realmente inválidas como menu, rodapé e texto genérico?');"><?=tvs_csrf_field()?><input type="hidden" name="action" value="clean_invalid"><button class="btn secondary" type="submit">Limpar matérias inválidas</button></form><span class="muted">Radar 1.3: backlog contínuo em lotes de 20 sobre pautas auditadas e elegíveis. Sem gate de piloto e sem publicação automática.</span></div></div>
 <?php if($notice): ?><div class="notice"><?=h($notice)?></div><?php endif; ?><?php if($error): ?><div class="notice error"><?=h($error)?></div><?php endif; ?>
 <?php if($editItem): $tags=is_array($editItem['tags']??null)?implode(', ',$editItem['tags']):($editItem['tags']??''); ?>
 <section class="edit-form"><h2><?= $editCanApprove ? 'Editar matéria antes de aprovar' : 'Matéria em processamento editorial' ?></h2><?php if(!$editCanApprove): ?><div class="notice error">Esta matéria ainda não está liberada para aprovação. <?=h(implode(' · ',array_values(array_unique(array_filter(array_merge((array)($editReadiness['reasons']??[]),empty($editItem['ai_editor_processed'])?['Editor IA ainda não concluído']:[]))))))?></div><?php endif; ?><form method="post"><?=tvs_csrf_field()?><input type="hidden" name="id" value="<?=h($editItem['id'])?>"><input type="hidden" name="human_review" value="1"><label>Título</label><input name="title" value="<?=h($editItem['title']??'')?>"><label>Subtítulo</label><input name="subtitle" value="<?=h($editItem['subtitle']??'')?>"><label>Resumo</label><input name="summary" value="<?=h($editItem['summary']??'')?>"><label>Cidade</label><input name="city" value="<?=h($editItem['city']??'')?>"><label>Categoria</label><input name="category" value="<?=h($editItem['category']??'')?>"><label>Imagem</label><input name="image" value="<?=h($editItem['image']??'')?>"><label>Crédito da imagem</label><input name="image_credit" value="<?=h($editItem['image_credit']??'')?>"><label>Texto completo</label><textarea name="body"><?=h($editItem['body']??'')?></textarea><label>Fonte</label><input name="source" value="<?=h($editItem['source']??'')?>"><label>URL da fonte</label><input name="source_url" value="<?=h($editItem['source_url']??'')?>"><label>Tags</label><input name="tags" value="<?=h($tags)?>"><label>SEO title</label><input name="seo_title" value="<?=h($editItem['seo_title']??'')?>"><label>Meta description</label><input name="meta_description" value="<?=h($editItem['meta_description']??'')?>"><label>Slug</label><input name="slug" value="<?=h($editItem['slug']??'')?>"><label>Legenda Instagram</label><textarea name="instagram_caption" style="min-height:120px"><?=h($editItem['instagram_caption']??'')?></textarea><label>Texto WhatsApp</label><textarea name="whatsapp_text" style="min-height:100px"><?=h($editItem['whatsapp_text']??'')?></textarea><div class="matter-actions"><button class="btn" type="submit" name="action" value="save_edit">Salvar edição</button><?php if($editCanApprove): ?><button class="btn orange" type="submit" name="action" value="approve" onclick="return confirm('Aprovar e publicar exatamente esta versão revisada?')">Aprovar e publicar</button><?php else: ?><a class="btn secondary" href="drafts.php">Ver em Revisões Pendentes</a><?php endif; ?><a class="btn secondary" href="radar-regional.php">Voltar</a></div></form></section>
