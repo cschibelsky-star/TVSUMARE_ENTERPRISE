@@ -3446,6 +3446,64 @@ function tvs_radar_entry_audit($cand,$requestedCity,$history=[]){
   return ['status'=>$status,'reason'=>$reason,'checked_at'=>date('c'),'rule_version'=>'1.2'];
 }
 
+function tvs_radar_audit_missing_entries_v12($limit=100){
+  global $newsFile;
+  $discovery=tvs_radar_discovery_read();
+  if(!is_array($discovery) || !$discovery){
+    return ['checked'=>0,'audited'=>0,'discarded'=>0,'remaining_without_audit'=>0];
+  }
+
+  $approval=tvs_queue_read();
+  $news=tvs_read_json_file($newsFile); if(!is_array($news)) $news=[];
+  $history=array_merge($approval,$news);
+
+  $checked=0;
+  $audited=0;
+  $discarded=0;
+  foreach($discovery as $idx=>&$cand){
+    if($checked>=$limit) break;
+    if(!is_array($cand) || !empty($cand['entry_audit_status'])) continue;
+    $checked++;
+
+    $city=(string)($cand['radar_requested_city']??$cand['city']??'');
+    $audit=tvs_radar_entry_audit($cand,$city,$history);
+    $cand['entry_audit_status']=$audit['status'];
+    $cand['entry_audit_reason']=$audit['reason'];
+    $cand['entry_audit_at']=$audit['checked_at'];
+    $cand['editorial_rule_version']=$audit['rule_version'];
+    $cand['reprocessed_at']=date('c');
+    $cand['reprocess_reason']='mandatory_entry_audit_recovery';
+
+    if(in_array($audit['status'],['descartada_regiao','descartada_data','duplicada','descartada_institucional'],true)){
+      tvs_radar_discard($cand,$city,$audit['reason']);
+      unset($discovery[$idx]);
+      $discarded++;
+      continue;
+    }
+
+    if($audit['status']==='precisa_resolver_fonte'){
+      $cand['pipeline_stage']='precisa_resolver_fonte';
+    } elseif(empty($cand['pipeline_stage'])){
+      $cand['pipeline_stage']='pauta_encontrada';
+    }
+    $audited++;
+  }
+  unset($cand);
+
+  tvs_radar_discovery_save(array_values($discovery));
+  $remaining=0;
+  foreach(tvs_radar_discovery_read() as $row){
+    if(is_array($row) && empty($row['entry_audit_status'])) $remaining++;
+  }
+
+  return [
+    'checked'=>$checked,
+    'audited'=>$audited,
+    'discarded'=>$discarded,
+    'remaining_without_audit'=>$remaining
+  ];
+}
+
 function tvs_radar_cursor_state(){
   global $radarCursorFile;
   $state=tvs_read_json_file($radarCursorFile);
@@ -4287,25 +4345,72 @@ function tvs_radar_run_backlog_pilot_v12($limit=10){
     'pilot_status'=>$approved?'aprovado':'bloqueado'
   ];
 
-  tvs_save_json_file(
-    dirname(__DIR__).'/data/radar_backlog_pilot_v12.json',
-    array_merge(['generated_at'=>date('c'),'rule_version'=>'1.2'],$result)
-  );
+  $gatePayload=array_merge([
+    'generated_at'=>date('c'),
+    'rule_version'=>'1.2',
+    'retroactive_stage'=>'pilot',
+    'run_id'=>(string)($metrics['run_id']??('pilot_'.date('Ymd_His'))),
+    'started_at'=>(string)($metrics['started_at']??date('c')),
+    'finished_at'=>date('c'),
+    'mode'=>'controlled_pilot',
+    'selected_count'=>count($ids),
+    'processed_count'=>$processed,
+    'persisted_count'=>$persisted,
+    'changed_count'=>(int)($metrics['changed_count']??0),
+    'unchanged_count'=>(int)($metrics['unchanged_count']??0),
+    'error_count'=>(int)($metrics['error_count']??0),
+    'cursor_before'=>$metrics['cursor_before']??null,
+    'cursor_after'=>$metrics['cursor_after']??null
+  ],$result);
+
+  tvs_save_json_file(dirname(__DIR__).'/data/radar_backlog_pilot_v12.json',$gatePayload);
+  if($approved){
+    tvs_save_json_file(dirname(__DIR__).'/data/radar_backlog_gate_v12.json',$gatePayload);
+  }
+  // Persiste também o veredito completo na telemetria usada pelo painel.
+  tvs_radar_record_run_telemetry($gatePayload);
 
   return $result;
 }
 
-function tvs_radar_pilot_allows_backlog_v12(){
-  $file=dirname(__DIR__).'/data/radar_backlog_pilot_v12.json';
-  $pilot=tvs_read_json_file($file);
+function tvs_radar_pilot_payload_approved_v12($pilot){
   if(!is_array($pilot)) return false;
   return (string)($pilot['pilot_status']??'')==='aprovado'
     && (int)($pilot['selected']??0)>0
     && (int)($pilot['processed']??0)===(int)($pilot['selected']??0)
+    && (int)($pilot['persisted']??0)===(int)($pilot['selected']??0)
     && (int)($pilot['persistence_failures']??0)===0
     && (int)($pilot['skipped_state_transition']??0)===0
     && (int)($pilot['hard_rule_violations']??0)===0
     && (int)($pilot['auto_published']??0)===0;
+}
+
+function tvs_radar_last_approved_pilot_v12(){
+  $files=[
+    dirname(__DIR__).'/data/radar_backlog_gate_v12.json',
+    dirname(__DIR__).'/data/radar_backlog_pilot_v12.json'
+  ];
+  foreach($files as $file){
+    $pilot=tvs_read_json_file($file);
+    if(tvs_radar_pilot_payload_approved_v12($pilot)) return $pilot;
+  }
+
+  // Fallback canônico: usa a mesma telemetria persistida que alimenta o painel.
+  // Isso evita bloquear o lote quando um marcador isolado fica obsoleto.
+  $telemetry=tvs_read_json_file(tvs_radar_run_telemetry_file());
+  if(is_array($telemetry)){
+    for($i=count($telemetry)-1;$i>=0;$i--){
+      $row=$telemetry[$i]??null;
+      if(!is_array($row)) continue;
+      if((string)($row['retroactive_stage']??'')!=='pilot') continue;
+      if(tvs_radar_pilot_payload_approved_v12($row)) return $row;
+    }
+  }
+  return null;
+}
+
+function tvs_radar_pilot_allows_backlog_v12(){
+  return is_array(tvs_radar_last_approved_pilot_v12());
 }
 
 function tvs_radar_run_backlog_batch_v12($limit=10){
@@ -4462,11 +4567,18 @@ function tvs_radar_update_queue($perCity=15,$mode='normal'){
   else @set_time_limit(tvs_radar_is_volume_mode()?120:90);
 
   tvs_radar_enforce_queue_rules(true);
+
+  // Antes de aceitar novas pautas, elimina o estado legado "sem auditoria".
+  // A coleta nova já nasce auditada; esta varredura garante a mesma regra
+  // para qualquer item antigo ainda presente no backlog.
+  $entryAuditRecovery=tvs_radar_audit_missing_entries_v12(100);
+
   $discoveryAdded=tvs_radar_collect_discovery($mode,tvs_radar_is_volume_mode()?20:12);
   $target=max(5,min(10,(int)$perCity));
   $generated=tvs_radar_process_discovery($mode,$target);
 
   $st=tvs_radar_status();
+  $st['entry_audit_recovery_last_cycle']=$entryAuditRecovery;
   $st['pipeline_discovered_last_cycle']=$discoveryAdded;
   $st['pipeline_generated_last_cycle']=$generated;
   $st['pipeline_pending']=count(tvs_radar_discovery_read());
