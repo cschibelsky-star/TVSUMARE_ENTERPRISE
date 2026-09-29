@@ -107,7 +107,7 @@ if(!is_file($offlineResolutionMarker)){
 
 /*
  * RADAR 1.2 — reprocessamento retroativo canônico.
- * Ordem obrigatória: simulação somente leitura -> piloto de 10 -> lotes de 10.
+ * Ordem obrigatória: simulação somente leitura -> piloto de 10 -> lotes de 20.
  * Nenhuma etapa publica automaticamente. O restante só é liberado se o piloto
  * persistir todas as pautas selecionadas sem salto de estado ou violação dura.
  */
@@ -160,7 +160,7 @@ if(!tvs_radar_pilot_allows_backlog_v12()){
   goto AFTER_LEGACY_RETRO;
 }
 
-$batch=tvs_radar_run_backlog_batch_v12(10);
+$batch=tvs_radar_run_backlog_batch_v12(20);
 if((int)($batch['selected']??0)>0){
   echo 'RADAR_V12_RETRO_BATCH '.json_encode($batch,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n";
   @file_put_contents($cronLogFile,date('c').' RADAR_V12_RETRO_BATCH '.json_encode($batch,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n",FILE_APPEND|LOCK_EX);
