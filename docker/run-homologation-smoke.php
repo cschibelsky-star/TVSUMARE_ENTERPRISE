@@ -39,6 +39,8 @@ check($boletim!=='' && (has($boletim,'quantity') || has($boletim,'quantidade')),
 check($reporter!=='' && has($reporter,'rpia_provider_blocked'), 'Repórter bloqueia provedor indisponível');
 check($reporter!=='' && has($reporter,'rpia_job_state'), 'Repórter usa máquina de estados');
 check($reporter!=='' && has($reporter,'send_lock_at'), 'Repórter protege envio duplicado');
+check($reporter!=='' && has($reporter,'$isBoletim=!empty($job[\'boletim\'])') && has($reporter,':$cfgValue'), 'Notícias preservam avatar e voz fixos do Repórter principal');
+check($reporter!=='' && has($reporter,'rpia_catalog_profile_for_job') && has($reporter,'if(empty($job[\'boletim\'])) return null'), 'Catálogo de apresentadores atua somente nos boletins');
 check($presenters!=='' && has($presenters,'Catálogo de Apresentadores IA'), 'Catálogo de apresentadores IA existe');
 check($presenters!=='' && has($presenters,"'homologado'") && has($presenters,'Critérios de homologação'), 'Catálogo controla homologação humana');
 check($presenters!=='' && has($presenters,'Rosto/fotorealismo') && has($presenters,'Sincronização labial'), 'Catálogo avalia naturalidade audiovisual');
