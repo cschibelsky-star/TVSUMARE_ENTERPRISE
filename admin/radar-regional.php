@@ -1557,7 +1557,10 @@ function tvs_radar_resolution_attempt_log($itemId,$method,$domain,$status,$confi
 
 function tvs_radar_resolution_next_attempt($attempts){
   $attempts=max(1,(int)$attempts);
-  $hours=$attempts<=1?1:($attempts===2?6:24);
+  // Janela progressiva para notícia fresca: tenta rápido no início e desacelera
+  // sem abandonar a fonte antes das 6 tentativas previstas pelo resolvedor.
+  $schedule=[1=>1,2=>3,3=>6,4=>12,5=>24];
+  $hours=$schedule[$attempts]??24;
   return date('c',time()+($hours*3600));
 }
 
@@ -3949,8 +3952,22 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5,$options=[]
     foreach($discovery as $idx=>$cand){
       $requested=(string)($cand['radar_requested_city']??$cand['city']??'');
       if($requested!==$city) continue;
-      // Régua 1.2: backlog legado sem auditoria de entrada não entra no ciclo normal.
-      // Ele só pode avançar via simulação/piloto/reprocessamento retroativo autorizado.
+      // Proteção anti-loop: pautas com histórico extremo de tentativas não podem
+      // continuar consumindo o ciclo normal indefinidamente.
+      if((int)($cand['pipeline_attempts']??0)>100){
+        if(tvs_radar_is_google_news_url($cand['url']??$cand['source_url']??'')){
+          $cand['pipeline_stage']='aguardando_fonte';
+          $cand['pipeline_reason']='Limite global de tentativas do pipeline excedido; fonte pendente preservada para diagnóstico/resolução específica.';
+          $cand['enrichment_next_retry_at']=date('c',time()+604800);
+        } else {
+          $cand['pipeline_stage']='revisao_manual_pipeline';
+          $cand['pipeline_reason']='Limite global de tentativas do pipeline excedido; removida do ciclo automático para interromper repetição sem avanço.';
+          $cand['enrichment_next_retry_at']='';
+        }
+        $discovery[$idx]=$cand;
+        continue;
+      }
+      // Régua 1.3: pauta sem auditoria de entrada não entra no ciclo normal.
       if(empty($cand['entry_audit_status']) && empty($options['audit_backlog'])) continue;
       if(in_array(($cand['pipeline_stage']??''),['revisao_manual_pipeline','expirada_sem_enriquecimento','aguardando_fonte'],true) && !$forceRetry) continue;
       if($reprocessReason!=='' && ($cand['reprocess_reason']??'')===$reprocessReason && ($cand['editorial_rule_version']??'')===$ruleVersion) continue;
@@ -4231,10 +4248,27 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5,$options=[]
         break;
       }
 
-      tvs_radar_schedule_enrichment(
-        $cand,
-        'Pacote factual suficiente, mas a redação/editoria não concluiu uma matéria segura neste ciclo.'
-      );
+      $cand['reporter_generation_attempts']=(int)($cand['reporter_generation_attempts']??0)+1;
+      $cand['reporter_generation_last_attempt_at']=date('c');
+
+      if($cand['reporter_generation_attempts']>=3){
+        $cand['pipeline_stage']='revisao_manual_pipeline';
+        $cand['pipeline_reason']='Pacote factual aprovado, mas Repórter/Editor IA não concluiu matéria segura após 3 tentativas. Encaminhada para revisão manual do pipeline.';
+        $cand['enrichment_next_retry_at']='';
+        tvs_radar_log_event(
+          $cand['title']??'',
+          $cand['source']??'Fonte',
+          $city,
+          'REVISAO_MANUAL_PIPELINE',
+          $cand['pipeline_reason'],
+          $cand['url']??''
+        );
+      } else {
+        $cand['pipeline_stage']='aguardando_enriquecimento';
+        $cand['pipeline_reason']='Pacote factual aprovado, mas a redação/editoria não concluiu uma matéria segura neste ciclo. Nova tentativa controlada do Repórter/Editor IA.';
+        $cand['enrichment_next_retry_at']=date('c',time()+1800);
+      }
+
       if($reprocessReason!=='') $cand['new_pipeline_stage']=(string)($cand['pipeline_stage']??'');
       $discovery[$pick]=$cand;
     }
@@ -4485,6 +4519,7 @@ function tvs_radar_pilot_allows_backlog_v12(){
 
 function tvs_radar_backlog_candidate_eligible_v13($cand){
   if(!is_array($cand)) return false;
+  if((int)($cand['pipeline_attempts']??0)>100) return false;
 
   $audit=(string)($cand['entry_audit_status']??'');
   if(!in_array($audit,['aprovada_para_enriquecimento','precisa_resolver_fonte'],true)) return false;
@@ -4497,7 +4532,10 @@ function tvs_radar_backlog_candidate_eligible_v13($cand){
   if(!tvs_radar_enrichment_due($cand)) return false;
 
   $isGoogle=tvs_radar_is_google_news_url($cand['url']??$cand['source_url']??'');
-  if($isGoogle && (int)($cand['source_resolution_attempts']??0)>=4) return false;
+  // O resolvedor só considera a fonte definitivamente esgotada na 6ª tentativa.
+  // O seletor do backlog precisa usar o mesmo limite para não abandonar a pauta
+  // duas tentativas antes de ela atingir o estado final auditável.
+  if($isGoogle && (int)($cand['source_resolution_attempts']??0)>=6) return false;
 
   $package=(array)($cand['fact_package']??[]);
   if($package){
