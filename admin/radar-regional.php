@@ -650,6 +650,55 @@ function tvs_radar_strong_entity_score($expected,$candidate,$city=''){
   return (int)round((array_sum($checks)/count($checks))*100);
 }
 
+function tvs_radar_resolve_by_bing_web($title,$city='',$source='',$domain=''){
+  $title=trim((string)$title);
+  if($title==='') return '';
+
+  $queries=[];
+  $host=tvs_radar_source_host($domain);
+  if($host!==''){
+    $queries[]='site:'.$host.' "'.$title.'"';
+    $queries[]='site:'.$host.' '.$title;
+  }
+  $base='"'.$title.'"';
+  if(trim((string)$city)!=='') $base.=' '.trim((string)$city);
+  if(trim((string)$source)!=='') $base.=' '.trim((string)$source);
+  $queries[]=$base;
+  $queries[]=$title.' '.trim((string)$city).' '.trim((string)$source);
+
+  $bestUrl='';
+  $bestScore=0;
+  foreach(array_values(array_unique(array_filter(array_map('trim',$queries)))) as $query){
+    $url='https://www.bing.com/search?format=rss&q='.rawurlencode($query);
+    $xml=tvs_fetch_url($url);
+    if($xml==='') continue;
+
+    libxml_use_internal_errors(true);
+    $sx=@simplexml_load_string($xml,'SimpleXMLElement',LIBXML_NOCDATA);
+    if(!$sx || !isset($sx->channel->item)) continue;
+
+    foreach($sx->channel->item as $item){
+      $candidateTitle=tvs_clean_text((string)($item->title??''));
+      $candidateUrl=trim((string)($item->link??''));
+      if(!tvs_radar_external_url_is_valid($candidateUrl)) continue;
+
+      $candidateHost=tvs_radar_source_host($candidateUrl);
+      if($candidateHost==='' || str_contains($candidateHost,'bing.com') || str_contains($candidateHost,'google.com')) continue;
+      if($host!=='' && $candidateHost!==$host && !str_ends_with($candidateHost,'.'.$host) && !str_ends_with($host,'.'.$candidateHost)) continue;
+      if(!tvs_radar_is_article_path($candidateUrl,$title,$city)) continue;
+
+      $score=tvs_radar_title_match_score($title,$candidateTitle);
+      if($score>$bestScore){
+        $bestScore=$score;
+        $bestUrl=$candidateUrl;
+      }
+    }
+    if($bestScore>=70) break;
+  }
+
+  return $bestScore>=50 ? $bestUrl : '';
+}
+
 function tvs_radar_resolve_by_bing_news($title,$city='',$source=''){
   $query='"'.trim((string)$title).'"';
 
@@ -969,8 +1018,10 @@ function tvs_radar_validate_resolved_article($url,$expectedTitle,$city='',$expec
     'source_feed_title_match'=>84,
     'source_sitemap_title_match'=>84,
     'bing_site_title_match'=>88,
+    'bing_web_site_title_match'=>86,
     'google_news_resolution'=>92,
     'bing_news_title_match'=>92,
+    'bing_web_title_match'=>90,
     'known_current_title'=>82
   ];
   $threshold=$methodBase[$method]??86;
@@ -1445,7 +1496,17 @@ function tvs_radar_known_current_url($title){
 }
 
 function tvs_radar_source_domain_hint($source,$title=''){
-  $s=tvs_lower(tvs_clean_text((string)$source.' '.(string)$title));
+  $raw=tvs_lower(tvs_clean_text((string)$source.' '.(string)$title));
+  // Quando o próprio nome da fonte/manchete já traz um domínio, usa-o
+  // diretamente como pista. Isso evita depender de uma tabela manual infinita.
+  if(preg_match('~\b((?:[a-z0-9-]+\.)+(?:com\.br|net\.br|org\.br|gov\.br|com|net|org))\b~iu',$raw,$dm)){
+    $host=tvs_lower((string)$dm[1]);
+    if($host!=='' && !str_contains($host,'google.') && !str_contains($host,'bing.')){
+      return 'https://'.$host;
+    }
+  }
+
+  $s=$raw;
   if(strpos($s,'hora campinas')!==false) return 'https://horacampinas.com.br';
   if(strpos($s,'portal hortolandia')!==false || strpos($s,'portal hortolândia')!==false) return 'https://portalhortolandia.com.br';
 
@@ -1559,10 +1620,14 @@ function tvs_radar_resolve_candidate_urls($items){
       $tryCandidate($candidate,'source_sitemap_title_match');
     }
 
-    // 3) Índice restrito ao domínio.
+    // 3) Índice restrito ao domínio (News + Web).
     if($resolved==='' && $sourceDomain!==''){
       $candidate=tvs_radar_resolve_by_bing_site($sourceDomain,$expectedTitle,$city);
       $tryCandidate($candidate,'bing_site_title_match');
+    }
+    if($resolved==='' && $sourceDomain!==''){
+      $candidate=tvs_radar_resolve_by_bing_web($expectedTitle,$city,$item['source']??'',$sourceDomain);
+      $tryCandidate($candidate,'bing_web_site_title_match');
     }
 
     // 4) Mapeamentos conhecidos.
@@ -1571,7 +1636,7 @@ function tvs_radar_resolve_candidate_urls($items){
       $tryCandidate($candidate,'known_current_title');
     }
 
-    // 5) Resolver o link Google apenas como fallback.
+    // 5) Resolver o link Google como fallback direto.
     if($resolved===''){
       $candidate=tvs_radar_resolve_google_news_url($current);
       if($candidate!=='' && $candidate!==$current){
@@ -1579,10 +1644,15 @@ function tvs_radar_resolve_candidate_urls($items){
       }
     }
 
-    // 6) Busca geral é o último recurso e exige confiança mais alta.
+    // 6) Busca geral em News e Web. Web é importante para portais regionais
+    // que não aparecem no índice Bing News, mas têm a matéria indexada.
     if($resolved===''){
       $candidate=tvs_radar_resolve_by_bing_news($expectedTitle,$city,$item['source']??'');
       $tryCandidate($candidate,'bing_news_title_match');
+    }
+    if($resolved===''){
+      $candidate=tvs_radar_resolve_by_bing_web($expectedTitle,$city,$item['source']??'',$sourceDomain);
+      $tryCandidate($candidate,'bing_web_title_match');
     }
 
     $attempts=(int)($item['source_resolution_attempts']??0)+1;
@@ -4977,7 +5047,7 @@ if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'){
     $metrics=(array)($simulation['metrics']??[]);
     $reportFile=dirname(__DIR__).'/data/radar_backlog_simulation_v12.json';
     $simulationAt=date('c');
-    tvs_save_json_file($reportFile,['generated_at'=>$simulationAt,'rule_version'=>'1.2','metrics'=>$metrics,'rows'=>$simulation['rows']??[]]);
+    tvs_save_json_file($reportFile,['generated_at'=>$simulationAt,'rule_version'=>'1.3','metrics'=>$metrics,'rows'=>$simulation['rows']??[]]);
     tvs_radar_record_run_telemetry([
       'run_id'=>'simulation_'.date('Ymd_His'),
       'started_at'=>$simulationAt,
@@ -4994,7 +5064,7 @@ if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'){
       'last_item_id'=>'',
       'cursor_before'=>null,
       'cursor_after'=>null,
-      'rule_version'=>'1.2'
+      'rule_version'=>'1.3'
     ]);
     $notice='Simulação somente leitura concluída: '.(int)($metrics['total']??0).' pauta(s); '
       .(int)($metrics['sf_ge_70']??0).' com SF ≥70; '
