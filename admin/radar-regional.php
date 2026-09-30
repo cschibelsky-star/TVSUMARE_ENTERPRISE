@@ -1710,6 +1710,119 @@ function tvs_radar_resolve_candidate_urls($items){
   return $items;
 }
 
+function tvs_radar_process_due_source_resolution($limit=8){
+  $limit=max(1,min(30,(int)$limit));
+  $items=tvs_radar_discovery_read();
+  if(!$items){
+    return [
+      'executed_at'=>date('c'),'mode'=>'source_resolution_queue',
+      'due_before'=>0,'processed'=>0,'resolved'=>0,
+      'retriable'=>0,'final'=>0,'remaining_due'=>0
+    ];
+  }
+
+  $candidates=[];
+  foreach($items as $idx=>$item){
+    if(!is_array($item)) continue;
+    $url=trim((string)($item['url']??$item['source_url']??''));
+    if(!tvs_radar_is_google_news_url($url)) continue;
+
+    $status=(string)($item['url_resolution_status']??'');
+    $attempts=(int)($item['source_resolution_attempts']??0);
+    if($status==='unresolved_final' || $attempts>=6) continue;
+
+    $next=(string)($item['url_resolution_next_attempt_at']??'');
+    $nextTs=$next!==''?strtotime($next):false;
+    if($nextTs && $nextTs>time()) continue;
+
+    $city=(string)($item['radar_requested_city']??$item['city']??'');
+    $candidates[]=[
+      'idx'=>$idx,
+      'city'=>$city,
+      'attempts'=>$attempts,
+      'next_ts'=>$nextTs?:0,
+      'updated'=>(string)($item['pipeline_updated_at']??$item['source_resolution_first_attempt_at']??'')
+    ];
+  }
+
+  usort($candidates,function($a,$b){
+    if($a['attempts']!==$b['attempts']) return $a['attempts']<=>$b['attempts'];
+    if($a['next_ts']!==$b['next_ts']) return $a['next_ts']<=>$b['next_ts'];
+    return strcmp($a['updated'],$b['updated']);
+  });
+
+  $dueBefore=count($candidates);
+  $selected=array_slice($candidates,0,$limit);
+  $processed=0; $resolved=0; $retriable=0; $final=0;
+  $byCity=[]; $byMethod=[];
+
+  foreach($selected as $meta){
+    $idx=(int)$meta['idx'];
+    if(!isset($items[$idx]) || !is_array($items[$idx])) continue;
+
+    $beforeUrl=(string)($items[$idx]['url']??$items[$idx]['source_url']??'');
+    $batch=tvs_radar_resolve_candidate_urls([$items[$idx]]);
+    if(empty($batch[0]) || !is_array($batch[0])) continue;
+
+    $item=$batch[0];
+    $processed++;
+    $city=(string)($item['radar_requested_city']??$item['city']??'Região');
+    $byCity[$city]=($byCity[$city]??0)+1;
+
+    if(!tvs_radar_is_google_news_url($item['url']??$item['source_url']??'')){
+      $resolved++;
+      $item['pipeline_stage']='fonte_resolvida';
+      $item['pipeline_reason']='Fonte original resolvida automaticamente; pauta liberada para enriquecimento factual.';
+      $item['pipeline_updated_at']=date('c');
+      $method=(string)($item['url_resolution_method']??'unknown');
+      $byMethod[$method]=($byMethod[$method]??0)+1;
+    } else {
+      $resolutionStatus=(string)($item['url_resolution_status']??'unresolved_retriable');
+      $item['pipeline_stage']='aguardando_fonte';
+      if($resolutionStatus==='unresolved_final'){
+        $final++;
+        $item['pipeline_reason']='Fonte original não resolvida após o limite de tentativas/TTL; estado final preservado para auditoria.';
+      } else {
+        $retriable++;
+        $item['pipeline_reason']='Fonte original ainda não resolvida; nova tentativa automática agendada.';
+      }
+      $item['pipeline_updated_at']=date('c');
+    }
+
+    $items[$idx]=$item;
+  }
+
+  tvs_radar_discovery_save($items);
+
+  $remainingDue=0;
+  foreach(tvs_radar_discovery_read() as $item){
+    if(!is_array($item)) continue;
+    $url=trim((string)($item['url']??$item['source_url']??''));
+    if(!tvs_radar_is_google_news_url($url)) continue;
+    $status=(string)($item['url_resolution_status']??'');
+    $attempts=(int)($item['source_resolution_attempts']??0);
+    if($status==='unresolved_final' || $attempts>=6) continue;
+    $next=(string)($item['url_resolution_next_attempt_at']??'');
+    $nextTs=$next!==''?strtotime($next):false;
+    if(!$nextTs || $nextTs<=time()) $remainingDue++;
+  }
+
+  $report=[
+    'executed_at'=>date('c'),
+    'mode'=>'source_resolution_queue',
+    'due_before'=>$dueBefore,
+    'processed'=>$processed,
+    'resolved'=>$resolved,
+    'retriable'=>$retriable,
+    'final'=>$final,
+    'remaining_due'=>$remainingDue,
+    'by_city'=>$byCity,
+    'by_method'=>$byMethod
+  ];
+  tvs_save_json_file(dirname(__DIR__).'/data/source_resolution_queue_status.json',$report);
+  return $report;
+}
+
 function tvs_radar_resolve_google_backlog_offline($limit=60){
   $items=tvs_radar_discovery_read();
   $resolved=0; $unresolved=0; $processed=0;
@@ -5305,6 +5418,7 @@ $editCanApprove=$editItem && !empty($editItem['ai_editor_processed']) && !empty(
 ?>
 <!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Matérias para Aprovação | TV Sumaré</title><link rel="stylesheet" href="admin.css?v=132"><style>.queue-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}.matter{background:#fff;border:1px solid #e5e7eb;border-radius:18px;padding:14px;box-shadow:0 8px 22px rgba(15,23,42,.06)}.matter img{width:100%;height:150px;object-fit:cover;border-radius:14px;background:#eef2ff}.matter h3{margin:10px 0 6px;font-size:18px}.matter p{color:#475569;font-size:14px}.badge{display:inline-flex;border-radius:999px;background:#eef2ff;color:#1d4ed8;padding:5px 9px;font-size:12px;font-weight:800;margin:6px 5px 6px 0}.city-block{margin:24px 0}.matter-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.edit-form{background:#fff;border-radius:18px;padding:18px;border:1px solid #e5e7eb}.edit-form input,.edit-form textarea,.edit-form select{width:100%;padding:11px;border:1px solid #cbd5e1;border-radius:12px;margin:5px 0 12px}.edit-form textarea{min-height:320px}.muted{color:#64748b}.settings-box{background:#fff;border:1px solid #e5e7eb;border-radius:18px;padding:14px;margin:14px 0}.settings-inline{display:flex;gap:12px;align-items:end;flex-wrap:wrap}.settings-inline label{display:flex;flex-direction:column;font-size:13px;color:#334155}.settings-inline input[type=number]{width:110px;padding:10px;border:1px solid #cbd5e1;border-radius:12px}.settings-inline .check{flex-direction:row;gap:8px;align-items:center}.top-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.bulk-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.bulk-row .check,.bulk-check{display:flex;align-items:center;gap:7px;font-weight:800;color:#334155}.bulk-check{margin-bottom:8px}.bulk-check input{width:18px;height:18px}@media(max-width:1000px){.queue-grid{grid-template-columns:1fr}.matter img{height:190px}}</style></head><body><div class="admin"><?php include __DIR__.'/_menu.php'; ?><main class="main"><div class="top"><div><span class="eyebrow">Centro de Redação • Radar 2.0</span><h1>Matérias para Aprovação</h1><p class="muted">O Radar abastece a redação com mais opções. Você aprova o que achar relevante para a TV Sumaré.</p></div><div class="top-actions"><form method="post" action="radar-regional.php" class="radar-action-form"><?=tvs_csrf_field()?><input type="hidden" name="action" value="update_radar"><button class="btn orange" type="submit" data-busy-label="Atualizando Radar…">Atualizar Agora</button></form><form method="post" action="radar-regional.php" class="radar-action-form"><?=tvs_csrf_field()?><input type="hidden" name="action" value="update_radar_volume"><button class="btn secondary" type="submit" data-busy-label="Ativando volume…">Modo Volume Máximo</button></form></div></div>
 <div class="settings-box"><form method="post" action="radar-regional.php" class="settings-inline radar-action-form"><?=tvs_csrf_field()?><input type="hidden" name="action" value="save_settings"><label class="check"><input type="checkbox" name="auto_daily" value="1" <?=!empty($radarCfg['auto_daily'])?'checked':''?>> Atualização automática diária</label><label>Meta de matérias por cidade<input type="number" min="1" max="40" name="per_city" value="<?=h($radarCfg['per_city']??20)?>"></label><button class="btn secondary" type="submit">Salvar configuração</button><span class="muted">Última atualização: <?=!empty($radarStatus['last_run'])?h(date('d/m/Y H:i',strtotime($radarStatus['last_run']))):'ainda não executada'?> <?=!empty($radarStatus['last_mode'])?'• '.h($radarStatus['last_mode']):''?></span></form><div class="radar-command-bar" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px"><form method="post" action="radar-regional.php" class="radar-action-form"><?=tvs_csrf_field()?><input type="hidden" name="action" value="simulate_backlog"><button class="btn secondary" type="submit" data-busy-label="Simulando…">Simular backlog</button></form><form method="post" action="radar-regional.php" class="radar-action-form"><?=tvs_csrf_field()?><input type="hidden" name="action" value="process_backlog_batch"><button class="btn secondary" type="submit" data-busy-label="Processando lote…">Processar próximo lote de 20</button></form><form method="post" action="radar-regional.php" class="radar-action-form"><?=tvs_csrf_field()?><input type="hidden" name="action" value="clean_invalid"><button class="btn secondary" type="submit" data-busy-label="Limpando…">Limpar matérias inválidas</button></form><span class="muted">Radar 1.3: backlog contínuo em lotes de 20 sobre pautas auditadas e elegíveis. Sem gate de piloto e sem publicação automática.</span></div><div id="radar-command-status" class="muted" style="margin-top:8px" aria-live="polite"></div></div>
+<?php if(!empty($radarStatus['last_source_resolution_run'])): ?><div class="notice" style="background:#eff6ff;border-color:#bfdbfe;color:#1e3a8a">Resolvedor automático de fontes: último ciclo <?=h(date('d/m/Y H:i',strtotime($radarStatus['last_source_resolution_run'])))?> · <?= (int)($radarStatus['last_source_resolution_processed']??0) ?> processada(s) · <?= (int)($radarStatus['last_source_resolution_resolved']??0) ?> resolvida(s) · <?= (int)($radarStatus['last_source_resolution_remaining_due']??0) ?> ainda vencida(s) para nova tentativa. A fila roda automaticamente a cada ciclo do Radar.</div><?php endif; ?>
 <?php if($notice): ?><div class="notice"><?=h($notice)?></div><?php endif; ?><?php if($error): ?><div class="notice error"><?=h($error)?></div><?php endif; ?>
 <?php if($editItem): $tags=is_array($editItem['tags']??null)?implode(', ',$editItem['tags']):($editItem['tags']??''); ?>
 <section class="edit-form"><h2><?= $editCanApprove ? 'Editar matéria antes de aprovar' : 'Matéria em processamento editorial' ?></h2><?php if(!$editCanApprove): ?><div class="notice error">Esta matéria ainda não está liberada para aprovação. <?=h(implode(' · ',array_values(array_unique(array_filter(array_merge((array)($editReadiness['reasons']??[]),empty($editItem['ai_editor_processed'])?['Editor IA ainda não concluído']:[]))))))?></div><?php endif; ?><form method="post"><?=tvs_csrf_field()?><input type="hidden" name="id" value="<?=h($editItem['id'])?>"><input type="hidden" name="human_review" value="1"><label>Título</label><input name="title" value="<?=h($editItem['title']??'')?>"><label>Subtítulo</label><input name="subtitle" value="<?=h($editItem['subtitle']??'')?>"><label>Resumo</label><input name="summary" value="<?=h($editItem['summary']??'')?>"><label>Cidade</label><input name="city" value="<?=h($editItem['city']??'')?>"><label>Categoria</label><input name="category" value="<?=h($editItem['category']??'')?>"><label>Imagem</label><input name="image" value="<?=h($editItem['image']??'')?>"><label>Crédito da imagem</label><input name="image_credit" value="<?=h($editItem['image_credit']??'')?>"><label>Texto completo</label><textarea name="body"><?=h($editItem['body']??'')?></textarea><label>Fonte</label><input name="source" value="<?=h($editItem['source']??'')?>"><label>URL da fonte</label><input name="source_url" value="<?=h($editItem['source_url']??'')?>"><label>Tags</label><input name="tags" value="<?=h($tags)?>"><label>SEO title</label><input name="seo_title" value="<?=h($editItem['seo_title']??'')?>"><label>Meta description</label><input name="meta_description" value="<?=h($editItem['meta_description']??'')?>"><label>Slug</label><input name="slug" value="<?=h($editItem['slug']??'')?>"><label>Legenda Instagram</label><textarea name="instagram_caption" style="min-height:120px"><?=h($editItem['instagram_caption']??'')?></textarea><label>Texto WhatsApp</label><textarea name="whatsapp_text" style="min-height:100px"><?=h($editItem['whatsapp_text']??'')?></textarea><div class="matter-actions"><button class="btn" type="submit" name="action" value="save_edit">Salvar edição</button><?php if($editCanApprove): ?><button class="btn orange" type="submit" name="action" value="approve" onclick="return confirm('Aprovar e publicar exatamente esta versão revisada?')">Aprovar e publicar</button><?php else: ?><a class="btn secondary" href="drafts.php">Ver em Revisões Pendentes</a><?php endif; ?><a class="btn secondary" href="radar-regional.php">Voltar</a></div></form></section>
