@@ -336,7 +336,6 @@ if (!function_exists('tvp_heygen_config')) {
     $cfg=tvp_heygen_config();
     $payload=['prompt'=>tvp_video_agent_prompt($job),'mode'=>'generate','incognito_mode'=>in_array((string)($cfg['heygen_incognito_mode']??'0'),['1','true','on'],true)];
     foreach(['avatar_id'=>'heygen_avatar_id','voice_id'=>'heygen_voice_id','style_id'=>'heygen_style_id','brand_kit_id'=>'heygen_brand_kit_id'] as $api=>$local){ $v=trim((string)($cfg[$local]??'')); if($v!=='') $payload[$api]=$v; }
-    if(in_array(($cfg['heygen_orientation']??'landscape'),['landscape','portrait'],true)) $payload['orientation']=$cfg['heygen_orientation'];
     // Correção CTO: não enviar arquivos externos para a HeyGen nesta fase.
     // URLs de RSS/prefeituras/portais podem bloquear download e causar: Invalid URL in files[0].
     // O primeiro fluxo operacional deve usar apenas prompt + avatar + voz.
