@@ -4214,7 +4214,7 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5,$options=[]
         $stageMax=3;
         $stageWait='aguardando_enriquecimento';
         if(!$sourceResolved){
-          $stageField='source_resolution_attempts'; $stageMax=4; $stageWait='aguardando_fonte';
+          $stageField='source_resolution_attempts'; $stageMax=6; $stageWait='aguardando_fonte';
         } elseif($sf>=40 && $sf<60){
           $stageField='second_source_attempts'; $stageMax=3; $stageWait='aguardando_enriquecimento';
         } elseif($sf>=60 && (!$coreOk || !$trustedSource)){
@@ -4985,6 +4985,58 @@ function tvs_radar_simulate_backlog_v11(){
   return ['metrics'=>$metrics,'rows'=>$rows];
 }
 
+function tvs_radar_normalize_terminal_states_v13(){
+  $items=tvs_radar_discovery_read();
+  if(!$items) return ['source_final'=>0,'manual_review'=>0,'changed'=>0];
+
+  $sourceFinal=0; $manualReview=0; $changed=0;
+  foreach($items as &$item){
+    if(!is_array($item)) continue;
+
+    $stage=(string)($item['pipeline_stage']??'');
+    $url=trim((string)($item['url']??$item['source_url']??''));
+    $isGoogle=tvs_radar_is_google_news_url($url);
+    $sourceStatus=(string)($item['url_resolution_status']??'');
+    $sourceAttempts=(int)($item['source_resolution_attempts']??0);
+
+    if($isGoogle && ($sourceStatus==='unresolved_final' || $sourceAttempts>=6)){
+      $sourceFinal++;
+      if($stage!=='fonte_esgotada'){
+        $item['pipeline_stage']='fonte_esgotada';
+        $item['pipeline_reason']='Fonte original esgotou as tentativas/TTL; preservada fora do backlog ativo para auditoria.';
+        $item['enrichment_next_retry_at']='';
+        $item['pipeline_updated_at']=date('c');
+        $changed++;
+      }
+      continue;
+    }
+
+    if(!$isGoogle && !in_array($stage,['revisao_manual_pipeline','expirada_sem_enriquecimento'],true)){
+      $exhausted=(
+        (int)($item['factual_gate_attempts']??0)>=3
+        || (int)($item['second_source_attempts']??0)>=3
+        || (int)($item['extraction_attempts']??0)>=3
+        || (int)($item['reporter_generation_attempts']??0)>=3
+      );
+      if($exhausted){
+        $manualReview++;
+        $item['pipeline_stage']='revisao_manual_pipeline';
+        $item['pipeline_reason']='Etapa automática esgotou o limite de tentativas; pauta retirada do ciclo automático e preservada para revisão manual do pipeline.';
+        $item['enrichment_next_retry_at']='';
+        $item['pipeline_updated_at']=date('c');
+        $changed++;
+      }
+    } elseif($stage==='revisao_manual_pipeline'){
+      $manualReview++;
+    }
+  }
+  unset($item);
+
+  if($changed>0) tvs_radar_discovery_save($items);
+
+  return ['source_final'=>$sourceFinal,'manual_review'=>$manualReview,'changed'=>$changed];
+}
+
 function tvs_radar_update_queue($perCity=15,$mode='normal'){
   global $TVS_RADAR_MODE;
   $oldMode=$TVS_RADAR_MODE ?? 'normal';
@@ -4998,6 +5050,10 @@ function tvs_radar_update_queue($perCity=15,$mode='normal'){
 
   tvs_radar_enforce_queue_rules(true);
 
+  // Normaliza estados terminais antes de qualquer nova seleção. Itens com fonte
+  // esgotada ou etapa automática já no limite deixam de inflar o backlog ativo.
+  $terminalNormalization=tvs_radar_normalize_terminal_states_v13();
+
   // Antes de aceitar novas pautas, elimina o estado legado "sem auditoria".
   // A coleta nova já nasce auditada; esta varredura garante a mesma regra
   // para qualquer item antigo ainda presente no backlog.
@@ -5008,6 +5064,7 @@ function tvs_radar_update_queue($perCity=15,$mode='normal'){
   $generated=tvs_radar_process_discovery($mode,$target);
 
   $st=tvs_radar_status();
+  $st['terminal_normalization_last_cycle']=$terminalNormalization;
   $st['entry_audit_recovery_last_cycle']=$entryAuditRecovery;
   $st['pipeline_discovered_last_cycle']=$discoveryAdded;
   $st['pipeline_generated_last_cycle']=$generated;
@@ -5426,6 +5483,8 @@ $editCanApprove=$editItem && !empty($editItem['ai_editor_processed']) && !empty(
 <?php
 $discarded=tvs_read_json_file(dirname(__DIR__).'/data/pautas_descartadas.json');
 $sourcePendingKeys=[];
+$sourceTerminalKeys=[];
+$manualPipelineKeys=[];
 $sourceStageCounts=[
   'precisa_resolver_fonte'=>0,
   'aguardando_fonte'=>0,
@@ -5435,11 +5494,22 @@ $sourceStageCounts=[
 ];
 foreach(tvs_radar_discovery_read() as $processingItem){
   $processingKey=tvs_radar_discovery_key($processingItem);
+  $stage=(string)($processingItem['pipeline_stage']??'');
+
+  // Estados terminais continuam auditáveis, mas não pertencem ao backlog ativo.
+  if($stage==='fonte_esgotada'){
+    $sourceTerminalKeys[$processingKey]=1;
+    continue;
+  }
+  if($stage==='revisao_manual_pipeline'){
+    $manualPipelineKeys[$processingKey]=1;
+    continue;
+  }
+
   // O painel trabalha com pautas únicas pela mesma chave usada pela deduplicação.
   // Assim o total de fonte/enriquecimento fecha exatamente com a soma dos subestados.
   if(isset($sourcePendingKeys[$processingKey])) continue;
   $sourcePendingKeys[$processingKey]=1;
-  $stage=(string)($processingItem['pipeline_stage']??'');
   if(isset($sourceStageCounts[$stage])){
     $sourceStageCounts[$stage]++;
     continue;
@@ -5460,14 +5530,19 @@ foreach($processingQueue as $processingItem){
   if(!isset($sourcePendingKeys[$processingKey])) $editorPendingKeys[$processingKey]=1;
 }
 $totalSourcePending=count($sourcePendingKeys);
+$totalSourceTerminal=count($sourceTerminalKeys);
+$totalManualPipeline=count($manualPipelineKeys);
 $totalEditorPending=count($editorPendingKeys);
 $totalReady=count($normalQueue);
 $totalSensitive=count($sensitiveQueue);
 $totalImageReview=count($imageReviewQueue);
 $totalPipelineCurrent=$totalSourcePending+$totalEditorPending+$totalReady+$totalSensitive+$totalImageReview;
+$totalAuditTerminal=$totalSourceTerminal+$totalManualPipeline;
 
 $factBlocks=['sem_auditoria'=>0,'fonte_nao_resolvida'=>0,'texto_insuficiente'=>0,'quatro_w_incompleto'=>0,'fonte_nao_confiavel'=>0,'fora_janela'=>0,'sem_interesse_editorial'=>0];
 foreach(tvs_radar_discovery_read() as $diagItem){
+  $diagStage=(string)($diagItem['pipeline_stage']??'');
+  if(in_array($diagStage,['fonte_esgotada','revisao_manual_pipeline','expirada_sem_enriquecimento'],true)) continue;
   $entryStatus=(string)($diagItem['entry_audit_status']??'');
   $audit=(array)($diagItem['fact_gate_audit']??[]);
   if($entryStatus===''){ $factBlocks['sem_auditoria']++; continue; }
@@ -5491,7 +5566,7 @@ foreach($processingQueue as $diagItem){
 }
 $runTelemetry=tvs_read_json_file(tvs_radar_run_telemetry_file());
 $lastRunTelemetry=is_array($runTelemetry) && $runTelemetry ? end($runTelemetry) : [];
-?><div class="notice">Pipeline atual: <?=$totalPipelineCurrent?> pauta(s) acompanhada(s) — <?=$totalSourcePending?> em fonte/enriquecimento · <?=$totalEditorPending?> aguardando Editor IA · <?=$totalSensitive?> em revisão obrigatória · <?=$totalImageReview?> em revisão de imagem · <?=$totalReady?> pronta(s) para aprovação.</div><div class="cards"><div class="stat"><span>Prontas para aprovação</span><b><?=$totalReady?></b><small>Editor IA e validação concluídos, sem pendência adicional</small></div><div class="stat"><span>Fonte / enriquecimento</span><b><?=$totalSourcePending?></b><small>resolver: <?=$sourceStageCounts['precisa_resolver_fonte']?> · aguardando fonte: <?=$sourceStageCounts['aguardando_fonte']?> · fonte resolvida: <?=$sourceStageCounts['fonte_resolvida']?> · enriquecendo: <?=$sourceStageCounts['enriquecimento_ativo']?> · aguardando enriquecimento: <?=$sourceStageCounts['aguardando_enriquecimento']?></small></div><div class="stat"><span>Aguardando Editor IA</span><b><?=$totalEditorPending?></b><small><a href="drafts.php">ver matérias e motivos</a></small></div><div class="stat"><span>Revisão obrigatória</span><b><?=$totalSensitive?></b><small>pautas sensíveis ou de alto impacto</small></div><div class="stat"><span>Revisão de imagem</span><b><?=$totalImageReview?></b><small>texto pronto; imagem precisa ser confirmada</small></div></div>
+?><div class="notice">Pipeline ativo: <?=$totalPipelineCurrent?> pauta(s) — <?=$totalSourcePending?> em fonte/enriquecimento · <?=$totalEditorPending?> aguardando Editor IA · <?=$totalSensitive?> em revisão obrigatória · <?=$totalImageReview?> em revisão de imagem · <?=$totalReady?> pronta(s) para aprovação.<?php if($totalAuditTerminal>0): ?> Fora do backlog ativo: <?=$totalSourceTerminal?> fonte(s) esgotada(s) · <?=$totalManualPipeline?> em revisão manual do pipeline.<?php endif; ?></div><div class="cards"><div class="stat"><span>Prontas para aprovação</span><b><?=$totalReady?></b><small>Editor IA e validação concluídos, sem pendência adicional</small></div><div class="stat"><span>Fonte / enriquecimento ativo</span><b><?=$totalSourcePending?></b><small>resolver: <?=$sourceStageCounts['precisa_resolver_fonte']?> · aguardando fonte: <?=$sourceStageCounts['aguardando_fonte']?> · fonte resolvida: <?=$sourceStageCounts['fonte_resolvida']?> · enriquecendo: <?=$sourceStageCounts['enriquecimento_ativo']?> · aguardando enriquecimento: <?=$sourceStageCounts['aguardando_enriquecimento']?></small></div><div class="stat"><span>Aguardando Editor IA</span><b><?=$totalEditorPending?></b><small><a href="drafts.php">ver matérias e motivos</a></small></div><div class="stat"><span>Revisão obrigatória</span><b><?=$totalSensitive?></b><small>pautas sensíveis ou de alto impacto</small></div><div class="stat"><span>Revisão de imagem</span><b><?=$totalImageReview?></b><small>texto pronto; imagem precisa ser confirmada</small></div></div>
 <div class="settings-box"><strong>Diagnóstico do gargalo</strong><div style="margin-top:8px;display:flex;gap:7px;flex-wrap:wrap"><?php
 $factLabels=['sem_auditoria'=>'Ainda sem auditoria','fonte_nao_resolvida'=>'Fonte não resolvida','texto_insuficiente'=>'Conteúdo factual insuficiente','quatro_w_incompleto'=>'4W incompleto','fonte_nao_confiavel'=>'Fonte não confiável','fora_janela'=>'Fora da janela','sem_interesse_editorial'=>'Interesse editorial não detectado'];
 foreach($factBlocks as $key=>$count){ if($count>0): ?><span class="badge"><?=h($factLabels[$key])?>: <?=$count?></span><?php endif; }
