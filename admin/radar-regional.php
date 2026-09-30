@@ -4248,6 +4248,27 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5,$options=[]
         break;
       }
 
+      // Se a própria geração já classificou a pauta como descarte terminal,
+      // não a reinsere em enriquecimento. Isso evitava "descartar e tentar de novo"
+      // no mesmo item, inflando backlog e telemetria.
+      $discardedNow=tvs_read_json_file(dirname(__DIR__).'/data/pautas_descartadas.json');
+      $wasDiscarded=false;
+      if(is_array($discardedNow)){
+        $candidateId=(string)($cand['id']??'');
+        for($di=count($discardedNow)-1;$di>=0;$di--){
+          $dr=$discardedNow[$di]??null;
+          if(!is_array($dr)) continue;
+          if((string)($dr['original_id']??'')===$candidateId){
+            $wasDiscarded=true;
+            break;
+          }
+        }
+      }
+      if($wasDiscarded){
+        unset($discovery[$pick]);
+        continue;
+      }
+
       $cand['reporter_generation_attempts']=(int)($cand['reporter_generation_attempts']??0)+1;
       $cand['reporter_generation_last_attempt_at']=date('c');
 
@@ -4548,7 +4569,7 @@ function tvs_radar_backlog_candidate_eligible_v13($cand){
     $trusted=!empty($decision['trusted_source']);
     $usable=!empty($decision['content_usable']);
 
-    if(!$sourceResolved) return (int)($cand['source_resolution_attempts']??0)<4;
+    if(!$sourceResolved) return (int)($cand['source_resolution_attempts']??0)<6;
     if(($sf>=40 && $sf<60) || ($sf>=60 && (!$coreOk || !$trusted))){
       return (int)($cand['second_source_attempts']??0)<3;
     }
@@ -4702,12 +4723,17 @@ function tvs_radar_run_backlog_batch_v13($limit=20){
     $reasons['estado_nao_localizado']=($reasons['estado_nao_localizado']??0)+1;
   }
 
-  $processed=(int)($metrics['processed_count']??0);
-  $persisted=(int)($metrics['persisted_count']??0);
-  $errors=(int)($metrics['error_count']??0);
+  // A telemetria do lote deve refletir todos os IDs selecionados que receberam
+  // um desfecho observável (fila, descarte ou estado persistido), não apenas os IDs
+  // que passaram pelo contador interno do process_discovery.
+  $selectedCount=count($ids);
+  $handledCount=$advanced+$stalled;
+  $processed=$handledCount;
+  $persisted=$handledCount;
+  $errors=max(0,$selectedCount-$handledCount);
   $result=[
     'allowed'=>1,
-    'selected'=>count($ids),
+    'selected'=>$selectedCount,
     'processed'=>$processed,
     'persisted'=>$persisted,
     'generated'=>$generated,
@@ -5294,7 +5320,11 @@ $sourceStageCounts=[
   'enriquecimento_ativo'=>0
 ];
 foreach(tvs_radar_discovery_read() as $processingItem){
-  $sourcePendingKeys[tvs_radar_discovery_key($processingItem)]=1;
+  $processingKey=tvs_radar_discovery_key($processingItem);
+  // O painel trabalha com pautas únicas pela mesma chave usada pela deduplicação.
+  // Assim o total de fonte/enriquecimento fecha exatamente com a soma dos subestados.
+  if(isset($sourcePendingKeys[$processingKey])) continue;
+  $sourcePendingKeys[$processingKey]=1;
   $stage=(string)($processingItem['pipeline_stage']??'');
   if(isset($sourceStageCounts[$stage])){
     $sourceStageCounts[$stage]++;
