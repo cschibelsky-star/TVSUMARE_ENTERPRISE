@@ -62,7 +62,7 @@ function rpia_video_agent_prompt($job,$cfg){
 }
 function rpia_heygen_create($job,$cfg){
   $key=rpia_heygen_key($cfg); if($key==='') return ['ok'=>false,'error'=>'Configure a chave da HeyGen.'];
-  $orientation=rpia_job_orientation($job,$cfg); $payload=['prompt'=>rpia_video_agent_prompt($job,$cfg),'mode'=>'generate','incognito_mode'=>rpia_bool($cfg['heygen_incognito_mode']??'0'),'orientation'=>$orientation];
+  $orientation=rpia_job_orientation($job,$cfg); $payload=['prompt'=>rpia_video_agent_prompt($job,$cfg),'mode'=>'generate','incognito_mode'=>rpia_bool($cfg['heygen_incognito_mode']??'0')];
   foreach(['avatar_id'=>'heygen_avatar_id','voice_id'=>'heygen_voice_id','style_id'=>'heygen_style_id','brand_kit_id'=>'heygen_brand_kit_id'] as $api=>$local){ $jobValue=trim((string)($job[$local]??'')); $cfgValue=trim((string)($cfg[$local]??'')); $v=$jobValue!==''?$jobValue:$cfgValue; if($v!=='') $payload[$api]=$v; }
   $callbackToken=trim((string)($cfg['heygen_callback_token']??'')); if($callbackToken!==''){ $payload['callback_url']=rpia_abs_url('api/heygen-callback.php?token='.rawurlencode($callbackToken)); $payload['callback_id']=$job['id']??('job_'.time()); }
   $r=rpia_heygen_request('POST','/v3/video-agents',$key,$payload,45); if(!$r['ok']) return ['ok'=>false,'error'=>$r['error']??'Falha ao criar sessão HeyGen.','raw'=>$r];
