@@ -4082,7 +4082,23 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5,$options=[]
       }
       // Régua 1.3: pauta sem auditoria de entrada não entra no ciclo normal.
       if(empty($cand['entry_audit_status']) && empty($options['audit_backlog'])) continue;
-      if(in_array(($cand['pipeline_stage']??''),['revisao_manual_pipeline','expirada_sem_enriquecimento','aguardando_fonte'],true) && !$forceRetry) continue;
+
+      $candidateStage=(string)($cand['pipeline_stage']??'');
+      if(in_array($candidateStage,['fonte_esgotada','revisao_manual_pipeline','expirada_sem_enriquecimento'],true)) continue;
+
+      // Barreira pré-enriquecimento: um Google News ainda não resolvido que já
+      // passou por seis ciclos não pode chegar novamente ao PIPELINE_TRY.
+      $candidateUrl=trim((string)($cand['url']??$cand['source_url']??''));
+      if(tvs_radar_is_google_news_url($candidateUrl) && (int)($cand['pipeline_attempts']??0)>=6){
+        $cand['pipeline_stage']='fonte_esgotada';
+        $cand['pipeline_reason']='Fonte original esgotou seis ciclos de resolução; removida do processamento automático antes do enriquecimento.';
+        $cand['enrichment_next_retry_at']='';
+        $cand['pipeline_updated_at']=date('c');
+        $discovery[$idx]=$cand;
+        continue;
+      }
+
+      if($candidateStage==='aguardando_fonte' && !$forceRetry) continue;
       if($reprocessReason!=='' && ($cand['reprocess_reason']??'')===$reprocessReason && ($cand['editorial_rule_version']??'')===$ruleVersion) continue;
       if($onlyGoogleUnresolved && !tvs_radar_is_google_news_url($cand['url']??'')) continue;
       $candId=(string)($cand['id']??'');
@@ -4999,7 +5015,12 @@ function tvs_radar_normalize_terminal_states_v13(){
     $sourceStatus=(string)($item['url_resolution_status']??'');
     $sourceAttempts=(int)($item['source_resolution_attempts']??0);
 
-    if($isGoogle && ($sourceStatus==='unresolved_final' || $sourceAttempts>=6)){
+    // Backlog legado acumulou pipeline_attempts muito acima do limite antes de
+    // existir contador por etapa. Para Google News ainda não resolvido, seis
+    // ciclos totais já são evidência suficiente de esgotamento operacional.
+    $legacyResolutionExhausted=$isGoogle && (int)($item['pipeline_attempts']??0)>=6;
+
+    if($isGoogle && ($sourceStatus==='unresolved_final' || $sourceAttempts>=6 || $legacyResolutionExhausted)){
       $sourceFinal++;
       if($stage!=='fonte_esgotada'){
         $item['pipeline_stage']='fonte_esgotada';
