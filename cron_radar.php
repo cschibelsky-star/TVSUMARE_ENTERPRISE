@@ -32,6 +32,20 @@ $sourceResolution=function_exists('tvs_radar_process_due_source_resolution')
 
 echo 'SOURCE_RESOLUTION_QUEUE '.json_encode($sourceResolution,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n";
 
+// Persiste imediatamente a telemetria do resolvedor antes da coleta/enriquecimento,
+// que pode levar muitos minutos. Assim o painel não fica mostrando um ciclo antigo
+// enquanto o restante do Radar ainda está processando.
+if(function_exists('tvs_radar_status') && function_exists('tvs_radar_save_status')){
+  $sourceStatus=tvs_radar_status();
+  $sourceStatus=is_array($sourceStatus)?$sourceStatus:[];
+  $sourceStatus['last_source_resolution_run']=(string)($sourceResolution['executed_at']??date('c'));
+  $sourceStatus['last_source_resolution_processed']=(int)($sourceResolution['processed']??0);
+  $sourceStatus['last_source_resolution_resolved']=(int)($sourceResolution['resolved']??0);
+  $sourceStatus['last_source_resolution_remaining_due']=(int)($sourceResolution['remaining_due']??0);
+  $sourceStatus['source_resolution_in_progress']=1;
+  tvs_radar_save_status($sourceStatus);
+}
+
 $n=function_exists('tvs_radar_update_queue')
   ? tvs_radar_update_queue($perCity)
   : 0;
@@ -45,6 +59,7 @@ $status=array_merge(is_array($status)?$status:[],[
   'last_source_resolution_processed'=>(int)($sourceResolution['processed']??0),
   'last_source_resolution_resolved'=>(int)($sourceResolution['resolved']??0),
   'last_source_resolution_remaining_due'=>(int)($sourceResolution['remaining_due']??0),
+  'source_resolution_in_progress'=>0,
   'last_discovery_message'=>$n>0
     ? "{$n} matéria(s) encaminhada(s) pela descoberta contínua."
     : 'Nenhuma pauta nova encaminhada nesta rodada de descoberta.'
