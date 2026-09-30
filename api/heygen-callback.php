@@ -1,6 +1,10 @@
 <?php
 // Webhook público da HeyGen Video Agent v3.
 // Token obrigatório; callbacks repetidos ou fora de ordem não podem regredir o job.
+if(($_SERVER['REQUEST_METHOD']??'GET')!=='POST'){
+  header('Location: /admin/reporter-ia.php?heygen_callback=webhook_only', true, 303);
+  exit;
+}
 header('Content-Type: application/json; charset=utf-8');
 require_once dirname(__DIR__).'/config.php';
 
