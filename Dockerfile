@@ -14,15 +14,6 @@ RUN apt-get update \
 
 COPY . /var/www/html/
 
-RUN set -eux; \
-    base='https://raw.githubusercontent.com/cschibelsky-star/TVSUMARE_ENTERPRISE/4c29edad2eba999a3c1f446549c2793d087c5b9b/assets'; \
-    curl -fsSL "$base/thumb-educacao.jpg" -o /var/www/html/assets/thumb-educacao.jpg; \
-    curl -fsSL "$base/thumb-esportes.jpg" -o /var/www/html/assets/thumb-esportes.jpg; \
-    curl -fsSL "$base/thumb-infraestrutura.jpg" -o /var/www/html/assets/thumb-infraestrutura.jpg; \
-    curl -fsSL "$base/thumb-politica.jpg" -o /var/www/html/assets/thumb-politica.jpg; \
-    curl -fsSL "$base/thumb-saude.jpg" -o /var/www/html/assets/thumb-saude.jpg; \
-    curl -fsSL "$base/thumb-seguranca.jpg" -o /var/www/html/assets/thumb-seguranca.jpg
-
 RUN php /var/www/html/docker/apply-radar-editorial-policy.php \
     && php /var/www/html/docker/apply-radar-image-audit.php \
     && php /var/www/html/docker/apply-video-ai-hardening.php \
