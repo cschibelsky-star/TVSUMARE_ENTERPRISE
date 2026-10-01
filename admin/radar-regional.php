@@ -2878,9 +2878,16 @@ function tvs_radar_candidates_for_city($city){
       $items[]=$it;
     }
   }
-  // Google Notícias por cidade sempre entra como complemento de abastecimento editorial.
-  if(count($items)<($volumeMode?60:30)){
-    foreach(tvs_radar_google_news($city,$volumeMode?60:36) as $it){ $it['priority']=$volumeMode?4:3; $items[]=$it; }
+  // Google Notícias é fallback de descoberta, não fonte principal do Radar.
+  // Em modo normal, só complementa quando as fontes diretas não entregam volume mínimo,
+  // e entra com limite pequeno para não recriar um backlog de URLs intermediárias.
+  $directTarget=$volumeMode?30:12;
+  if(count($items)<$directTarget){
+    $googleLimit=max(0,$directTarget-count($items));
+    foreach(tvs_radar_google_news($city,$googleLimit) as $it){
+      $it['priority']=$volumeMode?4:3;
+      $items[]=$it;
+    }
   }
   $unique=[]; $seen=[];
   foreach($items as $it){
@@ -3937,24 +3944,153 @@ function tvs_radar_retry_pending_editor_articles(&$approval,$limit=6,$ignoreSche
   return ['attempted'=>$attempted,'recovered'=>$recovered];
 }
 
-function tvs_radar_force_editor_queue_pass($limit=20){
+function tvs_radar_repair_queue_listing_urls($limit=20){
+  $limit=max(1,min(40,(int)$limit));
+  $approval=tvs_queue_read();
+  $attempted=0; $resolved=0; $ready=0; $failed=0; $methods=[];
+
+  foreach($approval as &$item){
+    if($attempted>=$limit) break;
+    if(!is_array($item) || empty($item['ai_editor_processed'])) continue;
+
+    $readiness=function_exists('tvs_radar_queue_item_readiness')
+      ? tvs_radar_queue_item_readiness($item)
+      : ['ready'=>1,'reasons'=>[]];
+    if(!empty($readiness['ready'])) continue;
+
+    $reasons=(array)($readiness['reasons']??[]);
+    if(!in_array('URL corresponde a página de listagem',$reasons,true)) continue;
+
+    $attempted++;
+    $title=trim((string)($item['title']??''));
+    $city=trim((string)($item['city']??''));
+    $current=trim((string)($item['source_url']??$item['url']??''));
+    $source=(string)($item['source']??'');
+
+    $sourceDomain=tvs_radar_source_domain_hint($source,$title);
+    if($sourceDomain==='' && $current!==''){
+      $host=tvs_radar_source_host($current);
+      if($host!=='') $sourceDomain='https://'.$host;
+    }
+
+    $candidate='';
+    $method='';
+    $validation=null;
+    $tryCandidate=function($url,$candidateMethod) use (&$candidate,&$method,&$validation,$title,$city,$sourceDomain,$item){
+      $url=trim((string)$url);
+      if($url==='') return false;
+      $check=tvs_radar_validate_resolved_article(
+        $url,
+        $title,
+        $city,
+        $sourceDomain,
+        (string)($item['published_at']??$item['created_at']??''),
+        $candidateMethod
+      );
+      if(empty($check['ok'])) return false;
+      $candidate=$url;
+      $method=$candidateMethod;
+      $validation=$check;
+      return true;
+    };
+
+    if($sourceDomain!==''){
+      $tryCandidate(tvs_radar_find_article_on_source($sourceDomain,$title,$city),'queue_source_domain_title_match');
+    }
+    if($candidate==='' && $sourceDomain!==''){
+      $tryCandidate(tvs_radar_resolve_by_sitemap($sourceDomain,$title,$city),'queue_source_sitemap_title_match');
+    }
+    if($candidate==='' && $sourceDomain!==''){
+      $tryCandidate(tvs_radar_resolve_by_bing_site($sourceDomain,$title,$city),'queue_bing_site_title_match');
+    }
+    if($candidate==='' && $sourceDomain!==''){
+      $tryCandidate(tvs_radar_resolve_by_bing_web($title,$city,$source,$sourceDomain),'queue_bing_web_title_match');
+    }
+    if($candidate===''){
+      $tryCandidate(tvs_radar_known_current_url($title),'queue_known_current_title');
+    }
+    if($candidate===''){
+      $tryCandidate(tvs_radar_resolve_by_bing_news($title,$city,$source),'queue_bing_news_title_match');
+    }
+
+    if($candidate===''){
+      $failed++;
+      $item['queue_url_repair_attempts']=(int)($item['queue_url_repair_attempts']??0)+1;
+      $item['queue_url_repair_last_attempt_at']=date('c');
+      continue;
+    }
+
+    $item['source_url']=$candidate;
+    $item['url']=$candidate;
+    $item['url_resolution_required']=0;
+    $item['url_resolution_status']='resolved';
+    $item['url_resolution_method']=$method;
+    $item['url_resolution_confidence']=(int)($validation['confidence']??0);
+    $item['queue_url_repaired_at']=date('c');
+    $resolved++;
+    $methods[$method]=($methods[$method]??0)+1;
+
+    $after=function_exists('tvs_radar_queue_item_readiness')
+      ? tvs_radar_queue_item_readiness($item)
+      : ['ready'=>1,'reasons'=>[]];
+    $item['queue_pending_reasons']=array_values(array_unique(array_filter((array)($after['reasons']??[]))));
+    if(!empty($after['ready'])){
+      $item['queue_status']='ready';
+      $item['publication_eligible']=1;
+      $item['editorial_status']='Editor IA concluído';
+      $ready++;
+    } else {
+      $item['queue_status']='processing';
+      $item['publication_eligible']=0;
+    }
+  }
+  unset($item);
+
+  tvs_queue_save($approval);
+  $report=[
+    'executed_at'=>date('c'),
+    'mode'=>'queue_listing_url_repair',
+    'attempted'=>$attempted,
+    'resolved'=>$resolved,
+    'ready'=>$ready,
+    'failed'=>$failed,
+    'methods'=>$methods
+  ];
+  tvs_save_json_file(dirname(__DIR__).'/data/queue_listing_url_repair_status.json',$report);
+  return $report;
+}
+
+function tvs_radar_force_editor_queue_pass($limit=20,$ignoreSchedule=true){
   $limit=max(1,min(40,(int)$limit));
   $approval=tvs_queue_read();
   $beforeReady=0; $beforePending=0;
   foreach($approval as $item){
     if(!is_array($item)) continue;
-    if(!empty($item['ai_editor_processed']) && !empty($item['publication_eligible'])) $beforeReady++;
+    $readiness=function_exists('tvs_radar_queue_item_readiness')
+      ? tvs_radar_queue_item_readiness($item)
+      : ['ready'=>!empty($item['publication_eligible'])];
+    if(!empty($item['ai_editor_processed']) && !empty($readiness['ready'])) $beforeReady++;
     elseif(empty($item['ai_editor_processed'])) $beforePending++;
   }
 
-  $result=tvs_radar_retry_pending_editor_articles($approval,$limit,true);
+  $result=tvs_radar_retry_pending_editor_articles($approval,$limit,$ignoreSchedule);
   tvs_queue_save($approval);
 
-  $afterReady=0; $afterPending=0; $manualReview=0;
+  $afterReady=0; $afterPending=0; $manualReview=0; $processedNotReady=0; $blockedReasons=[];
   foreach($approval as $item){
     if(!is_array($item)) continue;
-    if(!empty($item['ai_editor_processed']) && !empty($item['publication_eligible'])) $afterReady++;
+    $readiness=function_exists('tvs_radar_queue_item_readiness')
+      ? tvs_radar_queue_item_readiness($item)
+      : ['ready'=>!empty($item['publication_eligible']),'reasons'=>[]];
+    if(!empty($item['ai_editor_processed']) && !empty($readiness['ready'])) $afterReady++;
     elseif(empty($item['ai_editor_processed'])) $afterPending++;
+    elseif(!empty($item['ai_editor_processed']) && empty($readiness['ready'])){
+      $processedNotReady++;
+      foreach((array)($readiness['reasons']??[]) as $reason){
+        $reason=trim((string)$reason);
+        if($reason!=='') $blockedReasons[$reason]=($blockedReasons[$reason]??0)+1;
+      }
+    }
     if(($item['ai_editor_stage']??'')==='manual_review') $manualReview++;
   }
 
@@ -3967,6 +4103,8 @@ function tvs_radar_force_editor_queue_pass($limit=20){
     'recovered'=>(int)($result['recovered']??0),
     'after_ready'=>$afterReady,
     'after_pending'=>$afterPending,
+    'processed_not_ready'=>$processedNotReady,
+    'blocked_reasons'=>$blockedReasons,
     'manual_review'=>$manualReview
   ];
   tvs_save_json_file(dirname(__DIR__).'/data/editor_queue_recovery_status.json',$report);
