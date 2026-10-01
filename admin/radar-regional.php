@@ -3834,7 +3834,7 @@ function tvs_radar_factually_ready($package){
   ];
 }
 
-function tvs_radar_retry_pending_editor_articles(&$approval,$limit=6){
+function tvs_radar_retry_pending_editor_articles(&$approval,$limit=6,$ignoreSchedule=false){
   global $gemini_api_key;
   $recovered=0; $attempted=0;
   foreach($approval as &$item){
@@ -3843,7 +3843,7 @@ function tvs_radar_retry_pending_editor_articles(&$approval,$limit=6){
     if(trim((string)($item['title']??''))==='' || trim((string)($item['body']??''))==='') continue;
 
     $nextAiRetry=(string)($item['ai_editor_next_retry_at']??'');
-    if($nextAiRetry!=='' && ($nextAiTs=strtotime($nextAiRetry)) && $nextAiTs>time()) continue;
+    if(!$ignoreSchedule && $nextAiRetry!=='' && ($nextAiTs=strtotime($nextAiRetry)) && $nextAiTs>time()) continue;
     $previousAttempts=(int)($item['ai_editor_attempts']??0);
     if($previousAttempts>=3){
       $item['queue_status']='processing';
@@ -3937,6 +3937,52 @@ function tvs_radar_retry_pending_editor_articles(&$approval,$limit=6){
   return ['attempted'=>$attempted,'recovered'=>$recovered];
 }
 
+function tvs_radar_force_editor_queue_pass($limit=20){
+  $limit=max(1,min(40,(int)$limit));
+  $approval=tvs_queue_read();
+  $beforeReady=0; $beforePending=0;
+  foreach($approval as $item){
+    if(!is_array($item)) continue;
+    if(!empty($item['ai_editor_processed']) && !empty($item['publication_eligible'])) $beforeReady++;
+    elseif(empty($item['ai_editor_processed'])) $beforePending++;
+  }
+
+  $result=tvs_radar_retry_pending_editor_articles($approval,$limit,true);
+  tvs_queue_save($approval);
+
+  $afterReady=0; $afterPending=0; $manualReview=0;
+  foreach($approval as $item){
+    if(!is_array($item)) continue;
+    if(!empty($item['ai_editor_processed']) && !empty($item['publication_eligible'])) $afterReady++;
+    elseif(empty($item['ai_editor_processed'])) $afterPending++;
+    if(($item['ai_editor_stage']??'')==='manual_review') $manualReview++;
+  }
+
+  $report=[
+    'executed_at'=>date('c'),
+    'mode'=>'editor_queue_forced_pass',
+    'before_ready'=>$beforeReady,
+    'before_pending'=>$beforePending,
+    'attempted'=>(int)($result['attempted']??0),
+    'recovered'=>(int)($result['recovered']??0),
+    'after_ready'=>$afterReady,
+    'after_pending'=>$afterPending,
+    'manual_review'=>$manualReview
+  ];
+  tvs_save_json_file(dirname(__DIR__).'/data/editor_queue_recovery_status.json',$report);
+
+  $st=tvs_radar_status();
+  $st=is_array($st)?$st:[];
+  $st['last_editor_recovery_run']=$report['executed_at'];
+  $st['last_editor_recovery_attempted']=$report['attempted'];
+  $st['last_editor_recovery_recovered']=$report['recovered'];
+  $st['last_editor_recovery_ready']=$report['after_ready'];
+  $st['last_editor_recovery_pending']=$report['after_pending'];
+  tvs_radar_save_status($st);
+
+  return $report;
+}
+
 function tvs_radar_run_telemetry_file(){
   return dirname(__DIR__).'/data/radar_run_telemetry.json';
 }
@@ -3992,7 +4038,7 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5,$options=[]
   $approval=tvs_queue_read();
   $editorRetry=!empty($options['skip_editor_retry'])
     ? ['attempted'=>0,'recovered'=>0]
-    : tvs_radar_retry_pending_editor_articles($approval,tvs_radar_is_volume_mode($mode)?8:4);
+    : tvs_radar_retry_pending_editor_articles($approval,tvs_radar_is_volume_mode($mode)?20:12);
   $publishedHistory=tvs_read_json_file($newsFile); if(!is_array($publishedHistory)) $publishedHistory=[];
 
   $auditHistory=array_merge($approval,$publishedHistory);
