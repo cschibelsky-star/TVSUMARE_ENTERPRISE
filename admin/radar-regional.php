@@ -928,10 +928,17 @@ function tvs_radar_is_article_path($url,$title='',$city=''){
     'page','pagina','arquivo','archive','editoria','secao','seção',
     'cidade','cidades','noticia','noticias','notícia','notícias'
   ];
+  $alwaysListing=[
+    'category','categoria','tag','tags','author','autor','search','busca',
+    'page','pagina','arquivo','archive','editoria','secao','seção'
+  ];
 
-  // Só bloqueia se a URL inteira for uma seção/listagem. Caminhos como
-  // /noticias/titulo-da-materia e /cidades/sumare/titulo-da-materia
-  // são artigos válidos e não devem ser descartados.
+  // Segmentos estruturais como /noticias/ podem conter artigos depois deles.
+  // Já categoria/tag/busca/autor/página são rotas de listagem e nunca devem
+  // ser aceitas como fonte final, mesmo quando há slug adicional.
+  foreach($segments as $segment){
+    if(in_array(tvs_lower((string)$segment),$alwaysListing,true)) return false;
+  }
   if(count($segments)===1 && in_array(tvs_lower($segments[0]),$generic,true)){
     return false;
   }
@@ -3994,7 +4001,17 @@ function tvs_radar_repair_queue_listing_urls($limit=20){
       return true;
     };
 
-    if($sourceDomain!==''){
+    if($current!=='' && $sourceDomain!==''){
+      $GLOBALS['tvs_radar_resolution_city']=$city;
+      $listingHtml=tvs_fetch_url($current);
+      if($listingHtml!==''){
+        $tryCandidate(
+          tvs_radar_find_article_in_html($sourceDomain,$listingHtml,$title),
+          'queue_current_listing_title_match'
+        );
+      }
+    }
+    if($candidate==='' && $sourceDomain!==''){
       $tryCandidate(tvs_radar_find_article_on_source($sourceDomain,$title,$city),'queue_source_domain_title_match');
     }
     if($candidate==='' && $sourceDomain!==''){
