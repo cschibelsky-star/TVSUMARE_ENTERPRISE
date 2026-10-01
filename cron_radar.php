@@ -19,6 +19,13 @@ if(!is_file($offlineResolutionMarker)){
   exit(0);
 }
 
+$editorRecoveryMarker=__DIR__.'/data/editor_queue_forced_recovery_20260930_done.json';
+if(!is_file($editorRecoveryMarker) && function_exists('tvs_radar_force_editor_queue_pass')){
+  $editorRecovery=tvs_radar_force_editor_queue_pass(20);
+  tvs_save_json_file($editorRecoveryMarker,$editorRecovery);
+  echo 'EDITOR_QUEUE_FORCED_RECOVERY '.json_encode($editorRecovery,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n";
+}
+
 $started=microtime(true);
 $cfg=function_exists('tvs_radar_config') ? tvs_radar_config() : ['per_city'=>20];
 $perCity=max(1,min(30,(int)($cfg['per_city']??20)));
