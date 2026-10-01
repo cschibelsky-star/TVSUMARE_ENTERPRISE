@@ -19,12 +19,29 @@ if(!is_file($offlineResolutionMarker)){
   exit(0);
 }
 
-$editorRecoveryMarker=__DIR__.'/data/editor_queue_forced_recovery_20260930_done.json';
+// Antes do Editor IA, corrige matérias já editadas que ficaram bloqueadas
+// apenas porque a URL salva aponta para uma página de listagem do veículo.
+$queueUrlRepair=function_exists('tvs_radar_repair_queue_listing_urls')
+  ? tvs_radar_repair_queue_listing_urls(20)
+  : ['attempted'=>0,'resolved'=>0,'ready'=>0,'failed'=>0];
+
+echo 'QUEUE_LISTING_URL_REPAIR '.json_encode($queueUrlRepair,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n";
+
+// Recuperação editorial é uma fila contínua e independente da descoberta.
+// Na primeira execução desta versão, força uma passagem única para destravar
+// itens que estavam aguardando janelas antigas de retry.
+$editorRecoveryMarker=__DIR__.'/data/editor_queue_forced_recovery_20261001_done.json';
 if(!is_file($editorRecoveryMarker) && function_exists('tvs_radar_force_editor_queue_pass')){
-  $editorRecovery=tvs_radar_force_editor_queue_pass(20);
-  tvs_save_json_file($editorRecoveryMarker,$editorRecovery);
-  echo 'EDITOR_QUEUE_FORCED_RECOVERY '.json_encode($editorRecovery,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n";
+  $forcedEditorRecovery=tvs_radar_force_editor_queue_pass(20,true);
+  tvs_save_json_file($editorRecoveryMarker,$forcedEditorRecovery);
+  echo 'EDITOR_QUEUE_FORCED_RECOVERY_V2 '.json_encode($forcedEditorRecovery,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n";
 }
+
+$editorRecovery=function_exists('tvs_radar_force_editor_queue_pass')
+  ? tvs_radar_force_editor_queue_pass(20,false)
+  : ['attempted'=>0,'recovered'=>0,'after_ready'=>0,'after_pending'=>0];
+
+echo 'EDITOR_QUEUE_RECOVERY '.json_encode($editorRecovery,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n";
 
 $started=microtime(true);
 $cfg=function_exists('tvs_radar_config') ? tvs_radar_config() : ['per_city'=>20];
@@ -34,7 +51,7 @@ $perCity=max(1,min(30,(int)($cfg['per_city']??20)));
 // pequenos lotes para não monopolizar o scheduler. Não chama Repórter/Editor IA
 // e nunca publica; apenas tenta converter Google News em URL original validada.
 $sourceResolution=function_exists('tvs_radar_process_due_source_resolution')
-  ? tvs_radar_process_due_source_resolution(4)
+  ? tvs_radar_process_due_source_resolution(12)
   : ['processed'=>0,'resolved'=>0,'retriable'=>0,'final'=>0,'remaining_due'=>0];
 
 echo 'SOURCE_RESOLUTION_QUEUE '.json_encode($sourceResolution,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n";
