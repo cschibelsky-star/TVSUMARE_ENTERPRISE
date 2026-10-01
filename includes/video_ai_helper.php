@@ -439,6 +439,9 @@ if (!function_exists('tvp_veo_config')) {
       $hubBase=rtrim((string)(getenv('MARKETING_ENGINE_URL')?:'https://marketing.hml.vitrineiapro.com.br'),'/');
       $url=$hubBase.$url;
     }
+    if(preg_match('~^http://marketing\.hml\.vitrineaipro\.com\.br(?:/|$)~i',$url)){
+      $url='https://'.substr($url,7);
+    }
     if(!preg_match('~^https://~i',$url)) return ['ok'=>false,'error'=>'URL de render VEO inválida após normalização.'];
 
     $current=$url;
@@ -754,6 +757,93 @@ if (!function_exists('tvp_send_video_orchestrated')) {
       'providers'=>array_keys($providers),
       'models'=>array_keys($models)
     ];
+  }
+}
+
+if (!function_exists('tvp_recover_completed_media_jobs')) {
+  function tvp_recover_completed_media_jobs(){
+    $jobs=tvp_load_video_jobs();
+    $changed=false;
+    $summary=['veo_recovered'=>0,'veo_failed'=>0,'heygen_recovered'=>0,'heygen_pending'=>0,'heygen_failed'=>0];
+
+    foreach($jobs as $i=>$job){
+      $status=(string)($job['status']??'');
+      $hasHeygenRef=trim((string)($job['heygen_session_id']??''))!=='' || trim((string)($job['heygen_video_id']??''))!=='';
+      $wrongCentroError=$status==='erro'
+        && $hasHeygenRef
+        && stripos((string)($job['media_failure']??''),'sem operações do Centro IA')!==false;
+
+      if($wrongCentroError){
+        $jobs[$i]['video_engine']='heygen';
+        unset($jobs[$i]['media_failure']);
+        $r=tvp_check_heygen($jobs[$i]);
+        if(!empty($r['ok'])){
+          if(isset($r['progress'])) $jobs[$i]['heygen_progress']=$r['progress'];
+          if(!empty($r['video_id'])) $jobs[$i]['heygen_video_id']=$r['video_id'];
+          if(!empty($r['video_url']) || !empty($r['captioned_video_url'])){
+            $jobs[$i]['video_url']=$r['video_url']??'';
+            $jobs[$i]['captioned_video_url']=$r['captioned_video_url']??'';
+            $jobs[$i]['thumb']=$r['thumb']?:($jobs[$i]['image']??'assets/cat-cidade.svg');
+            $jobs[$i]['status']='revisao_video';
+            $jobs[$i]['review_ready_at']=date('c');
+            unset($jobs[$i]['heygen_failure']);
+            $summary['heygen_recovered']++;
+          } elseif(!empty($r['failure_message'])){
+            $jobs[$i]['status']='erro';
+            $jobs[$i]['heygen_failure']=$r['failure_message'];
+            $summary['heygen_failed']++;
+          } else {
+            $jobs[$i]['status']='gerando';
+            $summary['heygen_pending']++;
+          }
+        } else {
+          $jobs[$i]['status']='erro';
+          $jobs[$i]['heygen_failure']=trim((string)($r['error']??'Falha ao consultar HeyGen.'));
+          $summary['heygen_failed']++;
+        }
+        $jobs[$i]['last_provider_check_at']=date('c');
+        $jobs[$i]['updated_at']=date('c');
+        $changed=true;
+        continue;
+      }
+
+      $existingUrl=trim((string)(($job['captioned_video_url']??'') ?: ($job['video_url']??'')));
+      $legacy=(array)($job['veo_operations']??[]);
+      if($existingUrl!=='' || !$legacy) continue;
+
+      $allCompleted=true;
+      foreach($legacy as $raw){
+        $op=tvp_normalize_legacy_media_operation($raw);
+        if(strtolower(trim((string)($op['status']??'')))!=='completed' || trim((string)($op['asset_url']??''))===''){
+          $allCompleted=false;
+          break;
+        }
+      }
+      if(!$allCompleted) continue;
+
+      $r=tvp_check_video_orchestrated($job);
+      if(!empty($r['ok']) && !empty($r['video_url'])){
+        $jobs[$i]['video_url']=$r['video_url'];
+        $jobs[$i]['status']='revisao_video';
+        $jobs[$i]['media_progress']=100;
+        $jobs[$i]['review_ready_at']=date('c');
+        $jobs[$i]['recovered_existing_assets_at']=date('c');
+        if(!empty($r['operations'])) $jobs[$i]['media_operations']=$r['operations'];
+        if(!empty($r['models'])) $jobs[$i]['media_models']=$r['models'];
+        if(!empty($r['providers'])) $jobs[$i]['media_providers']=$r['providers'];
+        unset($jobs[$i]['media_failure'],$jobs[$i]['veo_failure']);
+        $summary['veo_recovered']++;
+      } else {
+        $jobs[$i]['status']='erro';
+        $jobs[$i]['media_failure']=trim((string)($r['error']??'Falha ao recuperar assets VEO já concluídos.'));
+        $summary['veo_failed']++;
+      }
+      $jobs[$i]['updated_at']=date('c');
+      $changed=true;
+    }
+
+    if($changed) tvp_save_video_jobs($jobs);
+    return $summary;
   }
 }
 
