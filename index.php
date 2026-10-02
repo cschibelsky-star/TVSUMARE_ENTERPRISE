@@ -3,10 +3,15 @@ include 'config.php';
 require_once __DIR__.'/includes/tvs_public_helpers.php';
 $active='home';
 $siteSettings=tvs_json('data/site_settings.json');
-$news=tvs_json('data/noticias.json');
-$news=function_exists('tvs_prepare_public_news_v2') ? tvs_prepare_public_news_v2((is_array($news)?$news:[]), 21) : tvs_prepare_public_news(is_array($news)?$news:[], 30);
+$newsRaw=tvs_json('data/noticias.json');
+$newsRaw=is_array($newsRaw)?$newsRaw:[];
+$news=function_exists('tvs_prepare_public_news_v2') ? tvs_prepare_public_news_v2($newsRaw, 90) : tvs_prepare_public_news($newsRaw, 90);
+
+/* A aprovação é a fronteira editorial. Depois de publicada, a matéria permanece ativa
+ * pelo prazo de retenção (até 90 dias; conteúdos temporais têm janela menor). */
 $used=[];
 $editorialSections=function_exists('tvs_curated_sections') ? tvs_curated_sections($news) : [];
+$citySections=function_exists('tvs_city_sections') ? tvs_city_sections($news,5) : [];
 $heroList=tvs_pick_news($news,$used,function($n){ return !tvs_is_sensitive($n); },1);
 $hero=$heroList[0]??($news[0]??null); if($hero){ $used[(string)($hero['id']??md5($hero['title']??''))]=1; }
 $secondary=[]; $sideCats=[];
@@ -37,7 +42,7 @@ function tvs_video_thumb_html($v){
   if($thumb==='') return '<div class="video-thumb-placeholder">▶</div>';
   return '<img src="'.tvs_h($thumb).'" onerror="this.parentNode.innerHTML=\'<div class=&quot;video-thumb-placeholder&quot;>▶</div>\'" alt="">';
 }
-?><!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="TV Sumaré — notícias, vídeos, empregos, guia comercial e cobertura regional."><meta property="og:title" content="TV Sumaré | Portal Regional"><meta property="og:description" content="Notícias de Sumaré, Paulínia, Hortolândia, Nova Odessa, Americana e Campinas."><meta property="og:image" content="<?=tvs_h(rtrim($site_url??'', '/').'/assets/logo-tv-sumare.jpeg')?>"><meta property="og:type" content="website"><title>TV Sumaré | Portal Regional</title><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet"><link rel="stylesheet" href="assets/style.css?v=homologacao-final"><link rel="stylesheet" href="assets/tvsumare-final-fixes.css?v=3"><link rel="icon" href="assets/logo-tv-sumare.jpeg"><style>.news-no-image{display:flex;align-items:center;justify-content:center;min-height:80px;background:linear-gradient(135deg,#0f2f68,#1d4ed8);color:#fff;font-weight:900;text-align:center;border-radius:18px;padding:12px}.hero-main-news.no-real-image{background:linear-gradient(180deg,rgba(6,26,77,.15),rgba(6,26,77,.96)),linear-gradient(135deg,#0f2f68,#123c8c)!important}.ad-banner.clean{min-height:92px}.city-news-grid.compact{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}.home-video-list .home-video-item{min-height:100px}.side-news-card img,.side-news-card .news-no-image{width:120px;height:82px;object-fit:cover;flex:0 0 120px}.home-section-hidden{display:none!important}</style></head><body>
+?><!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="TV Sumaré — notícias, vídeos, empregos, guia comercial e cobertura regional."><meta property="og:title" content="TV Sumaré | Portal Regional"><meta property="og:description" content="Notícias de Sumaré, Paulínia, Hortolândia, Nova Odessa, Americana e Campinas."><meta property="og:image" content="<?=tvs_h(rtrim($site_url??'', '/').'/assets/logo-tv-sumare.jpeg')?>"><meta property="og:type" content="website"><title>TV Sumaré | Portal Regional</title><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet"><link rel="stylesheet" href="assets/style.css?v=homologacao-final"><link rel="stylesheet" href="assets/tvsumare-final-fixes.css?v=consolidado-20260926"><link rel="icon" href="assets/logo-tv-sumare.jpeg"><style>.news-no-image{display:flex;align-items:center;justify-content:center;min-height:80px;background:linear-gradient(135deg,#0f2f68,#1d4ed8);color:#fff;font-weight:900;text-align:center;border-radius:18px;padding:12px}.hero-main-news.no-real-image{background:linear-gradient(180deg,rgba(6,26,77,.15),rgba(6,26,77,.96)),linear-gradient(135deg,#0f2f68,#123c8c)!important}.ad-banner.clean{min-height:92px}.city-news-grid.compact{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}.home-video-list .home-video-item{min-height:100px}.side-news-card img,.side-news-card .news-no-image{width:120px;height:82px;object-fit:cover;flex:0 0 120px}.home-section-hidden{display:none!important}</style></head><body>
 <?php include 'header.php'; ?>
 <main><section class="container home-editorial">
   <div class="trend-row"><strong>EM ALTA</strong><a href="noticias.php?categoria=Cidade">Cidade</a><a href="noticias.php?categoria=Empregos">Empregos</a><a href="noticias.php?categoria=Economia">Negócios</a><a href="noticias.php?categoria=Saúde">Saúde</a><a href="noticias.php?categoria=Educação">Educação</a><a href="noticias.php?categoria=Cultura">Cultura</a></div>
@@ -50,11 +55,16 @@ function tvs_video_thumb_html($v){
     </a>
     <?php if($secondary): ?><div class="hero-side-news"><?php foreach($secondary as $s): ?><a class="side-news-card" href="<?=tvs_h(tvs_news_url($s))?>"><?php $si=tvs_card_img_html($s); if($si) echo $si; ?><div><span><?=tvs_h((tvs_infer_city($s)?:'Região').' • '.($s['category']??'Notícia'))?></span><h2><?=tvs_h(tvs_title($s['title']??'Sem título',74))?></h2></div></a><?php endforeach; ?></div><?php endif; ?>
   </section>
+  <?php else: ?>
+  <section class="editorial-empty-hero">
+    <img src="assets/logo-tv-sumare.jpeg" alt="TV Sumaré">
+    <div><span>Destaques</span><h2>Redação atualizando a capa</h2><p>As notícias continuam disponíveis no arquivo. A área de destaque será preenchida automaticamente assim que houver uma pauta regional válida para a capa.</p><a class="btn" href="noticias.php">Ver todas as notícias</a></div>
+  </section>
   <?php endif; ?>
 
   <section class="brand-strip-enterprise" aria-label="Tecnologia">
     <strong>TV Sumaré Enterprise</strong>
-    <span>Tecnologia by Vitrine AI Pro</span>
+    <span>Tecnologia by Vitrine IA Pro</span>
     <em>Sumaré • Hortolândia • Paulínia • Nova Odessa • Americana • Campinas</em>
   </section>
 
@@ -73,29 +83,29 @@ function tvs_video_thumb_html($v){
     <?php if($byCity): ?><div class="section-heading spaced"><h2>Destaques por Cidade</h2><a href="noticias.php">Cobertura regional</a></div><div class="city-news-grid compact"><?php foreach($byCity as $city=>$n): ?><section class="city-news-box"><h3><?=tvs_h($city)?></h3><a href="<?=tvs_h(tvs_news_url($n))?>"><?=tvs_card_img_html($n)?><span><?=tvs_h(tvs_title($n['title']??'Sem título',78))?></span></a></section><?php endforeach; ?></div><?php endif; ?>
 
     <?php if($empresas): ?><div class="section-heading spaced"><h2>Guia Comercial em Destaque</h2><a href="guia.php">Ver guia</a></div><div class="home-business-strip"><?php foreach($empresas as $e): ?><article><?php if(!empty($e['image'])):?><img src="<?=tvs_h($e['image'])?>" onerror="this.style.display='none'" alt=""><?php endif; ?><strong><?=tvs_h($e['name']??$e['empresa']??'Empresa')?></strong><p><?=tvs_h($e['category']??$e['categoria']??'Guia Comercial')?></p><?php if(!empty($e['whatsapp'])):?><a href="https://wa.me/<?=preg_replace('/\D+/','',$e['whatsapp'])?>" target="_blank" rel="noopener">WhatsApp</a><?php endif; ?></article><?php endforeach; ?></div><?php endif; ?>
+
+    <?php if(!empty($citySections)): ?>
+    <section class="tvs-sections-20 tvs-sections-modern">
+      <div class="section-heading modern-heading"><div><span>Cobertura regional</span><h2>Notícias por cidade</h2><p>Até 5 matérias aprovadas e ativas de cada cidade, sempre priorizando as mais recentes.</p></div><a href="noticias.php">Ver todas</a></div>
+      <div class="tvs-topic-grid">
+      <?php foreach($citySections as $cityName=>$items): if(empty($items)) continue; $main=$items[0]; $img=tvs_display_image($main); if($img==='') $img='assets/tvsumare-noticia-padrao.svg'; ?>
+        <article class="tvs-topic-card">
+          <a class="tvs-topic-image" href="<?=tvs_h(tvs_news_url($main))?>"><img src="<?=tvs_h($img)?>" onerror="this.src='assets/tvsumare-noticia-padrao.svg'" alt=""></a>
+          <div class="tvs-topic-content">
+            <h3><?=tvs_h($cityName)?><span>.</span></h3>
+            <a class="tvs-topic-title" href="<?=tvs_h(tvs_news_url($main))?>"><?=tvs_h(tvs_title($main['title']??'',82))?></a>
+            <?php foreach(array_slice($items,1,4) as $mini): ?>
+              <a class="tvs-topic-mini" href="<?=tvs_h(tvs_news_url($mini))?>"><?=tvs_h(tvs_title($mini['title']??'',74))?></a>
+            <?php endforeach; ?>
+          </div>
+        </article>
+      <?php endforeach; ?>
+      </div>
+    </section>
+    <?php endif; ?>
   </div>
 
   <aside class="sidebar"><div class="widget"><div class="widget-title">🔥 Mais Lidas</div><ol class="rank-list"><?php foreach($popular as $p): ?><li><a href="<?=tvs_h(tvs_news_url($p))?>"><?=tvs_h(tvs_title($p['title']??'Sem título',88))?></a></li><?php endforeach; ?></ol></div><div class="widget"><div class="widget-title">📢 Anuncie Aqui</div><p>Sua empresa pode aparecer em banners, matérias e vídeos da TV Sumaré.</p><a href="anuncie.php" class="btn btn-outline">Conheça os planos</a></div></aside>
   </section>
 </section></main>
-<?php if(!empty($editorialSections)): ?>
-<section class="container tvs-sections-20 tvs-sections-modern">
-  <div class="section-heading modern-heading"><div><span>Editorias</span><h2>Notícias por assunto</h2><p>Cobertura regional organizada por temas, com identidade TV Sumaré.</p></div><a href="noticias.php">Ver todas</a></div>
-  <div class="tvs-topic-grid">
-  <?php foreach($editorialSections as $secName=>$items): if(empty($items)) continue; $main=$items[0]; $img=tvs_display_image($main); if($img==='') $img='assets/tvsumare-noticia-padrao.svg'; ?>
-    <article class="tvs-topic-card">
-      <a class="tvs-topic-image" href="<?=tvs_h(tvs_news_url($main))?>"><img src="<?=tvs_h($img)?>" onerror="this.src='assets/tvsumare-noticia-padrao.svg'" alt=""></a>
-      <div class="tvs-topic-content">
-        <h3><?=tvs_h($secName)?><span>.</span></h3>
-        <a class="tvs-topic-title" href="<?=tvs_h(tvs_news_url($main))?>"><?=tvs_h(tvs_title($main['title']??'',82))?></a>
-        <?php foreach(array_slice($items,1,2) as $mini): ?>
-          <a class="tvs-topic-mini" href="<?=tvs_h(tvs_news_url($mini))?>"><?=tvs_h(tvs_title($mini['title']??'',74))?></a>
-        <?php endforeach; ?>
-      </div>
-    </article>
-  <?php endforeach; ?>
-  </div>
-</section>
-<?php endif; ?>
-
 <?php include 'rodape.php'; ?></body></html>

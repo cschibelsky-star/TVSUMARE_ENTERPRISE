@@ -8,4 +8,11 @@ videos
 logs
 *.zip
 *.log
+**/*.bak
+**/*.bak-*
+**/*.bak.*
+**/*.backup-*
+**/*.orig
+**/*.rej
+**/*~
 MIGRATION_STATE.json

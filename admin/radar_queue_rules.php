@@ -181,25 +181,9 @@ function tvs_radar_normalize_queue_by_rules(array $items): array
 
             $counts[$key] = $current + 1;
         } else {
-            $scope = trim((string)(
-                $item['global_scope']
-                ?? $item['city']
-                ?? 'Brasil'
-            ));
-
-            if (!isset($globalCaps[$scope])) {
-                $scope = 'Brasil';
-            }
-
-            $key = 'GLOBAL|' . $scope;
-            $current = $counts[$key] ?? 0;
-
-            if ($current >= $globalCaps[$scope]) {
-                continue;
-            }
-
-            $counts[$key] = $current + 1;
-            $item['global_scope'] = $scope;
+            // TV Sumaré opera com recorte regional explícito. Conteúdo nacional,
+            // estadual ou genérico não entra automaticamente na fila do Radar.
+            continue;
         }
 
         $item['category'] = $category;
@@ -247,53 +231,54 @@ if (!function_exists('tvs_radar_queue_item_readiness')) {
         } elseif (preg_match('~news\.google\.com~i', $url)) {
             $reasons[] = 'URL original não resolvida';
         } else {
-            $path = trim(
-                (string)(parse_url($url, PHP_URL_PATH) ?? ''),
-                '/'
-            );
+            $articleLike = null;
+            if (function_exists('tvs_radar_is_article_path')) {
+                $articleLike = tvs_radar_is_article_path(
+                    $url,
+                    $title,
+                    (string)($item['city'] ?? '')
+                );
+            }
 
-            $segments = array_values(
-                array_filter(explode('/', $path))
-            );
+            if ($articleLike === null) {
+                $path = trim(
+                    (string)(parse_url($url, PHP_URL_PATH) ?? ''),
+                    '/'
+                );
+                $segments = array_values(array_filter(explode('/', $path)));
+                $articleLike = !(
+                    $path === ''
+                    || count($segments) < 2
+                    || preg_match(
+                        '~(?:^|/)(category|categoria|tag|tags|author|autor|'
+                        .'search|busca|page|pagina|arquivo|archive|editoria|'
+                        .'secao|seção)(?:/|$)~iu',
+                        $path
+                    )
+                );
+            }
 
-            if (
-                $path === ''
-                || count($segments) < 2
-                || preg_match(
-                    '~(?:^|/)(category|categoria|tag|tags|author|autor|'
-                    .'search|busca|page|pagina|arquivo|archive|editoria|'
-                    .'secao|seção)(?:/|$)~iu',
-                    $path
-                )
-            ) {
+            if (!$articleLike) {
                 $reasons[] = 'URL corresponde a página de listagem';
             }
         }
 
-        if (
-            $image === ''
-            || preg_match(
-                '~(^|/)assets/cat-|placeholder|logo-tv-sumare|'
-                .'googleusercontent\.com|gstatic\.com~i',
-                $image
-            )
-        ) {
-            $reasons[] = 'Imagem jornalística não resolvida';
-        }
-
-        if (!empty($item['image_review_required'])) {
-            $reasons[] = 'Imagem exige revisão';
-        }
+        // Imagem não define prontidão editorial. Ela é tratada separadamente
+        // por image_status/home_eligible para Hero, Home e redes sociais.
 
         if (!empty($item['url_resolution_required'])) {
             $reasons[] = 'URL exige resolução';
         }
 
         /*
-         * Corpo é obrigatório apenas quando o item já deveria estar pronto
-         * para edição/publicação. Evita matéria vazia na fila editorial.
+         * Corpo precisa conter conteúdo jornalístico real, e não apenas a
+         * manchete repetida, o nome do veículo ou um resumo de RSS curto.
          */
-        if ($body === '' || mb_strlen($body, 'UTF-8') < 180) {
+        if (function_exists('tvs_editorial_body_is_thin')) {
+            if (tvs_editorial_body_is_thin($title,$body,$item['source']??'')) {
+                $reasons[] = 'Texto jornalístico insuficiente ou duplicado';
+            }
+        } elseif ($body === '' || mb_strlen($body, 'UTF-8') < 300) {
             $reasons[] = 'Texto jornalístico insuficiente';
         }
 
