@@ -439,36 +439,135 @@ if (!function_exists('tvp_veo_config')) {
       $hubBase=rtrim((string)(getenv('MARKETING_ENGINE_URL')?:'https://marketing.hml.vitrineiapro.com.br'),'/');
       $url=$hubBase.$url;
     }
+    if(preg_match('~^http://marketing\.hml\.vitrineiapro\.com\.br(?:/|$)~i',$url)){
+      $url='https://'.substr($url,7);
+    }
     if(!preg_match('~^https://~i',$url)) return ['ok'=>false,'error'=>'URL de render VEO inválida após normalização.'];
 
-    $host=strtolower((string)parse_url($url,PHP_URL_HOST));
-    if($host==='') return ['ok'=>false,'error'=>'Host da URL de render VEO inválido.'];
-
-    $outbound=tvs_outbound_curl_options($url,120); if($outbound===null) return ['ok'=>false,'error'=>'Download VEO bloqueado pela política de saída.'];
-    $fp=@fopen($dest,'wb'); if(!$fp) return ['ok'=>false,'error'=>'Falha ao criar arquivo temporário VEO.'];
-
-    $headers=['Accept: video/mp4,video/*;q=0.9,*/*;q=0.1'];
-    if(($host==='googleapis.com' || str_ends_with($host,'.googleapis.com')) && trim((string)($cfg['api_key']??''))!==''){
-      $headers[]='x-goog-api-key: '.$cfg['api_key'];
+    $query=[];
+    parse_str((string)parse_url($url,PHP_URL_QUERY),$query);
+    $expires=(int)($query['expires']??0);
+    if($expires>0 && $expires<=time()){
+      return ['ok'=>false,'error'=>'Asset VEO já havia sido gerado, mas o link temporário expirou antes da recuperação. Nenhuma nova geração foi iniciada.','asset_expired'=>true,'expired_at'=>date('c',$expires)];
     }
 
-    $ch=curl_init($url); curl_setopt_array($ch,$outbound+[
-      CURLOPT_FILE=>$fp,
-      CURLOPT_FOLLOWLOCATION=>false,
-      CURLOPT_HTTPHEADER=>$headers
-    ]);
-    $ok=curl_exec($ch); $err=curl_error($ch); $http=(int)curl_getinfo($ch,CURLINFO_HTTP_CODE); curl_close($ch); fclose($fp);
-    $size=is_file($dest)?(int)filesize($dest):0;
-    if(!$ok || $http<200 || $http>=300 || $size<10240){ @unlink($dest); return ['ok'=>false,'error'=>'Falha no download VEO HTTP '.$http.'. '.$err]; }
-    return ['ok'=>true,'bytes'=>$size,'source_host'=>$host];
+    $current=$url; $redirects=0; $maxRedirects=3; $sourceHost='';
+    while(true){
+      $host=strtolower((string)parse_url($current,PHP_URL_HOST));
+      if($host==='') return ['ok'=>false,'error'=>'Host da URL de render VEO inválido.'];
+      if($sourceHost==='') $sourceHost=$host;
+      $outbound=tvs_outbound_curl_options($current,120);
+      if($outbound===null) return ['ok'=>false,'error'=>'Download VEO bloqueado pela política de saída.'];
+
+      $fp=@fopen($dest,'wb');
+      if(!$fp) return ['ok'=>false,'error'=>'Falha ao criar arquivo temporário VEO.'];
+
+      $headers=['Accept: video/mp4,video/*;q=0.9,*/*;q=0.1'];
+      if(($host==='googleapis.com' || str_ends_with($host,'.googleapis.com')) && trim((string)($cfg['api_key']??''))!==''){
+        $headers[]='x-goog-api-key: '.$cfg['api_key'];
+      }
+
+      $location=''; $contentType='';
+      $ch=curl_init($current);
+      curl_setopt_array($ch,$outbound+[
+        CURLOPT_FILE=>$fp,
+        CURLOPT_FOLLOWLOCATION=>false,
+        CURLOPT_HTTPHEADER=>$headers,
+        CURLOPT_HEADERFUNCTION=>function($ch,$line) use (&$location,&$contentType){
+          $len=strlen($line);
+          if(stripos($line,'Location:')===0) $location=trim(substr($line,9));
+          if(stripos($line,'Content-Type:')===0) $contentType=strtolower(trim(substr($line,13)));
+          return $len;
+        }
+      ]);
+      $ok=curl_exec($ch); $err=curl_error($ch); $http=(int)curl_getinfo($ch,CURLINFO_HTTP_CODE);
+      curl_close($ch); fclose($fp);
+
+      if(in_array($http,[301,302,303,307,308],true)){
+        @unlink($dest);
+        if($location==='') return ['ok'=>false,'error'=>'Download VEO recebeu redirecionamento HTTP '.$http.' sem destino.'];
+        if(++$redirects>$maxRedirects) return ['ok'=>false,'error'=>'Download VEO excedeu o limite seguro de redirecionamentos.'];
+        if(str_starts_with($location,'//')) $location='https:'.$location;
+        elseif(str_starts_with($location,'/')){
+          $scheme=(string)(parse_url($current,PHP_URL_SCHEME)?:'https');
+          $redirectHost=(string)parse_url($current,PHP_URL_HOST);
+          $port=parse_url($current,PHP_URL_PORT);
+          $location=$scheme.'://'.$redirectHost.($port?':'.$port:'').$location;
+        }
+        if(!preg_match('~^https://~i',$location)) return ['ok'=>false,'error'=>'Redirecionamento VEO recusado por não usar HTTPS.'];
+        $current=$location; continue;
+      }
+
+      $size=is_file($dest)?(int)filesize($dest):0;
+      if(!$ok || $http<200 || $http>=300 || $size<10240){
+        @unlink($dest);
+        return ['ok'=>false,'error'=>'Falha no download VEO HTTP '.$http.'. '.$err];
+      }
+      if($contentType!=='' && !str_starts_with($contentType,'video/') && $contentType!=='application/octet-stream'){
+        @unlink($dest);
+        return ['ok'=>false,'error'=>'Asset VEO retornou tipo inesperado: '.$contentType.'.'];
+      }
+      $head='';
+      $fh=@fopen($dest,'rb');
+      if($fh){ $head=(string)fread($fh,32); fclose($fh); }
+      if($head==='' || strpos($head,'ftyp')===false){
+        @unlink($dest);
+        return ['ok'=>false,'error'=>'Asset VEO retornado não é um MP4 válido; a composição foi interrompida sem iniciar nova geração.'];
+      }
+      return ['ok'=>true,'bytes'=>$size,'source_host'=>$sourceHost,'final_host'=>$host,'redirects'=>$redirects];
+    }
   }
+  function tvp_media_cache_asset($url,$jobId,$scene){
+    $root=tvp_root();
+    $dir=$root.'/uploads/videos/.staging';
+    if(!is_dir($dir) && !@mkdir($dir,0775,true)) return ['ok'=>false,'error'=>'Falha ao preparar cache persistente de cenas.'];
+    $safe=preg_replace('/[^a-zA-Z0-9_-]+/','-',(string)$jobId);
+    $safe=trim((string)$safe,'-_')?:'media';
+    $scene=max(1,(int)$scene);
+    $relative='uploads/videos/.staging/'.$safe.'-scene-'.$scene.'.mp4';
+    $dest=$root.'/'.$relative;
+
+    if(is_file($dest) && filesize($dest)>=10240){
+      $fh=@fopen($dest,'rb'); $head=$fh?(string)fread($fh,32):''; if($fh) fclose($fh);
+      if($head!=='' && strpos($head,'ftyp')!==false){
+        return ['ok'=>true,'local_path'=>$relative,'bytes'=>(int)filesize($dest),'cached'=>true];
+      }
+      @unlink($dest);
+    }
+
+    $d=tvp_veo_download($url,$dest);
+    if(empty($d['ok'])) return $d;
+    @chmod($dest,0664);
+    return ['ok'=>true,'local_path'=>$relative,'bytes'=>$d['bytes']??(int)filesize($dest),'cached'=>false];
+  }
+
   function tvp_veo_finalize($uris,$jobId){
     $ffmpeg=trim((string)@shell_exec('command -v ffmpeg 2>/dev/null')); if($ffmpeg==='') return ['ok'=>false,'error'=>'FFmpeg indisponível.'];
     $root=tvp_root(); $dir=$root.'/uploads/videos'; if(!is_dir($dir) && !@mkdir($dir,0775,true)) return ['ok'=>false,'error'=>'Falha ao preparar armazenamento de vídeos.'];
     $safe=preg_replace('/[^a-zA-Z0-9_-]+/','-',(string)$jobId); $safe=trim((string)$safe,'-_')?:'veo-'.date('YmdHis');
     $tmpDir=sys_get_temp_dir().'/tvs-veo-'.$safe.'-'.bin2hex(random_bytes(3)); if(!@mkdir($tmpDir,0700,true)) return ['ok'=>false,'error'=>'Falha ao preparar temporários VEO.'];
     $clips=[];
-    foreach(array_values($uris) as $i=>$uri){ $clip=$tmpDir.'/scene-'.$i.'.mp4'; $d=tvp_veo_download($uri,$clip); if(empty($d['ok'])){ foreach($clips as $c) @unlink($c); @rmdir($tmpDir); return $d; } $clips[]=$clip; }
+    foreach(array_values($uris) as $i=>$uri){
+      $clip=$tmpDir.'/scene-'.$i.'.mp4';
+      $candidate=trim((string)$uri);
+      $local=$candidate;
+      if($candidate!=='' && !str_starts_with($candidate,'/')) $local=$root.'/'.ltrim($candidate,'/');
+      if($candidate!=='' && is_file($local)){
+        if(!@copy($local,$clip)){
+          foreach($clips as $c) @unlink($c);
+          @rmdir($tmpDir);
+          return ['ok'=>false,'error'=>'Falha ao copiar cena já armazenada para composição.'];
+        }
+      } else {
+        $d=tvp_veo_download($candidate,$clip);
+        if(empty($d['ok'])){
+          foreach($clips as $c) @unlink($c);
+          @rmdir($tmpDir);
+          return $d;
+        }
+      }
+      $clips[]=$clip;
+    }
     $list=$tmpDir.'/concat.txt'; $lines=[]; foreach($clips as $c){ $lines[]="file '".str_replace("'","'\\''",$c)."'"; } file_put_contents($list,implode("\n",$lines));
     $joined=$tmpDir.'/joined.mp4';
     $cmd=escapeshellarg($ffmpeg).' -hide_banner -loglevel error -y -f concat -safe 0 -i '.escapeshellarg($list).' -c:v libx264 -preset medium -crf 21 -pix_fmt yuv420p -c:a aac -b:a 160k -movflags +faststart '.escapeshellarg($joined).' 2>&1';
@@ -556,7 +655,8 @@ if (!function_exists('tvp_send_video_orchestrated')) {
         'status'=>'completed',
         'asset_url'=>trim((string)($payload['asset_url']??'')),
         'provider'=>'legacy_completed',
-        'model'=>''
+        'model'=>'',
+        'legacy_completed_ref'=>true
       ];
     }
     if(str_starts_with($ref,'centroia:')){
@@ -634,7 +734,18 @@ if (!function_exists('tvp_send_video_orchestrated')) {
       $assetUrl=trim((string)($op['asset_url']??''));
       $jobRef=trim((string)($op['job_ref']??''));
 
-      if($status!=='completed' || $assetUrl===''){
+      if($status==='legacy_completed'){
+        if($jobRef==='') return ['ok'=>false,'error'=>'Operação VEO concluída sem referência recuperável na cena '.($i+1).'.','operations'=>$updated?:$ops];
+        $r=tvp_hub_http_json('/api/internal/marketing/media/video/refresh',['job_ref'=>$jobRef],45);
+        if(empty($r['ok'])) return ['ok'=>false,'error'=>'Hub IA não renovou o asset concluído da cena '.($i+1).': '.($r['error']??'falha de refresh'),'operations'=>$updated?:$ops];
+        $d=(array)($r['data']??[]);
+        $status=strtolower(trim((string)($d['status']??'processing')));
+        $assetUrl=trim((string)($d['asset_url']??''));
+        $op['status']=$status;
+        $op['asset_url']=$assetUrl;
+        if(!empty($d['provider'])) $op['provider']=(string)$d['provider'];
+        if(!empty($d['model'])) $op['model']=(string)$d['model'];
+      } elseif($status!=='completed' || $assetUrl===''){
         if($jobRef==='') return ['ok'=>false,'error'=>'Operação de vídeo sem referência de job na cena '.($i+1).'.','operations'=>$updated?:$ops];
         $r=tvp_centro_ia_execute('video_generation',[
           'user'=>'Atualize o estado desta geração de vídeo regional.',
@@ -654,7 +765,28 @@ if (!function_exists('tvp_send_video_orchestrated')) {
       if($status==='failed') return ['ok'=>false,'error'=>'Centro IA informou falha na geração da cena '.($i+1).'.','operations'=>array_merge($updated,[$op])];
       if($status==='completed'){
         if($assetUrl==='') return ['ok'=>false,'error'=>'Centro IA concluiu a cena '.($i+1).' sem URL do vídeo.','operations'=>array_merge($updated,[$op])];
-        $uris[]=$assetUrl; $done++;
+
+        $localAsset=trim((string)($op['local_asset_path']??''));
+        $localFull=$localAsset!=='' ? tvp_root().'/'.ltrim($localAsset,'/') : '';
+        if($localAsset!=='' && is_file($localFull) && filesize($localFull)>=10240){
+          $uris[]=$localAsset;
+        } else {
+          $cache=tvp_media_cache_asset($assetUrl,$job['id']??'media-job',$i+1);
+          if(empty($cache['ok'])){
+            $op['cache_error']=(string)($cache['error']??'Falha ao armazenar cena concluída.');
+            if(!empty($cache['asset_expired'])) $op['asset_expired']=true;
+            return [
+              'ok'=>false,
+              'error'=>'Cena '.($i+1).' foi concluída, mas não pôde ser preservada localmente: '.($cache['error']??'falha de cache'),
+              'asset_expired'=>!empty($cache['asset_expired']),
+              'operations'=>array_merge($updated,[$op])
+            ];
+          }
+          $op['local_asset_path']=$cache['local_path'];
+          $op['cached_at']=date('c');
+          $uris[]=$cache['local_path'];
+        }
+        $done++;
       }
       if(!empty($op['provider'])) $providers[(string)$op['provider']]=true;
       if(!empty($op['model'])) $models[(string)$op['model']]=true;
@@ -684,6 +816,146 @@ if (!function_exists('tvp_send_video_orchestrated')) {
       'providers'=>array_keys($providers),
       'models'=>array_keys($models)
     ];
+  }
+}
+
+if (!function_exists('tvp_recover_completed_veo_jobs')) {
+  function tvp_recover_completed_veo_jobs(){
+    $jobs=tvp_load_video_jobs();
+    $changed=false;
+    $summary=['recovered'=>0,'failed'=>0,'skipped'=>0];
+
+    foreach($jobs as $i=>$job){
+      $existingUrl=trim((string)(($job['captioned_video_url']??'') ?: ($job['video_url']??'')));
+      if($existingUrl!==''){ $summary['skipped']++; continue; }
+
+      $legacy=(array)($job['veo_operations']??[]);
+      if(!$legacy){ $summary['skipped']++; continue; }
+
+      $allCompleted=true;
+      foreach($legacy as $raw){
+        if(!is_string($raw) || !str_starts_with(trim($raw),'completed:')){
+          $allCompleted=false; break;
+        }
+      }
+      if(!$allCompleted){ $summary['skipped']++; continue; }
+
+      $r=tvp_check_video_orchestrated($job);
+      if(!empty($r['ok']) && !empty($r['video_url'])){
+        $jobs[$i]['video_url']=$r['video_url'];
+        $jobs[$i]['status']='revisao_video';
+        $jobs[$i]['media_progress']=100;
+        $jobs[$i]['review_ready_at']=date('c');
+        $jobs[$i]['recovered_existing_assets_at']=date('c');
+        if(!empty($r['operations'])) $jobs[$i]['media_operations']=$r['operations'];
+        if(!empty($r['models'])) $jobs[$i]['media_models']=$r['models'];
+        if(!empty($r['providers'])) $jobs[$i]['media_providers']=$r['providers'];
+        unset($jobs[$i]['media_failure'],$jobs[$i]['veo_failure']);
+        $summary['recovered']++;
+      } else {
+        $jobs[$i]['status']='erro';
+        $jobs[$i]['media_failure']=trim((string)($r['error']??'Falha ao recuperar assets VEO já concluídos.'));
+        $summary['failed']++;
+      }
+      $jobs[$i]['updated_at']=date('c');
+      $changed=true;
+    }
+
+    if($changed) tvp_save_video_jobs($jobs);
+    return $summary;
+  }
+}
+
+if (!function_exists('tvp_recover_completed_media_jobs')) {
+  function tvp_recover_completed_media_jobs(){
+    $jobs=tvp_load_video_jobs();
+    $changed=false;
+    $summary=['veo_recovered'=>0,'veo_failed'=>0,'heygen_recovered'=>0,'heygen_pending'=>0,'heygen_failed'=>0];
+
+    foreach($jobs as $i=>$job){
+      $status=(string)($job['status']??'');
+      $hasHeygenRef=trim((string)($job['heygen_session_id']??''))!=='' || trim((string)($job['heygen_video_id']??''))!=='';
+      $wrongCentroError=$status==='erro'
+        && $hasHeygenRef
+        && stripos((string)($job['media_failure']??''),'sem operações do Centro IA')!==false;
+
+      if($wrongCentroError){
+        $jobs[$i]['video_engine']='heygen';
+        unset($jobs[$i]['media_failure']);
+        $r=tvp_check_heygen($jobs[$i]);
+        if(!empty($r['ok'])){
+          if(isset($r['progress'])) $jobs[$i]['heygen_progress']=$r['progress'];
+          if(!empty($r['video_id'])) $jobs[$i]['heygen_video_id']=$r['video_id'];
+          if(!empty($r['video_url']) || !empty($r['captioned_video_url'])){
+            $jobs[$i]['video_url']=$r['video_url']??'';
+            $jobs[$i]['captioned_video_url']=$r['captioned_video_url']??'';
+            $jobs[$i]['thumb']=$r['thumb']?:($jobs[$i]['image']??'assets/cat-cidade.svg');
+            $jobs[$i]['status']='revisao_video';
+            $jobs[$i]['review_ready_at']=date('c');
+            unset($jobs[$i]['heygen_failure']);
+            $summary['heygen_recovered']++;
+          } elseif(!empty($r['failure_message'])){
+            $jobs[$i]['status']='erro';
+            $jobs[$i]['heygen_failure']=$r['failure_message'];
+            $summary['heygen_failed']++;
+          } else {
+            $jobs[$i]['status']='gerando';
+            $summary['heygen_pending']++;
+          }
+        } else {
+          $jobs[$i]['status']='erro';
+          $jobs[$i]['heygen_failure']=trim((string)($r['error']??'Falha ao consultar HeyGen.'));
+          $summary['heygen_failed']++;
+        }
+        $jobs[$i]['last_provider_check_at']=date('c');
+        $jobs[$i]['updated_at']=date('c');
+        $changed=true;
+        continue;
+      }
+
+      $existingUrl=trim((string)(($job['captioned_video_url']??'') ?: ($job['video_url']??'')));
+      $legacy=(array)($job['veo_operations']??[]);
+      if($existingUrl!=='' || !$legacy || !empty($job['recovery_terminal'])) continue;
+
+      $allCompleted=true;
+      foreach($legacy as $raw){
+        $op=tvp_normalize_legacy_media_operation($raw);
+        if(!in_array(strtolower(trim((string)($op['status']??''))),['completed','legacy_completed'],true) || trim((string)($op['asset_url']??''))===''){
+          $allCompleted=false;
+          break;
+        }
+      }
+      if(!$allCompleted) continue;
+
+      $r=tvp_check_video_orchestrated($job);
+      if(!empty($r['ok']) && !empty($r['video_url'])){
+        $jobs[$i]['video_url']=$r['video_url'];
+        $jobs[$i]['status']='revisao_video';
+        $jobs[$i]['media_progress']=100;
+        $jobs[$i]['review_ready_at']=date('c');
+        $jobs[$i]['recovered_existing_assets_at']=date('c');
+        if(!empty($r['operations'])) $jobs[$i]['media_operations']=$r['operations'];
+        if(!empty($r['models'])) $jobs[$i]['media_models']=$r['models'];
+        if(!empty($r['providers'])) $jobs[$i]['media_providers']=$r['providers'];
+        unset($jobs[$i]['media_failure'],$jobs[$i]['veo_failure']);
+        $summary['veo_recovered']++;
+      } else {
+        $jobs[$i]['status']='erro';
+        $jobs[$i]['media_failure']=trim((string)($r['error']??'Falha ao recuperar assets VEO já concluídos.'));
+        if(!empty($r['operations'])) $jobs[$i]['media_operations']=$r['operations'];
+        if(!empty($r['asset_expired'])){
+          $jobs[$i]['recovery_terminal']=true;
+          $jobs[$i]['recovery_terminal_reason']='asset_temporario_expirado_sem_job_ref_recuperavel';
+          $jobs[$i]['recovery_terminal_at']=date('c');
+        }
+        $summary['veo_failed']++;
+      }
+      $jobs[$i]['updated_at']=date('c');
+      $changed=true;
+    }
+
+    if($changed) tvp_save_video_jobs($jobs);
+    return $summary;
   }
 }
 

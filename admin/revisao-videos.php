@@ -12,8 +12,16 @@ function rv_redirect($params=[]){
 function rv_find_job($id,&$jobs=null,&$idx=null){
   return tvp_find_job($id,$jobs,$idx);
 }
+function rv_job_engine($job){
+  $engine=strtolower(trim((string)($job['video_engine']??'')));
+  if($engine==='heygen') return 'heygen';
+  if(in_array($engine,['orchestrated','veo','centro_ia','ia'],true)) return 'orchestrated';
+  if(trim((string)($job['heygen_session_id']??''))!=='' || trim((string)($job['heygen_video_id']??''))!=='') return 'heygen';
+  if(!empty($job['media_operations']) || !empty($job['veo_operations'])) return 'orchestrated';
+  return $engine!==''?$engine:'orchestrated';
+}
 function rv_sync_job($job,&$jobs,$idx){
-  $engine=(string)($job['video_engine']??'');
+  $engine=rv_job_engine($job);
   if(($job['status']??'')!=='gerando') return $job;
   if($engine==='heygen'){
     $r=tvp_check_heygen($job);
@@ -34,7 +42,11 @@ function rv_sync_job($job,&$jobs,$idx){
       tvp_save_video_jobs($jobs);
       return $jobs[$idx];
     }
-    return $job;
+    $jobs[$idx]['status']='erro';
+    $jobs[$idx]['heygen_failure']=trim((string)($r['error']??'Falha ao consultar HeyGen.'));
+    $jobs[$idx]['updated_at']=date('c');
+    tvp_save_video_jobs($jobs);
+    return $jobs[$idx];
   }
   $r=tvp_check_video_orchestrated($job);
   if(!empty($r['ok'])){
@@ -53,7 +65,12 @@ function rv_sync_job($job,&$jobs,$idx){
     tvp_save_video_jobs($jobs);
     return $jobs[$idx];
   }
-  return $job;
+  $jobs[$idx]['status']='erro';
+  $jobs[$idx]['media_failure']=trim((string)($r['error']??'Falha na geração pelo Centro IA.'));
+  if(!empty($r['operations'])) $jobs[$idx]['media_operations']=$r['operations'];
+  $jobs[$idx]['updated_at']=date('c');
+  tvp_save_video_jobs($jobs);
+  return $jobs[$idx];
 }
 
 $msg=(string)($_GET['msg']??''); $err=(string)($_GET['err']??'');
@@ -143,7 +160,7 @@ if($focus!==''){
 }
 
 $jobs=tvp_load_video_jobs();
-$review=array_values(array_filter($jobs,fn($j)=>in_array((string)($j['status']??''),['gerando','revisao_video','video_aprovado','erro'],true)));
+$review=array_values(array_filter($jobs,fn($j)=>in_array((string)($j['status']??''),['gerando','revisao_video','video_aprovado','erro','consulta_pendente'],true)));
 usort($review,fn($a,$b)=>strcmp((string)($b['updated_at']??$b['created_at']??''),(string)($a['updated_at']??$a['created_at']??'')));
 function rv_status_label($s){
   return match($s){
@@ -151,12 +168,13 @@ function rv_status_label($s){
     'revisao_video'=>'Pronto para revisão',
     'video_aprovado'=>'Aprovado',
     'erro'=>'Erro',
+    'consulta_pendente'=>'Consulta pendente',
     default=>$s
   };
 }
 function rv_progress($j){
   if(($j['status']??'')==='revisao_video') return 100;
-  if(($j['video_engine']??'')==='heygen') return max(8,(int)($j['heygen_progress']??35));
+  if(rv_job_engine($j)==='heygen') return max(8,(int)($j['heygen_progress']??35));
   return max(8,(int)($j['media_progress']??35));
 }
 ?>
@@ -193,14 +211,17 @@ function rv_progress($j){
 <article class="video-card <?=$focus===($j['id']??'')?'focus':''?>">
   <div class="preview">
     <?php if($ready && $url!==''): ?><video controls preload="metadata" src="<?=tvp_h(tvp_abs_url($url))?>"></video>
+    <?php elseif($st==='erro'): ?><div class="processing"><strong>Falha na geração</strong><span><?=tvp_h((string)($j['media_failure']??$j['heygen_failure']??'O provider não concluiu a geração.'))?></span></div>
+    <?php elseif($st==='consulta_pendente'): ?><div class="processing"><strong>Consulta pendente</strong><span><?=tvp_h((string)($j['heygen_failure']??'Existe um job no provider, mas ainda não foi possível consultar o resultado. Nenhuma nova geração foi iniciada.'))?></span></div>
     <?php else: ?><div class="processing"><div class="spinner"></div><strong><?=tvp_h(rv_status_label($st))?></strong><span><?=tvp_h((string)($j['title']??'Vídeo em produção'))?></span></div><?php endif; ?>
   </div>
   <div class="progress"><span style="width:<?=$p?>%"></span></div>
-  <div class="meta"><span><?=tvp_h(rv_status_label($st))?></span><span><?=tvp_h($j['city']??'Região')?></span><span><?=tvp_h($j['category']??'Vídeo')?></span><span><?=tvp_h(($j['video_engine']??'')==='heygen'?'HeyGen':'Centro IA')?></span></div>
+  <div class="meta"><span><?=tvp_h(rv_status_label($st))?></span><span><?=tvp_h($j['city']??'Região')?></span><span><?=tvp_h($j['category']??'Vídeo')?></span><span><?=tvp_h(rv_job_engine($j)==='heygen'?'HeyGen':'Centro IA')?></span></div>
   <h2><?=tvp_h($j['title']??'Sem título')?></h2>
   <?php if(!empty($j['script'])): ?><p class="muted"><?=tvp_h(tvp_substr($j['script'],0,280))?></p><?php endif; ?>
   <?php if($st==='gerando'): ?><p class="muted">A página atualiza automaticamente enquanto o vídeo é processado.</p><?php endif; ?>
   <?php if($st==='erro'): ?><div class="notice error"><?=tvp_h($j['media_failure']??$j['heygen_failure']??'Falha na geração.')?></div><?php endif; ?>
+  <?php if($st==='consulta_pendente'): ?><div class="notice"><?=tvp_h($j['heygen_failure']??'Job existente aguardando consulta ao provider. Nenhuma nova geração foi iniciada.')?></div><?php endif; ?>
   <?php if($ready): ?><div class="actions">
     <form method="post"><?=tvs_csrf_field()?><input type="hidden" name="action" value="approve_tvplay"><input type="hidden" name="job_id" value="<?=tvp_h($j['id'])?>"><button class="btn">Publicar no TV Play</button></form>
     <form method="post"><?=tvs_csrf_field()?><input type="hidden" name="action" value="approve_youtube"><input type="hidden" name="job_id" value="<?=tvp_h($j['id'])?>"><button class="btn secondary">Publicar no YouTube</button></form>
