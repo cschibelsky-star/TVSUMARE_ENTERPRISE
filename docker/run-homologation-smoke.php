@@ -5,6 +5,9 @@ function check($cond,$label){ global $fail,$ok; if($cond)$ok[]=$label; else $fai
 function txt($p){ $v=@file_get_contents($p); return is_string($v)?$v:''; }
 function has($s,$needle){ return strpos($s,$needle)!==false; }
 
+$presenterPolicy=$root.'/includes/reporter_presenter_policy.php';
+if(is_file($presenterPolicy)) require_once $presenterPolicy;
+
 $radar=txt($root.'/admin/radar-regional.php');
 $log=txt($root.'/admin/log-editorial.php');
 $valid=txt($root.'/admin/content-validity.php');
@@ -39,8 +42,35 @@ check($boletim!=='' && (has($boletim,'quantity') || has($boletim,'quantidade')),
 check($reporter!=='' && has($reporter,'rpia_provider_blocked'), 'Repórter bloqueia provedor indisponível');
 check($reporter!=='' && has($reporter,'rpia_job_state'), 'Repórter usa máquina de estados');
 check($reporter!=='' && has($reporter,'send_lock_at'), 'Repórter protege envio duplicado');
-check($reporter!=='' && has($reporter,'$isBoletim=!empty($job[\'boletim\'])') && has($reporter,':$cfgValue'), 'Notícias preservam avatar e voz fixos do Repórter principal');
-check($reporter!=='' && has($reporter,'rpia_catalog_profile_for_job') && has($reporter,'if(empty($job[\'boletim\'])) return null'), 'Catálogo de apresentadores atua somente nos boletins');
+$conflictingCfg=[
+  'heygen_avatar_id'=>'cfg-avatar',
+  'heygen_voice_id'=>'cfg-voice',
+  'heygen_style_id'=>'cfg-style',
+  'heygen_brand_kit_id'=>'cfg-brand',
+];
+$conflictingJob=[
+  'heygen_avatar_id'=>'job-avatar',
+  'heygen_voice_id'=>'job-voice',
+  'heygen_style_id'=>'job-style',
+  'heygen_brand_kit_id'=>'job-brand',
+];
+$primaryPresenter=function_exists('tvs_reporter_presenter_payload') ? tvs_reporter_presenter_payload($conflictingJob,$conflictingCfg) : [];
+$boletimPresenter=function_exists('tvs_reporter_presenter_payload') ? tvs_reporter_presenter_payload($conflictingJob+['boletim'=>['id'=>'smoke']],$conflictingCfg) : [];
+check(
+  ($primaryPresenter['avatar_id']??null)==='cfg-avatar'
+  && ($primaryPresenter['voice_id']??null)==='cfg-voice'
+  && ($primaryPresenter['style_id']??null)==='cfg-style'
+  && ($primaryPresenter['brand_kit_id']??null)==='cfg-brand',
+  'Notícia principal ignora IDs conflitantes do job e usa configuração fixa do Repórter'
+);
+check(
+  ($boletimPresenter['avatar_id']??null)==='job-avatar'
+  && ($boletimPresenter['voice_id']??null)==='job-voice'
+  && ($boletimPresenter['style_id']??null)==='job-style'
+  && ($boletimPresenter['brand_kit_id']??null)==='job-brand',
+  'Boletim preserva IDs do catálogo/job diante de configuração conflitante'
+);
+check($reporter!=='' && has($reporter,'tvs_reporter_presenter_payload($job,$cfg)'), 'Repórter IA usa a política testada no payload HeyGen');
 check($presenters!=='' && has($presenters,'Catálogo de Apresentadores IA'), 'Catálogo de apresentadores IA existe');
 check($presenters!=='' && has($presenters,"'homologado'") && has($presenters,'Critérios de homologação'), 'Catálogo controla homologação humana');
 check($presenters!=='' && has($presenters,'Rosto/fotorealismo') && has($presenters,'Sincronização labial'), 'Catálogo avalia naturalidade audiovisual');
