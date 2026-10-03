@@ -133,7 +133,7 @@ function tvs_load_real_videos($limit=0,$maxDays=30){
     foreach($arr as $v){
       $url=tvs_video_url($v);
       $status=tvs_lc($v['status']??'active');
-      if($url==='' || in_array($status,['erro','error','failed','paused','rascunho','sugerido','roteiro','roteiro_revisao','aprovado_video','gerando','fila','pendente'],true)) continue;
+      if($url==='' || in_array($status,['erro','error','failed','paused','rascunho','sugerido','roteiro','roteiro_revisao','aprovado_video','gerando','fila','pendente','removed','deleted'],true)) continue;
       if($maxDays>0 && tvs_video_age_days($v)>$maxDays) continue;
       $raw[]=$v;
     }
