@@ -20,6 +20,7 @@ RUN php -l /var/www/html/admin/radar-regional.php \
     && php -l /var/www/html/eleicoes-2026.php \
     && php -l /var/www/html/eleicoes-2026-dados.php \
     && php /var/www/html/tests/elections_2026_test.php \
+    && php /var/www/html/tests/election_projection_test.php \
     && php /var/www/html/docker/apply-radar-editorial-policy.php \
     && php /var/www/html/docker/apply-radar-image-audit.php \
     && php /var/www/html/docker/apply-video-ai-hardening.php \

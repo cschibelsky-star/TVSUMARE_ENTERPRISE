@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__.'/election_projection.php';
 
 function tvs_election_states(): array { return ['ac'=>'Acre','al'=>'Alagoas','ap'=>'Amapá','am'=>'Amazonas','ba'=>'Bahia','ce'=>'Ceará','df'=>'Distrito Federal','es'=>'Espírito Santo','go'=>'Goiás','ma'=>'Maranhão','mt'=>'Mato Grosso','ms'=>'Mato Grosso do Sul','mg'=>'Minas Gerais','pa'=>'Pará','pb'=>'Paraíba','pr'=>'Paraná','pe'=>'Pernambuco','pi'=>'Piauí','rj'=>'Rio de Janeiro','rn'=>'Rio Grande do Norte','rs'=>'Rio Grande do Sul','ro'=>'Rondônia','rr'=>'Roraima','sc'=>'Santa Catarina','sp'=>'São Paulo','se'=>'Sergipe','to'=>'Tocantins']; }
 function tvs_election_specs(string $uf='sp'): array {
@@ -60,7 +61,15 @@ function tvs_election_parse(array $raw, array $spec): array {
         $candidate['group_seats']=$groups[$candidate['group_id']]['seats']??null;
     }
     unset($candidate);
-    return ['key'=>$spec['key'],'proportional'=>$proportional,'electoral_quotient'=>$electoralQuotient,'seats'=>$seats,'title'=>$spec['title'],'candidates'=>$candidates,'sections'=>$sections,'updated_at'=>$timestamp->format(DATE_ATOM),'final'=>($raw['tf']??'')==='s','source'=>'Tribunal Superior Eleitoral'];
+    $projection=$proportional?tvs_election_projection($raw,$cargo):null;
+    if($proportional)foreach($candidates as &$candidate){
+        $entry=$projection['candidates'][$candidate['number']]??null;
+        $candidate['projection']=$entry??['status'=>'undefined','reason'=>$projection['reason']??'Dados insuficientes.'];
+        $candidate['projected_group_seats']=$projection['group_seats'][$candidate['group_id']]??null;
+    }
+    unset($candidate);
+    if($projection)unset($projection['candidates']);
+    return ['projection'=>$projection,'key'=>$spec['key'],'proportional'=>$proportional,'electoral_quotient'=>$electoralQuotient,'seats'=>$seats,'title'=>$spec['title'],'candidates'=>$candidates,'sections'=>$sections,'updated_at'=>$timestamp->format(DATE_ATOM),'final'=>($raw['tf']??'')==='s','source'=>'Tribunal Superior Eleitoral'];
 }
 function tvs_election_fetch(string $url): array {
     if (!str_starts_with($url,'https://resultados.tse.jus.br/oficial/')) throw new RuntimeException('Fonte não permitida.');
