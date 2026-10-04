@@ -6,6 +6,7 @@ require_once dirname(__DIR__).'/config.php';
 require_once __DIR__.'/gemini.php';
 require_once __DIR__.'/monitor_lib.php';
 require_once dirname(__DIR__).'/includes/heygen_helper.php';
+require_once dirname(__DIR__).'/includes/reporter_presenter_policy.php';
 $activeAdmin='reporter_ia';
 
 function rpia_h($s){ return htmlspecialchars((string)$s,ENT_QUOTES,'UTF-8'); }
@@ -63,7 +64,7 @@ function rpia_video_agent_prompt($job,$cfg){
 function rpia_heygen_create($job,$cfg){
   $key=rpia_heygen_key($cfg); if($key==='') return ['ok'=>false,'error'=>'Configure a chave da HeyGen.'];
   $orientation=rpia_job_orientation($job,$cfg); $payload=['prompt'=>rpia_video_agent_prompt($job,$cfg),'mode'=>'generate','incognito_mode'=>rpia_bool($cfg['heygen_incognito_mode']??'0')];
-  foreach(['avatar_id'=>'heygen_avatar_id','voice_id'=>'heygen_voice_id','style_id'=>'heygen_style_id','brand_kit_id'=>'heygen_brand_kit_id'] as $api=>$local){ $jobValue=trim((string)($job[$local]??'')); $cfgValue=trim((string)($cfg[$local]??'')); $v=$jobValue!==''?$jobValue:$cfgValue; if($v!=='') $payload[$api]=$v; }
+  $payload=array_merge($payload,tvs_reporter_presenter_payload($job,$cfg));
   $callbackToken=trim((string)($cfg['heygen_callback_token']??'')); if($callbackToken!==''){ $payload['callback_url']=rpia_abs_url('api/heygen-callback.php?token='.rawurlencode($callbackToken)); $payload['callback_id']=$job['id']??('job_'.time()); }
   $r=rpia_heygen_request('POST','/v3/video-agents',$key,$payload,45); if(!$r['ok']) return ['ok'=>false,'error'=>$r['error']??'Falha ao criar sessão HeyGen.','raw'=>$r];
   $data=$r['data']['data']??($r['data']??[]); $session=$data['session_id']??''; $video=$data['video_id']??''; $status=$data['status']??'generating'; if($session==='' && $video==='') return ['ok'=>false,'error'=>'HeyGen não retornou session_id nem video_id: '.substr($r['raw']??'',0,700),'raw'=>$r]; return ['ok'=>true,'session_id'=>$session,'video_id'=>$video,'status'=>$status,'payload'=>$payload,'raw'=>$r['data']];
