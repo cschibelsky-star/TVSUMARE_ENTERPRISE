@@ -22,7 +22,9 @@ function tvs_election_projection(array $raw, array $cargo): array {
             if(isset($groups[$id]))return $unavailable('Grupo duplicado.');
             $votes=0;$list=[];
             foreach(($group['par']??[]) as $party){
-                $votes+=$integer($party['tval']??null);
+                $legendValidity=(string)($party['dvt']??'');
+                if($legendValidity==='Válido (legenda)')$votes+=$integer($party['tval']??null);
+                elseif(!str_starts_with($legendValidity,'Anulado')&&!str_starts_with($legendValidity,'Nulo'))return $unavailable('Destinação de legenda não reconhecida.');
                 foreach(($party['cand']??[]) as $c){
                     $n=(string)($c['n']??'');
                     if($n===''||isset($numbers[$n]))return $unavailable('Candidatura incompleta ou duplicada.');

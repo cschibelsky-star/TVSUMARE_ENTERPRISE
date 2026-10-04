@@ -6,7 +6,7 @@ function fixture(array $parties,int $seats):array{
  foreach($parties as $id=>$data){
   [$votes,$nominals]=$data;$candidates=[];$nominalSum=0;
   foreach($nominals as $index=>$v){$nominalSum+=$v;$candidates[]=['n'=>$id.'-'.$index,'vap'=>(string)$v,'dvt'=>'Válido','dt'=>sprintf('%02d/01/1970',$index+1)];}
-  $agr[]=['n'=>$id,'par'=>[['tval'=>(string)($votes-$nominalSum),'cand'=>$candidates]]];$sum+=$votes;
+  $agr[]=['n'=>$id,'par'=>[['dvt'=>'Válido (legenda)','tval'=>(string)($votes-$nominalSum),'cand'=>$candidates]]];$sum+=$votes;
  }
  return [['v'=>['vv'=>(string)$sum]],['nv'=>(string)$seats,'agr'=>$agr]];
 }
@@ -41,3 +41,7 @@ echo "ELECTION_PROJECTION_TEST=PASS: QP, duas etapas de sobras, divisor, idade, 
 $p=tvs_election_projection($r,$c);projectionCheck($p['available']&&$p['electoral_quotient']===101,'Acima de meio arredonda para cima');
 [$r,$c]=fixture(['A'=>[50,[50]],'B'=>[50,[50]]],1);
 projectionCheck(!tvs_election_projection($r,$c)['available'],'Empate completo de médias não inventa vencedor');
+
+[$r,$c]=fixture(['A'=>[100,[100]]],1);
+$c['agr'][]=['n'=>'invalid-party','par'=>[['dvt'=>'Anulado sub judice','tval'=>'1000','cand'=>[['n'=>'sub-judice','vap'=>'1000','dvt'=>'Anulado sub judice']]]]];
+$p=tvs_election_projection($r,$c);projectionCheck($p['available']&&$p['valid_votes']===100,'Legenda sub judice excluída');
