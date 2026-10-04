@@ -33,6 +33,7 @@ function tvs_admin_link($key,$href,$label,$active){
     <?=tvs_admin_link('distribuicao_social','distribuicao-social.php','Distribuição Social',$activeAdmin)?>
     <?=tvs_admin_link('apresentadores_ia','apresentadores-ia.php','Apresentadores IA',$activeAdmin)?>
     <?=tvs_admin_link('tvplay','tvplay.php','TV Play IA',$activeAdmin)?>
+    <?=tvs_admin_link('revisao_videos','revisao-videos.php','Revisão de Vídeos',$activeAdmin)?>
 
     <span class="menu-group">Conteúdo</span>
     <?=tvs_admin_link('rss','rss-central.php','Central RSS',$activeAdmin)?>
