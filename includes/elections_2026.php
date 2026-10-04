@@ -35,16 +35,32 @@ function tvs_election_parse(array $raw, array $spec): array {
     if ($sections>100) throw new RuntimeException('Percentual de seções inválido.');
     $timestamp=DateTimeImmutable::createFromFormat('!d/m/Y H:i:s', ($raw['dg']??'').' '.($raw['hg']??''), new DateTimeZone('America/Sao_Paulo'));
     if (!$timestamp || $timestamp->format('d/m/Y')!=='04/10/2026') throw new RuntimeException('Data oficial inesperada.');
+    $proportional=in_array($spec['cargo'],[6,7,8],true);
+    $electoralQuotient=$proportional && isset($cargo['qe']) ? tvs_election_number($cargo['qe']) : null;
+    $seats=isset($cargo['nv']) ? (int)tvs_election_number($cargo['nv']) : null;
+    $groups=[];
+    foreach(($cargo['agr']??[]) as $index=>$group){
+        $key=(string)($group['n']??$index);
+        $groups[$key]=['name'=>(string)($group['com']??$group['nm']??''),'seats'=>isset($group['vag'])?(int)tvs_election_number($group['vag']):null];
+    }
     $candidates=[];
     foreach (($cargo['agr']??[]) as $group) foreach (($group['par']??[]) as $party) foreach (($party['cand']??[]) as $candidate) {
         if (!isset($candidate['nmu'],$candidate['n'],$candidate['vap'],$candidate['pvap'])) throw new RuntimeException('Candidatura incompleta.');
         $percent=tvs_election_number($candidate['pvap']);
         if ($percent>100) throw new RuntimeException('Percentual de candidatura inválido.');
-        $candidates[]=['name'=>(string)$candidate['nmu'],'number'=>(string)$candidate['n'],'party'=>(string)($party['sg']??''),'votes'=>tvs_election_number($candidate['vap']),'percent'=>$percent,'status'=>(string)($candidate['st']??'')];
+        $candidates[]=['name'=>(string)$candidate['nmu'],'number'=>(string)$candidate['n'],'party'=>(string)($party['sg']??''),'votes'=>tvs_election_number($candidate['vap']),'percent'=>$percent,'status'=>(string)($candidate['st']??''),'group_id'=>(string)($group['n']??array_search($group,$cargo['agr'],true)),'vote_validity'=>(string)($candidate['dvt']??'')];
     }
     if (!$candidates) throw new RuntimeException('Candidaturas ainda indisponíveis.');
     usort($candidates,fn($a,$b)=>($b['votes']<=>$a['votes']) ?: strcmp($a['number'],$b['number']));
-    return ['title'=>$spec['title'],'candidates'=>$candidates,'sections'=>$sections,'updated_at'=>$timestamp->format(DATE_ATOM),'final'=>($raw['tf']??'')==='s','source'=>'Tribunal Superior Eleitoral'];
+    foreach($candidates as &$candidate){
+        $peers=array_values(array_filter($candidates,static fn($peer)=>$peer['group_id']===$candidate['group_id']));
+        $candidate['group_rank']=1+count(array_filter($peers,static fn($peer)=>$peer['votes']>$candidate['votes']));
+        $candidate['group_tied']=count(array_filter($peers,static fn($peer)=>$peer['votes']===$candidate['votes']))>1;
+        $candidate['group_name']=$groups[$candidate['group_id']]['name']??$candidate['party'];
+        $candidate['group_seats']=$groups[$candidate['group_id']]['seats']??null;
+    }
+    unset($candidate);
+    return ['key'=>$spec['key'],'proportional'=>$proportional,'electoral_quotient'=>$electoralQuotient,'seats'=>$seats,'title'=>$spec['title'],'candidates'=>$candidates,'sections'=>$sections,'updated_at'=>$timestamp->format(DATE_ATOM),'final'=>($raw['tf']??'')==='s','source'=>'Tribunal Superior Eleitoral'];
 }
 function tvs_election_fetch(string $url): array {
     if (!str_starts_with($url,'https://resultados.tse.jus.br/oficial/')) throw new RuntimeException('Fonte não permitida.');

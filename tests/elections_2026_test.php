@@ -29,3 +29,10 @@ foreach(array_keys(tvs_election_states()) as $uf) {
 }
 $rejected=false; try { tvs_election_specs('../sp'); }catch(InvalidArgumentException $e){$rejected=true;}check($rejected);
 echo "UFs: 27 unidades, presidente nacional, cargo distrital e UF inválida passaram.\n";
+
+$copy=$base;$copy['ele']='6259';$copy['tpabr']='uf';$copy['cdabr']='sp';$copy['carg'][0]['cd']='6';$copy['carg'][0]['qe']='242666';$copy['carg'][0]['nv']='70';$copy['carg'][0]['agr'][0]['n']='fed';$copy['carg'][0]['agr'][0]['com']='TEST/OUTRO';$copy['carg'][0]['agr'][0]['vag']='2';
+$copy['carg'][0]['agr'][0]['par'][]=['sg'=>'OUTRO','cand'=>[['n'=>'88','nmu'=>'Empate','vap'=>'120','pvap'=>'52,30']]];
+$p=tvs_election_parse($copy,tvs_election_specs()[3]);
+check($p['proportional'] && $p['electoral_quotient']===242666.0 && $p['seats']===70);
+check($p['candidates'][0]['group_tied'] && $p['candidates'][1]['group_rank']===1 && $p['candidates'][1]['group_seats']===2);
+echo "Indicadores: quociente, federação e empate passaram.\n";
