@@ -27,7 +27,10 @@ sidebar.append(el('h2',race.title),el('p',percent.format(race.sections)+'% das s
 if(race.stale)sidebar.append(el('p','Dados atrasados: consulte o horário da fonte.','status warning'));
 if(race.proportional){sidebar.append(el('p','Projeção parcial TV Sumaré — cálculo próprio com os votos já apurados. Não antecipa os votos restantes e não confirma eleição.','status'));if(race.projection&&!race.projection.available)sidebar.append(el('p','Projeção indefinida: '+race.projection.reason,'status warning'));sidebar.append(el('p','Quociente eleitoral '+(race.final?'oficial':'parcial')+': '+(race.electoral_quotient>0?number.format(race.electoral_quotient)+' votos':'ainda indisponível')));sidebar.append(el('p','Vagas do cargo: '+(race.seats??'indisponível')));sidebar.append(el('p','A posição por votos não garante eleição. Sobras, requisitos legais e decisões judiciais também influenciam.'))}
 const query=normalize(search.value.trim()),filtered=race.candidates.filter(c=>!query||normalize(c.name+' '+c.number+' '+c.party+' '+(c.group_name||'')).includes(query));
-for(const candidate of filtered.slice(0,20)){const row=el('div',undefined,'sidebar-candidate');row.append(el('strong',candidate.name),el('p',candidate.party+' • '+candidate.number+' • '+number.format(candidate.votes)+' votos'));
+const showingSeats=!query&&race.proportional&&race.projection?.available;
+const visible=showingSeats?filtered.filter(c=>c.projection?.status==='inside'):filtered.slice(0,race.proportional?(race.seats||50):50);
+if(showingSeats)sidebar.append(el('p','Exibindo as '+visible.length+' vagas na projeção atual, de '+race.seats+' informadas pelo TSE. Use a busca para consultar outras candidaturas.'));
+for(const candidate of visible){const row=el('div',undefined,'sidebar-candidate');row.append(el('strong',candidate.name),el('p',candidate.party+' • '+candidate.number+' • '+number.format(candidate.votes)+' votos'));
 if(race.proportional){row.append(el('p',candidate.group_name||candidate.party));if(candidate.group_rank)row.append(el('p','Posição no grupo: '+candidate.group_rank+'º'+(candidate.group_tied?' (empatada por votos)':'')));row.append(el('p','Vagas do grupo informadas pelo TSE: '+(candidate.group_seats??'indisponível')))}
 if(race.proportional){
 const projected=candidate.projection?.status,label=projected==='inside'?'Dentro das vagas na projeção atual':projected==='outside'?'Fora das vagas na projeção atual':'Indefinido na projeção atual';
@@ -36,7 +39,7 @@ if(candidate.projected_group_seats!==null&&candidate.projected_group_seats!==und
 if(candidate.projection?.reason)row.append(el('p',candidate.projection.reason));
 }
 row.append(el('p',candidate.status?'Situação oficial: '+candidate.status:'Eleição individual ainda não confirmada pelo TSE.','status'));sidebar.append(row)}
-if(!filtered.length)sidebar.append(el('p','Nenhuma candidatura corresponde à busca.'));if(filtered.length>20)sidebar.append(el('p','Mostrando 20 candidaturas. Use a busca para localizar outras.'));sidebar.append(el('p','Última atualização: '+new Date(race.updated_at).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'})));
+if(!visible.length)sidebar.append(el('p','Nenhuma candidatura corresponde à busca.'));if(!showingSeats&&filtered.length>visible.length)sidebar.append(el('p','Mostrando '+visible.length+' candidaturas. Refine a busca para localizar outras.'));sidebar.append(el('p','Última atualização: '+new Date(race.updated_at).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'})));
 }
 function render(data){renderSidebar(data);latest=data;const query=normalize(search.value.trim());const fragment=document.createDocumentFragment();
 for(const race of data.races){const card=el('section',undefined,'race');card.append(el('h2',race.title));
