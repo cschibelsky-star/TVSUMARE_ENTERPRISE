@@ -6,6 +6,8 @@ function tvs_election_specs(): array {
         ['key'=>'presidente','title'=>'Presidente — Brasil','uf'=>'br','cargo'=>1,'election'=>6257],
         ['key'=>'governador','title'=>'Governador — São Paulo','uf'=>'sp','cargo'=>3,'election'=>6259],
         ['key'=>'senador','title'=>'Senador — São Paulo','uf'=>'sp','cargo'=>5,'election'=>6259],
+        ['key'=>'deputado-federal','title'=>'Deputado Federal — São Paulo','uf'=>'sp','cargo'=>6,'election'=>6259],
+        ['key'=>'deputado-estadual','title'=>'Deputado Estadual — São Paulo','uf'=>'sp','cargo'=>7,'election'=>6259],
     ];
 }
 function tvs_election_number($value): float {

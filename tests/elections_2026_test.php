@@ -12,3 +12,12 @@ foreach (['f'=>'s','ele'=>'619','t'=>'2','cdabr'=>'sp','dv'=>'n','and'=>'n','dg'
 $copy=$base;$copy['s']['pst']='101';$rejected=false;
 try{tvs_election_parse($copy,$spec);}catch(Throwable $e){$rejected=true;}check($rejected);
 echo "Elections 2026: parser, decimals, environment, election, scope, publication and freshness checks passed.\n";
+
+foreach ([6,7] as $code) {
+    $spec=tvs_election_specs()[$code===6?3:4];
+    $copy=$base; $copy['ele']='6259'; $copy['tpabr']='uf'; $copy['cdabr']='sp'; $copy['carg'][0]['cd']=(string)$code;
+    $parsed=tvs_election_parse($copy,$spec); check(count($parsed['candidates'])===1);
+    $copy['carg'][0]['cd']='5'; $rejected=false;
+    try {tvs_election_parse($copy,$spec);}catch(Throwable $e){$rejected=true;} check($rejected);
+}
+echo "Deputados SP: federal, estadual e rejeição de cargo incorreto passaram.\n";
