@@ -4870,6 +4870,22 @@ function tvs_radar_select_backlog_ids_v13($limit=20){
 }
 
 function tvs_radar_run_backlog_batch_v13($limit=20){
+  // Antes de selecionar o backlog, drena as duas filas recuperáveis que hoje
+  // concentram o gargalo: resolução de fonte e Editor IA. Respeita retry/TTL;
+  // itens em estado final não são reativados automaticamente.
+  $sourceResolution=tvs_radar_process_due_source_resolution(min(12,max(4,(int)$limit)));
+  $status=tvs_radar_status();
+  $status=is_array($status)?$status:[];
+  $status['last_source_resolution_run']=(string)($sourceResolution['executed_at']??date('c'));
+  $status['last_source_resolution_processed']=(int)($sourceResolution['processed']??0);
+  $status['last_source_resolution_resolved']=(int)($sourceResolution['resolved']??0);
+  $status['last_source_resolution_remaining_due']=(int)($sourceResolution['remaining_due']??0);
+  tvs_radar_save_status($status);
+
+  // O passe normal respeita ai_editor_next_retry_at; não força provider em
+  // cooldown e mantém erros transitórios sem consumir tentativa definitiva.
+  $editorRecovery=tvs_radar_force_editor_queue_pass(min(12,max(4,(int)$limit)),false);
+
   $ids=tvs_radar_select_backlog_ids_v13($limit);
   if(!$ids){
     $result=[
