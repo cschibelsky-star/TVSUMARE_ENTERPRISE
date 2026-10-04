@@ -1,4 +1,5 @@
 <?php
+require_once dirname(__DIR__).'/includes/radar_source_rules.php';
 
 
 if (!function_exists('tvs_radar_editorial_category')) {
@@ -235,7 +236,7 @@ if (!function_exists('tvs_radar_queue_item_readiness')) {
             if (function_exists('tvs_radar_is_article_path')) {
                 $articleLike = tvs_radar_is_article_path(
                     $url,
-                    $title,
+                    (string)($item['source_original_title'] ?? $title),
                     (string)($item['city'] ?? '')
                 );
             }

@@ -23,4 +23,7 @@ if [ -f /var/www/html/includes/video_ai_helper.php ]; then
   done
 fi
 
+if [ -f /var/www/html/docker/radar-readonly-audit.php ]; then
+  php /var/www/html/docker/radar-readonly-audit.php || true
+fi
 exec docker-php-entrypoint "$@"
