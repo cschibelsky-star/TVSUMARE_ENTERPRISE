@@ -1,13 +1,17 @@
 <?php
 declare(strict_types=1);
 
-function tvs_election_specs(): array {
+function tvs_election_states(): array { return ['ac'=>'Acre','al'=>'Alagoas','ap'=>'Amapá','am'=>'Amazonas','ba'=>'Bahia','ce'=>'Ceará','df'=>'Distrito Federal','es'=>'Espírito Santo','go'=>'Goiás','ma'=>'Maranhão','mt'=>'Mato Grosso','ms'=>'Mato Grosso do Sul','mg'=>'Minas Gerais','pa'=>'Pará','pb'=>'Paraíba','pr'=>'Paraná','pe'=>'Pernambuco','pi'=>'Piauí','rj'=>'Rio de Janeiro','rn'=>'Rio Grande do Norte','rs'=>'Rio Grande do Sul','ro'=>'Rondônia','rr'=>'Roraima','sc'=>'Santa Catarina','sp'=>'São Paulo','se'=>'Sergipe','to'=>'Tocantins']; }
+function tvs_election_specs(string $uf='sp'): array {
+    $states=tvs_election_states();
+    if (!isset($states[$uf])) throw new InvalidArgumentException('UF inválida.');
+    $name=$states[$uf];
     return [
         ['key'=>'presidente','title'=>'Presidente — Brasil','uf'=>'br','cargo'=>1,'election'=>6257],
-        ['key'=>'governador','title'=>'Governador — São Paulo','uf'=>'sp','cargo'=>3,'election'=>6259],
-        ['key'=>'senador','title'=>'Senador — São Paulo','uf'=>'sp','cargo'=>5,'election'=>6259],
-        ['key'=>'deputado-federal','title'=>'Deputado Federal — São Paulo','uf'=>'sp','cargo'=>6,'election'=>6259],
-        ['key'=>'deputado-estadual','title'=>'Deputado Estadual — São Paulo','uf'=>'sp','cargo'=>7,'election'=>6259],
+        ['key'=>'governador','title'=>'Governador — '.$name,'uf'=>$uf,'cargo'=>3,'election'=>6259],
+        ['key'=>'senador','title'=>'Senador — '.$name,'uf'=>$uf,'cargo'=>5,'election'=>6259],
+        ['key'=>'deputado-federal','title'=>'Deputado Federal — '.$name,'uf'=>$uf,'cargo'=>6,'election'=>6259],
+        ['key'=>'deputado-estadual','title'=>($uf==='df'?'Deputado Distrital':'Deputado Estadual').' — '.$name,'uf'=>$uf,'cargo'=>($uf==='df'?8:7),'election'=>6259],
     ];
 }
 function tvs_election_number($value): float {
@@ -51,15 +55,18 @@ function tvs_election_fetch(string $url): array {
     if (!is_array($decoded)) throw new RuntimeException('Resposta oficial inválida.');
     return $decoded;
 }
-function tvs_election_snapshot(): array {
+function tvs_election_snapshot(string $uf='sp', bool $presidentOnly=false): array {
     $directory=__DIR__.'/../data/elections-2026';
     if (!is_dir($directory) && !@mkdir($directory,0750,true)) throw new RuntimeException('Cache indisponível.');
     $results=[];
-    foreach (tvs_election_specs() as $spec) {
-        $path=$directory.'/'.$spec['key'].'.json';
+    $specs=tvs_election_specs($uf);
+    if ($presidentOnly) $specs=array_slice($specs,0,1);
+    foreach ($specs as $spec) {
+        $cacheKey=$spec['uf']==='br'?$spec['key']:$spec['uf'].'-'.$spec['key'];
+        $path=$directory.'/'.$cacheKey.'.json';
         $read=static function() use ($path) { $raw=@file_get_contents($path); return is_string($raw)?(json_decode($raw,true)?:[]):[]; };
         $cache=$read();
-        $lock=@fopen($directory.'/'.$spec['key'].'.lock','c');
+        $lock=@fopen($directory.'/'.$cacheKey.'.lock','c');
         if ($lock && flock($lock,LOCK_EX|LOCK_NB)) {
             $cache=$read();
             if (time()-(int)($cache['checked_at']??0)>=30) {

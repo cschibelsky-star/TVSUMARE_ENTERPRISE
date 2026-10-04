@@ -21,3 +21,11 @@ foreach ([6,7] as $code) {
     try {tvs_election_parse($copy,$spec);}catch(Throwable $e){$rejected=true;} check($rejected);
 }
 echo "Deputados SP: federal, estadual e rejeição de cargo incorreto passaram.\n";
+
+check(count(tvs_election_states())===27);
+foreach(array_keys(tvs_election_states()) as $uf) {
+    $specs=tvs_election_specs($uf); check($specs[0]['uf']==='br'); check($specs[1]['uf']===$uf);
+    check($specs[4]['cargo']===($uf==='df'?8:7));
+}
+$rejected=false; try { tvs_election_specs('../sp'); }catch(InvalidArgumentException $e){$rejected=true;}check($rejected);
+echo "UFs: 27 unidades, presidente nacional, cargo distrital e UF inválida passaram.\n";
