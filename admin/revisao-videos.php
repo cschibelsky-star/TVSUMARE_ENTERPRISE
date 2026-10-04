@@ -25,9 +25,10 @@ function rv_generation_timed_out($job,$seconds=1800){
 function rv_job_engine($job){
   $engine=strtolower(trim((string)($job['video_engine']??'')));
   if($engine==='heygen') return 'heygen';
-  if(in_array($engine,['orchestrated','veo','centro_ia','ia'],true)) return 'orchestrated';
   if(trim((string)($job['heygen_session_id']??''))!=='' || trim((string)($job['heygen_video_id']??''))!=='') return 'heygen';
-  if(!empty($job['media_operations']) || !empty($job['veo_operations'])) return 'orchestrated';
+  if(!empty($job['veo_operations']) && empty($job['media_operations'])) return 'veo';
+  if(in_array($engine,['orchestrated','centro_ia','ia'],true) || !empty($job['media_operations'])) return 'orchestrated';
+  if($engine==='veo') return 'veo';
   return $engine!==''?$engine:'orchestrated';
 }
 function rv_sync_job($job,&$jobs,$idx){
@@ -63,7 +64,7 @@ function rv_sync_job($job,&$jobs,$idx){
     tvp_save_video_jobs($jobs);
     return $jobs[$idx];
   }
-  $r=tvp_check_video_orchestrated($job);
+  $r=$engine==='veo' ? tvp_check_veo($job) : tvp_check_video_orchestrated($job);
   if(!empty($r['operations'])) $jobs[$idx]['media_operations']=$r['operations'];
   if(isset($r['progress'])) $jobs[$idx]['media_progress']=$r['progress'];
   if(!empty($r['models'])) $jobs[$idx]['media_models']=$r['models'];
@@ -255,7 +256,7 @@ function rv_progress($j){
     <?php else: ?><div class="processing"><div class="spinner"></div><strong><?=tvp_h(rv_status_label($st))?></strong><span><?=tvp_h((string)($j['title']??'Vídeo em produção'))?></span></div><?php endif; ?>
   </div>
   <div class="progress"><span style="width:<?=$p?>%"></span></div>
-  <div class="meta"><span><?=tvp_h(rv_status_label($st))?></span><span><?=tvp_h($j['city']??'Região')?></span><span><?=tvp_h($j['category']??'Vídeo')?></span><span><?=tvp_h(rv_job_engine($j)==='heygen'?'HeyGen':'Centro IA')?></span></div>
+  <div class="meta"><span><?=tvp_h(rv_status_label($st))?></span><span><?=tvp_h($j['city']??'Região')?></span><span><?=tvp_h($j['category']??'Vídeo')?></span><span><?=tvp_h(match(rv_job_engine($j)){'heygen'=>'HeyGen','veo'=>'VEO',default=>'Centro IA'})?></span></div>
   <h2><?=tvp_h($j['title']??'Sem título')?></h2>
   <?php if(!empty($j['script'])): ?><p class="muted"><?=tvp_h(tvp_substr($j['script'],0,280))?></p><?php endif; ?>
   <?php if($st==='gerando'): ?><p class="muted">A página atualiza automaticamente enquanto o vídeo é processado.</p><?php endif; ?>
