@@ -10,6 +10,52 @@ $msg=''; $err='';
 
 function tvp_admin_find_news($id){ foreach(tvp_read_json('noticias.json') as $n){ if(tvp_news_id($n)===$id) return $n; } return null; }
 function tvp_admin_redirect($params=[]){ $q=$params?('?'.http_build_query($params)):''; header('Location: /admin/tvplay.php'.$q); exit; }
+function tvp_admin_video_catalog_save($videos){
+  $path=tvp_data_path('videos.json');
+  $dir=dirname($path);
+  if(!is_dir($dir) && !@mkdir($dir,0775,true)) return false;
+  $json=json_encode(array_values($videos),JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+  if(!is_string($json)) return false;
+  $tmp=$path.'.tmp.'.bin2hex(random_bytes(6));
+  $written=@file_put_contents($tmp,$json,LOCK_EX);
+  if($written===false || $written!==strlen($json)){ @unlink($tmp); return false; }
+  if(!@rename($tmp,$path)){ @unlink($tmp); return false; }
+  return true;
+}
+function tvp_admin_video_relative_path($url){
+  $url=trim((string)$url);
+  if($url==='') return '';
+  $parts=parse_url($url);
+  if($parts===false) return '';
+  $url=(string)($parts['path']??$url);
+  if(!empty($parts['host'])){
+    $siteHost=strtolower((string)parse_url(tvp_site_url(),PHP_URL_HOST));
+    if(strtolower((string)$parts['host'])!==$siteHost) return '';
+    $url=(string)($parts['path']??'');
+  }
+  $relative=ltrim($url,'/');
+  if(!preg_match('~^uploads/videos/[A-Za-z0-9._-]+\\.mp4$~i',$relative)) return '';
+  return $relative;
+}
+function tvp_admin_video_file_path($url){
+  $relative=tvp_admin_video_relative_path($url);
+  if($relative==='') return null;
+  $root=realpath(dirname(__DIR__));
+  $uploadRoot=$root?realpath($root.'/uploads/videos'):false;
+  $file=$root?realpath($root.'/'.$relative):false;
+  if(!$root || !$uploadRoot || !$file || !is_file($file)) return null;
+  if(strpos($file,rtrim($uploadRoot,DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR)!==0) return null;
+  return ['root'=>$root,'relative'=>$relative,'file'=>$file,'upload_root'=>$uploadRoot];
+}
+function tvp_admin_video_has_other_reference($videos,$id,$url){
+  foreach((array)$videos as $video){
+    if((string)($video['id']??'')===(string)$id) continue;
+    if(strtolower((string)($video['status']??'active'))==='removed') continue;
+    $other=trim((string)($video['url']??$video['video_url']??''));
+    if($other===$url) return true;
+  }
+  return false;
+}
 if(isset($_GET['msg'])) $msg=(string)$_GET['msg'];
 if(isset($_GET['err'])) $err=(string)$_GET['err'];
 if(isset($_GET['yt_msg'])) $msg=(string)$_GET['yt_msg'];
@@ -94,6 +140,77 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
     ]);
     tvp_write_json('videos.json',$videos);
     tvp_admin_redirect(['msg'=>'Vídeo enviado e publicado no TV Play com sucesso.']);
+  }
+  if($action==='delete_public_video'){
+    $id=trim((string)($_POST['video_id']??''));
+    $videos=tvp_read_json('videos.json');
+    $idx=null;
+    foreach($videos as $i=>$video){ if((string)($video['id']??'')===$id){ $idx=$i; break; } }
+    if($idx===null) tvp_admin_redirect(['err'=>'Vídeo publicado não encontrado.']);
+    if(strtolower((string)($videos[$idx]['status']??'active'))==='removed') tvp_admin_redirect(['err'=>'Este vídeo já está na lixeira.']);
+    $url=trim((string)($videos[$idx]['url']??$videos[$idx]['video_url']??''));
+    if($url==='') tvp_admin_redirect(['err'=>'A publicação não possui um endereço de vídeo válido.']);
+    if(tvp_admin_video_has_other_reference($videos,$id,$url)) tvp_admin_redirect(['err'=>'Este vídeo está associado a outra publicação ativa; nenhuma alteração foi feita.']);
+    $relative=tvp_admin_video_relative_path($url);
+    $trashPath='';
+    if($relative!==''){
+      $paths=tvp_admin_video_file_path($url);
+      if(!$paths) tvp_admin_redirect(['err'=>'O arquivo local não foi localizado ou o caminho não é seguro; nenhum item foi alterado.']);
+      $dataRoot=realpath($paths['root'].'/data');
+      $trashDir=$dataRoot?($dataRoot.'/video-trash'):'';
+      if(!$dataRoot || ($trashDir!=='' && is_link($trashDir))) tvp_admin_redirect(['err'=>'A lixeira privada não está disponível com segurança.']);
+      if(!is_dir($trashDir) && !@mkdir($trashDir,0775,true)) tvp_admin_redirect(['err'=>'Não foi possível preparar a lixeira privada de vídeos.']);
+      $realTrashDir=realpath($trashDir);
+      if(!$realTrashDir || strpos($realTrashDir,rtrim($dataRoot,DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR)!==0) tvp_admin_redirect(['err'=>'O caminho da lixeira não passou na validação de segurança.']);
+      $trashName='video_'.bin2hex(random_bytes(16)).'.mp4';
+      $trashPath=$realTrashDir.'/'.$trashName;
+      if(!@rename($paths['file'],$trashPath)) tvp_admin_redirect(['err'=>'Não foi possível retirar o vídeo do endereço público.']);
+      $videos[$idx]['deleted_file']='data/video-trash/'.$trashName;
+    } elseif(preg_match('~(?:^|/)uploads/videos/~i',(string)parse_url($url,PHP_URL_PATH))) {
+      tvp_admin_redirect(['err'=>'O endereço do arquivo não passou na validação; nenhum item foi alterado.']);
+    }
+    $previousStatus=(string)($videos[$idx]['status']??'active');
+    $videos[$idx]['status']='removed';
+    $videos[$idx]['deleted_at']=date('c');
+    $videos[$idx]['previous_status']=$previousStatus;
+    unset($videos[$idx]['status_before_removal']);
+    if(!tvp_admin_video_catalog_save($videos)){
+      if($trashPath!=='') @rename($trashPath,$paths['file']);
+      tvp_admin_redirect(['err'=>'Falha ao registrar a remoção; o vídeo foi restaurado se era um arquivo local.']);
+    }
+    tvp_admin_redirect(['msg'=>$trashPath!==''?'Vídeo removido do TV Play e guardado na lixeira privada. É possível restaurá-lo nesta tela.':'Vídeo removido do TV Play; o arquivo do serviço externo não foi apagado.']);
+  }
+  if($action==='restore_public_video'){
+    $id=trim((string)($_POST['video_id']??''));
+    $videos=tvp_read_json('videos.json');
+    $idx=null;
+    foreach($videos as $i=>$video){ if((string)($video['id']??'')===$id){ $idx=$i; break; } }
+    if($idx===null || strtolower((string)($videos[$idx]['status']??''))!=='removed') tvp_admin_redirect(['err'=>'Vídeo removido não encontrado na lixeira.']);
+    $deleted=(string)($videos[$idx]['deleted_file']??'');
+    $trashPath='';
+    $destination='';
+    if($deleted!==''){
+      $root=realpath(dirname(__DIR__));
+      $relative=tvp_admin_video_relative_path($videos[$idx]['url']??$videos[$idx]['video_url']??'');
+      if(!$root || $relative==='' || !preg_match('~^data/video-trash/video_[a-f0-9]{32}\\.mp4$~',$deleted)) tvp_admin_redirect(['err'=>'Os caminhos registrados para este vídeo não são seguros.']);
+      $dataRoot=realpath($root.'/data');
+      $trashDir=$dataRoot?realpath($dataRoot.'/video-trash'):false;
+      $trashPath=$dataRoot?realpath($root.'/'.$deleted):false;
+      $uploadDir=$root.'/uploads/videos';
+      if(!is_dir($uploadDir) && !@mkdir($uploadDir,0775,true)) tvp_admin_redirect(['err'=>'Não foi possível preparar o diretório de vídeos.']);
+      $uploadRoot=realpath($uploadDir);
+      $destination=$uploadRoot?$uploadRoot.'/'.basename($relative):'';
+      if(!$dataRoot || !$trashDir || !$trashPath || !$destination || strpos($trashPath,rtrim($trashDir,DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR)!==0 || !is_file($trashPath)) tvp_admin_redirect(['err'=>'O arquivo arquivado não foi localizado.']);
+      if(file_exists($destination)) tvp_admin_redirect(['err'=>'Já existe um arquivo com esse nome; o vídeo não foi sobrescrito.']);
+      if(!@rename($trashPath,$destination)) tvp_admin_redirect(['err'=>'Não foi possível restaurar o arquivo.']);
+    }
+    $videos[$idx]['status']=(string)($videos[$idx]['previous_status']??'active');
+    unset($videos[$idx]['deleted_at'],$videos[$idx]['deleted_file'],$videos[$idx]['previous_status']);
+    if(!tvp_admin_video_catalog_save($videos)){
+      if($trashPath!=='' && $destination!=='') @rename($destination,$trashPath);
+      tvp_admin_redirect(['err'=>'Falha ao registrar a restauração; o vídeo não foi alterado.']);
+    }
+    tvp_admin_redirect(['msg'=>'Vídeo restaurado ao TV Play.']);
   }
   if($action==='approve_suggestion'){
     $idx=null; $jobs=null; $job=tvp_find_job($_POST['job_id']??'',$jobs,$idx);
@@ -241,13 +358,21 @@ $news=tvp_read_json('noticias.json');
 $news=array_values(array_filter($news,function($n){ return tvp_news_age_days($n)<=7; }));
 usort($news,function($a,$b){ return strcmp($b['published_at']??$b['created_at']??'', $a['published_at']??$a['created_at']??''); });
 $news=array_slice($news,0,60);
+$videoCatalog=tvp_read_json('videos.json');
+$hiddenVideoStatuses=['erro','error','failed','paused','rascunho','sugerido','roteiro','roteiro_revisao','aprovado_video','gerando','fila','pendente','removed','deleted'];
+$publishedVideos=array_values(array_filter($videoCatalog,function($v) use ($hiddenVideoStatuses){ return !empty($v['id']) && trim((string)($v['url']??$v['video_url']??''))!=='' && !in_array(strtolower((string)($v['status']??'active')),$hiddenVideoStatuses,true); }));
+$removedVideos=array_values(array_filter($videoCatalog,function($v){ return strtolower((string)($v['status']??''))==='removed'; }));
+usort($publishedVideos,function($a,$b){ return strcmp((string)($b['published_at']??$b['created_at']??''),(string)($a['published_at']??$a['created_at']??'')); });
+usort($removedVideos,function($a,$b){ return strcmp((string)($b['deleted_at']??''),(string)($a['deleted_at']??'')); });
 $cfg=function_exists('tvs_heygen_load_config')?tvs_heygen_load_config([]):[];
 $stats=['sugerido'=>0,'roteiro'=>0,'gerando'=>0,'pronto'=>0,'publicado'=>0,'erro'=>0]; foreach($active as $j){ $s=$j['status']??''; if($s==='sugerido')$stats['sugerido']++; elseif(in_array($s,['roteiro_pendente','roteiro_revisao','roteiro_aprovado'],true))$stats['roteiro']++; elseif($s==='gerando')$stats['gerando']++; elseif(in_array($s,['pronto','revisao_video','video_aprovado'],true))$stats['pronto']++; elseif($s==='publicado')$stats['publicado']++; elseif($s==='erro')$stats['erro']++; }
 ?>
 <!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>TV Play IA</title><link rel="stylesheet" href="admin.css?v=180"><style>
-.cards{display:grid;grid-template-columns:repeat(6,1fr);gap:12px}.card{background:#fff;border:1px solid #e5e7eb;border-radius:16px;padding:14px}.card b{font-size:28px}.grid2{display:grid;grid-template-columns:minmax(320px,.9fr) minmax(420px,1.1fr);gap:16px}.job{border:1px solid #dbe5f2;border-radius:18px;padding:16px;margin:12px 0;background:#fff;box-shadow:0 10px 24px rgba(15,47,104,.05)}.pill{display:inline-block;padding:5px 9px;border-radius:999px;background:#eef2ff;color:#1d4ed8;font-size:12px;font-weight:900;margin:0 6px 6px 0}.pill.prioridade_maxima{background:#fee2e2;color:#991b1b}.pill.destaque{background:#dbeafe;color:#1d4ed8}.pill.publicavel{background:#dcfce7;color:#166534}.pill.revisao{background:#fef3c7;color:#92400e}.pill.baixa{background:#f1f5f9;color:#475569}.muted{color:#64748b}.mini{font-size:12px}.news-list{max-height:720px;overflow:auto}.news-item{border-bottom:1px solid #e5e7eb;padding:12px 0}.script{width:100%;min-height:210px;line-height:1.55}.workflow{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}.step{font-size:12px;border-radius:999px;padding:6px 10px;background:#f1f5f9;color:#64748b;font-weight:800}.step.on{background:#dbeafe;color:#1d4ed8}.step.done{background:#dcfce7;color:#166534}.step.err{background:#fee2e2;color:#991b1b}.job-actions form{display:inline}.hint{border:1px dashed #bfd2ea;background:#f8fbff;border-radius:14px;padding:10px;margin:10px 0;color:#475569}.status-line{font-size:13px;color:#475569;margin-top:6px}.btn[disabled]{opacity:.45;cursor:not-allowed}.auto-refresh{font-size:12px;color:#64748b;margin-left:8px}@media(max-width:1100px){.cards,.grid2{grid-template-columns:1fr}.card b{font-size:22px}}</style></head><body><div class="admin"><?php include __DIR__.'/_menu.php'; ?><main class="main"><div class="top"><div><span class="eyebrow">Enterprise 2.1</span><h1>Assistente de Produção IA</h1><p class="muted" style="text-align:left">VEO é o motor padrão para vídeos visuais. HeyGen fica reservado a boletins com apresentador/avatar. Upload externo continua disponível.</p></div><div class="actions"><a class="btn secondary" href="../videos.php" target="_blank">Ver TV Play</a><a class="btn secondary" href="heygen-diagnostico.php">Diagnóstico HeyGen</a></div></div><?php if($msg): ?><div class="notice"><?=tvp_h($msg)?></div><?php endif; ?><?php if($err): ?><div class="notice error"><?=tvp_h($err)?></div><?php endif; ?>
+.cards{display:grid;grid-template-columns:repeat(6,1fr);gap:12px}.card{background:#fff;border:1px solid #e5e7eb;border-radius:16px;padding:14px}.card b{font-size:28px}.grid2{display:grid;grid-template-columns:minmax(320px,.9fr) minmax(420px,1.1fr);gap:16px}.job{border:1px solid #dbe5f2;border-radius:18px;padding:16px;margin:12px 0;background:#fff;box-shadow:0 10px 24px rgba(15,47,104,.05)}.pill{display:inline-block;padding:5px 9px;border-radius:999px;background:#eef2ff;color:#1d4ed8;font-size:12px;font-weight:900;margin:0 6px 6px 0}.pill.prioridade_maxima{background:#fee2e2;color:#991b1b}.pill.destaque{background:#dbeafe;color:#1d4ed8}.pill.publicavel{background:#dcfce7;color:#166534}.pill.revisao{background:#fef3c7;color:#92400e}.pill.baixa{background:#f1f5f9;color:#475569}.muted{color:#64748b}.mini{font-size:12px}.news-list{max-height:720px;overflow:auto}.news-item{border-bottom:1px solid #e5e7eb;padding:12px 0}.script{width:100%;min-height:210px;line-height:1.55}.workflow{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}.step{font-size:12px;border-radius:999px;padding:6px 10px;background:#f1f5f9;color:#64748b;font-weight:800}.step.on{background:#dbeafe;color:#1d4ed8}.step.done{background:#dcfce7;color:#166534}.step.err{background:#fee2e2;color:#991b1b}.job-actions form{display:inline}.manual-video-list{display:grid;gap:10px}.manual-video-item{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:12px;border:1px solid #dbe5f2;border-radius:12px;background:#fff}.manual-video-actions{display:flex;align-items:center;gap:8px}.manual-video-actions form{margin:0}.btn.danger{background:#b42318;color:#fff}.btn.orange{background:#e88b00;color:#fff}@media(max-width:700px){.manual-video-item{align-items:flex-start;flex-direction:column}.manual-video-actions{width:100%;flex-wrap:wrap}}.hint{border:1px dashed #bfd2ea;background:#f8fbff;border-radius:14px;padding:10px;margin:10px 0;color:#475569}.status-line{font-size:13px;color:#475569;margin-top:6px}.btn[disabled]{opacity:.45;cursor:not-allowed}.auto-refresh{font-size:12px;color:#64748b;margin-left:8px}@media(max-width:1100px){.cards,.grid2{grid-template-columns:1fr}.card b{font-size:22px}}</style></head><body><div class="admin"><?php include __DIR__.'/_menu.php'; ?><main class="main"><div class="top"><div><span class="eyebrow">Enterprise 2.1</span><h1>Assistente de Produção IA</h1><p class="muted" style="text-align:left">VEO é o motor padrão para vídeos visuais. HeyGen fica reservado a boletins com apresentador/avatar. Upload externo continua disponível.</p></div><div class="actions"><a class="btn secondary" href="../videos.php" target="_blank">Ver TV Play</a><a class="btn secondary" href="heygen-diagnostico.php">Diagnóstico HeyGen</a></div></div><?php if($msg): ?><div class="notice"><?=tvp_h($msg)?></div><?php endif; ?><?php if($err): ?><div class="notice error"><?=tvp_h($err)?></div><?php endif; ?>
 <section class="cards"><div class="card"><b><?=$stats['sugerido']?></b><br><small>Sugeridos</small></div><div class="card"><b><?=$stats['roteiro']?></b><br><small>Roteiros</small></div><div class="card"><b><?=$stats['gerando']?></b><br><small>Gerando</small></div><div class="card"><b><?=$stats['pronto']?></b><br><small>Prontos</small></div><div class="card"><b><?=$stats['publicado']?></b><br><small>Publicados</small></div><div class="card"><b><?=$stats['erro']?></b><br><small>Erros</small></div></section>
 <section class="box" style="margin-top:16px"><h2>Adicionar vídeo externo</h2><p class="muted">Envie um vídeo produzido fora da TV Sumaré, inclusive no app da HeyGen, sem consumir a API da plataforma.</p><form method="post" enctype="multipart/form-data"><?=tvs_csrf_field()?><input type="hidden" name="action" value="upload_external_video"><div class="grid2 upload-video-grid"><div><label>Título</label><input type="text" name="title" required maxlength="180" placeholder="Ex.: Boletim Regional - Empregos em Sumaré"></div><div><label>Arquivo de vídeo</label><input type="file" name="video_file" required accept="video/mp4,video/quicktime,.mp4,.m4v,.mov"></div><div><label>Categoria</label><input type="text" name="category" maxlength="80" value="Vídeo"></div><div><label>Cidade</label><input type="text" name="city" maxlength="80" value="Sumaré"></div></div><div style="margin-top:12px"><label>Descrição</label><textarea name="description" rows="4" maxlength="1200" placeholder="Resumo do conteúdo do vídeo"></textarea></div><div class="hint">Formato aceito nesta fase: MP4. Limite do sistema: 512 MB. O arquivo é salvo diretamente no armazenamento persistente, sem transcodificação síncrona, para evitar timeout/Bad Gateway.</div><button class="btn">Enviar e publicar no TV Play</button></form></section>
+<section class="box" style="margin-top:16px"><h2>Vídeos publicados no TV Play</h2><p class="muted">A remoção despublica o item. Arquivos locais ficam guardados na lixeira privada e podem ser restaurados; vídeos hospedados em serviços externos deixam de aparecer no TV Play, mas continuam no serviço de origem.</p><?php if(!$publishedVideos): ?><p class="muted">Nenhum vídeo publicado no TV Play.</p><?php else: ?><div class="manual-video-list"><?php foreach($publishedVideos as $video): $videoId=(string)($video['id']??''); $videoUrl=trim((string)($video['url']??$video['video_url']??'')); ?><article class="manual-video-item"><div><strong><?=tvp_h($video['title']??'Vídeo sem título')?></strong><br><small class="muted"><?=tvp_h(($video['city']??'Região').' • '.($video['category']??'Vídeo').' • '.date('d/m/Y H:i',strtotime((string)($video['published_at']??$video['created_at']??'now'))))?></small></div><div class="manual-video-actions"><a class="btn secondary" href="<?=tvp_h(tvp_abs_url($videoUrl))?>" target="_blank" rel="noopener">Abrir</a><form method="post" onsubmit="return confirm('Excluir esta publicação do TV Play? Ela sairá da página pública e poderá ser restaurada pela lixeira.');"><?=tvs_csrf_field()?><input type="hidden" name="action" value="delete_public_video"><input type="hidden" name="video_id" value="<?=tvp_h($videoId)?>"><button class="btn danger">Excluir publicação</button></form></div></article><?php endforeach; ?></div><?php endif; ?></section>
+<?php if($removedVideos): ?><section class="box" style="margin-top:16px"><h2>Lixeira de vídeos publicados</h2><?php foreach($removedVideos as $video): ?><article class="manual-video-item"><div><strong><?=tvp_h($video['title']??'Vídeo sem título')?></strong><br><small class="muted">Removido em <?=tvp_h(date('d/m/Y H:i',strtotime((string)($video['deleted_at']??'now'))))?></small></div><form method="post" onsubmit="return confirm('Restaurar este vídeo e publicá-lo novamente no TV Play?');"><?=tvs_csrf_field()?><input type="hidden" name="action" value="restore_public_video"><input type="hidden" name="video_id" value="<?=tvp_h($video['id']??'')?>"><button class="btn orange">Restaurar</button></form></article><?php endforeach; ?></section><?php endif; ?>
 <section class="box" style="margin-top:16px"><h2>Canal oficial no YouTube</h2><p class="muted">Publicação direta após aprovação editorial. O vídeo recebe a marca d’água obrigatória antes do upload.</p><?php if(!tvs_youtube_oauth_ready()): ?><div class="notice error">Integração pronta. Falta configurar o OAuth do Google com YOUTUBE_CLIENT_ID e YOUTUBE_CLIENT_SECRET.</div><?php elseif(tvs_youtube_oauth_connected()): ?><div class="notice">Canal autorizado para upload.</div><?php else: ?><a class="btn secondary" href="<?=tvp_h(tvs_youtube_oauth_auth_url())?>">Conectar canal @tvsumare</a><?php endif; ?></section>
 <section class="box" style="margin-top:16px"><h2>Produção Inteligente</h2><p class="muted">Gera até 3 sugestões com score alto e sem temas sensíveis. Por padrão, o sistema usa VEO. HeyGen é reservado para conteúdos com apresentador, como boletins e últimas notícias.</p><p class="mini"><strong>HeyGen:</strong> <?=trim((string)($cfg['heygen_api_key']??''))!==''?'configurado e disponível':'não configurado'?></p><form method="post"><?=tvs_csrf_field()?><input type="hidden" name="action" value="suggest_top3"><button class="btn orange">Gerar Top 3 sugestões de vídeo</button></form></section>
 <div class="grid2" style="margin-top:16px"><section class="box"><h2>Produção Manual</h2><p class="muted">Use para transformar uma matéria aprovada em vídeo, mesmo fora do Top 3.</p><div class="news-list"><?php if(!$news): ?><p>Nenhuma notícia publicada ainda.</p><?php endif; ?><?php foreach($news as $n): $nid=tvp_news_id($n); $score=tvp_video_score($n); $pri=tvp_video_priority($score); ?><div class="news-item"><span class="pill <?=tvp_h($pri)?>"><?=tvp_h(strtoupper($pri))?></span><strong><?=tvp_h(tvp_news_title($n))?></strong><br><small><?=tvp_h(tvp_news_city($n).' • '.tvp_news_category($n).' • pontuação '.$score)?></small><?php if(tvp_is_sensitive_topic($n)): ?><div class="mini" style="color:#b91c1c;margin-top:4px">Revisão humana obrigatória antes de vídeo.</div><?php endif; ?><form method="post" style="margin-top:8px"><?=tvs_csrf_field()?><input type="hidden" name="action" value="create_manual"><input type="hidden" name="news_id" value="<?=tvp_h($nid)?>"><label class="mini">Motor</label><select name="video_engine" style="margin:4px 8px 4px 0"><option value="auto">Automático</option><option value="veo">VEO • padrão</option><option value="heygen">HeyGen • apresentador</option></select><button class="btn secondary">🎬 Produzir vídeo</button></form></div><?php endforeach; ?></div></section>
