@@ -159,7 +159,8 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
   if(in_array($action,['check_ai_video','check_veo'],true)){
     $idx=null; $jobs=null; $job=tvp_find_job($_POST['job_id']??'',$jobs,$idx);
     if(!$job) tvp_admin_redirect(['err'=>'Job não encontrado.']);
-    $r=tvp_check_video_orchestrated($job);
+    $legacyVeo=!empty($job['veo_operations']) && empty($job['media_operations']);
+    $r=$legacyVeo ? tvp_check_veo($job) : tvp_check_video_orchestrated($job);
     if(!$r['ok']){
       $mediaError=(string)($r['error']??'Falha na geração da imagem/cena ou do vídeo.');
       if(!empty($r['operations'])) $jobs[$idx]['media_operations']=$r['operations'];
