@@ -298,7 +298,7 @@ if (!function_exists('tvp_heygen_config')) {
   function tvp_heygen_config(){
     if(function_exists('tvs_heygen_load_config')) return tvs_heygen_load_config([]);
     return [
-      'heygen_api_key'=>$GLOBALS['heygen_api_key']??'',
+      'heygen_api_key'=>trim((string)(getenv('HEYGEN_API_KEY') ?: '')),
       'heygen_avatar_id'=>$GLOBALS['heygen_avatar_id']??'',
       'heygen_voice_id'=>$GLOBALS['heygen_voice_id']??'',
       'heygen_style_id'=>$GLOBALS['heygen_style_id']??'',
