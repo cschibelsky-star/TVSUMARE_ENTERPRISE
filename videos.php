@@ -2,18 +2,6 @@
 include 'config.php';
 require_once __DIR__.'/includes/tvs_public_helpers.php';
 
-// Controles editoriais aparecem somente quando a mesma sessão administrativa
-// já está autenticada. Visitantes nunca recebem ações de exclusão.
-require_once __DIR__.'/admin/auth.php';
-$showAdminVideoControls=function_exists('tvs_is_logged') && tvs_is_logged();
-
-function tvs_public_video_admin_key($v){
-  $id=trim((string)($v['id']??''));
-  if($id!=='') return 'id:'.$id;
-  $job=trim((string)($v['ia_job_id']??''));
-  if($job!=='') return 'job:'.$job;
-  return 'url:'.trim((string)tvs_video_url($v));
-}
 
 $active='videos';
 $archiveMode=isset($_GET['arquivo']) && $_GET['arquivo']==='1';
@@ -25,7 +13,7 @@ if($archiveMode){
 <?php if(!$videos): ?><div class="empty-state"><h2>Nenhum vídeo ativo no momento</h2><p>Quando houver vídeos publicados, eles aparecerão automaticamente nesta página.</p></div><?php else: ?>
 <div class="video-grid public-video-grid">
 <?php foreach($videos as $v): $url=tvs_video_url($v); $embed=tvs_youtube_embed($url); $thumb=tvs_video_thumb($v); $isMp4=preg_match('~\.mp4(?:\?|$)~i',$url); if(!$embed && !$isMp4 && !$thumb) continue; ?>
-<article class="video-card public-video-card"><span class="category-tag"><?=tvs_h($v['category']??'Vídeo')?></span><?php if(!empty($v['city'])):?><span class="category-tag"><?=tvs_h($v['city'])?></span><?php endif; ?><h3><?=tvs_h(tvs_video_title($v))?></h3><div class="video-meta"><?=tvs_h(date('d/m/Y H:i',tvs_date_ts($v)))?></div><?php if($embed): ?><div class="video-embed"><iframe src="<?=tvs_h($embed)?>" title="<?=tvs_h($v['title']??'Vídeo')?>" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe></div><?php elseif(preg_match('~\.mp4(\?|$)~i',$url)): ?><div class="video-embed"><video controls playsinline src="<?=tvs_h($url)?>" poster="<?=tvs_h($thumb)?>"></video></div><?php else: ?><a href="<?=tvs_h($url)?>" target="_blank" rel="noopener"><?php if($thumb): ?><img class="video-public-thumb" src="<?=tvs_h($thumb)?>" onerror="this.outerHTML='<div class=&quot;video-thumb-placeholder&quot;>▶</div>'" alt=""><?php else: ?><div class="video-thumb-placeholder">▶</div><?php endif; ?></a><?php endif; ?><p><?=tvs_h(tvs_excerpt($v['description']??$v['script']??'Conteúdo em vídeo da TV Sumaré.',180))?></p><div class="video-actions"><a class="btn" href="<?=tvs_h($url)?>" target="_blank" rel="noopener">Abrir vídeo</a><?php if(!empty($v['news_id'])):?><a class="btn btn-outline" href="noticia.php?id=<?=urlencode($v['news_id'])?>">Ver notícia</a><?php endif; ?><?php if($showAdminVideoControls): ?><form method="post" action="/admin/videos.php" style="display:inline;margin:0" onsubmit="return confirm('Excluir este vídeo do portal? O arquivo será preservado na lixeira para auditoria.');"><?=tvs_csrf_field()?><input type="hidden" name="action" value="remove_portal"><input type="hidden" name="video_key" value="<?=tvs_h(tvs_public_video_admin_key($v))?>"><input type="hidden" name="reason" value="Removido pela página pública de vídeos por administrador autenticado."><button class="btn" type="submit" style="background:#b42318;color:#fff;border-color:#b42318">Excluir do portal</button></form><?php endif; ?></div></article>
+<article class="video-card public-video-card"><span class="category-tag"><?=tvs_h($v['category']??'Vídeo')?></span><?php if(!empty($v['city'])):?><span class="category-tag"><?=tvs_h($v['city'])?></span><?php endif; ?><h3><?=tvs_h(tvs_video_title($v))?></h3><div class="video-meta"><?=tvs_h(date('d/m/Y H:i',tvs_date_ts($v)))?></div><?php if($embed): ?><div class="video-embed"><iframe src="<?=tvs_h($embed)?>" title="<?=tvs_h($v['title']??'Vídeo')?>" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe></div><?php elseif(preg_match('~\.mp4(\?|$)~i',$url)): ?><div class="video-embed"><video controls playsinline src="<?=tvs_h($url)?>" poster="<?=tvs_h($thumb)?>"></video></div><?php else: ?><a href="<?=tvs_h($url)?>" target="_blank" rel="noopener"><?php if($thumb): ?><img class="video-public-thumb" src="<?=tvs_h($thumb)?>" onerror="this.outerHTML='<div class=&quot;video-thumb-placeholder&quot;>▶</div>'" alt=""><?php else: ?><div class="video-thumb-placeholder">▶</div><?php endif; ?></a><?php endif; ?><p><?=tvs_h(tvs_excerpt($v['description']??$v['script']??'Conteúdo em vídeo da TV Sumaré.',180))?></p><div class="video-actions"><a class="btn" href="<?=tvs_h($url)?>" target="_blank" rel="noopener">Abrir vídeo</a><?php if(!empty($v['news_id'])):?><a class="btn btn-outline" href="noticia.php?id=<?=urlencode($v['news_id'])?>">Ver notícia</a><?php endif; ?></div></article>
 <?php endforeach; ?>
 </div><?php endif; ?>
 <section class="video-archive-cta">
