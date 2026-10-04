@@ -48,7 +48,7 @@ $adminIndex=txt($root.'/admin/index.php');
 check($heygenHelper!=='' && has($heygenHelper,"getenv('HEYGEN_API_KEY')"), 'HeyGen usa HEYGEN_API_KEY do runtime oficial');
 check(!has($heygenHelper,"'heygen_api_key' => ['heygen_key'"), 'Helper não aceita aliases legados para secret HeyGen');
 check(!has($reporter,'name="heygen_api_key"') && !has($reporterPublic,'name="heygen_api_key"'), 'Painéis não permitem gravar secret HeyGen');
-check(!has($adminIndex,"$rep['heygen_api_key']"), 'Dashboard não lê secret HeyGen de JSON');
+check(!has($adminIndex,'$rep[\'heygen_api_key\']'), 'Dashboard não lê secret HeyGen de JSON');
 $conflictingCfg=[
   'heygen_avatar_id'=>'cfg-avatar',
   'heygen_voice_id'=>'cfg-voice',
