@@ -435,14 +435,27 @@ if (!function_exists('tvp_veo_config')) {
   function tvp_veo_download($url,$dest){
     $cfg=tvp_veo_config();
     $url=trim((string)$url);
+    $hubBase=rtrim((string)(getenv('MARKETING_ENGINE_URL')?:'https://marketing.hml.vitrineiapro.com.br'),'/');
+    $trustedMarketingAsset=false;
+
     if($url!=='' && str_starts_with($url,'/')){
-      $hubBase=rtrim((string)(getenv('MARKETING_ENGINE_URL')?:'https://marketing.hml.vitrineiapro.com.br'),'/');
       $url=$hubBase.$url;
+      $trustedMarketingAsset=true;
+    } else {
+      $assetPath=(string)parse_url($url,PHP_URL_PATH);
+      if(str_starts_with($assetPath,'/marketing/native-preview/')){
+        $query=(string)parse_url($url,PHP_URL_QUERY);
+        $url=$hubBase.$assetPath.($query!==''?'?'.$query:'');
+        $trustedMarketingAsset=true;
+      }
     }
-    if(preg_match('~^http://marketing\.hml\.vitrineaipro\.com\.br(?:/|$)~i',$url)){
+
+    if(preg_match('~^http://[^/]*vitrineaipro\.com\.br(?:/|$)~i',$url)){
       $url='https://'.substr($url,7);
     }
-    if(!preg_match('~^https://~i',$url)) return ['ok'=>false,'error'=>'URL de render VEO inválida após normalização.'];
+    if(!preg_match('~^https://~i',$url) && !$trustedMarketingAsset){
+      return ['ok'=>false,'error'=>'URL de render VEO inválida após normalização.'];
+    }
 
     $current=$url;
     $redirects=0;
@@ -607,7 +620,7 @@ if (!function_exists('tvp_send_video_orchestrated')) {
     if(str_starts_with($ref,'completed:')){
       $payload=json_decode((string)base64_decode(substr($ref,strlen('completed:')),true),true);
       return [
-        'job_ref'=>'',
+        'job_ref'=>$ref,
         'status'=>'completed',
         'asset_url'=>trim((string)($payload['asset_url']??'')),
         'provider'=>'legacy_completed',
@@ -821,7 +834,7 @@ if (!function_exists('tvp_recover_completed_media_jobs')) {
       }
       if(!$allCompleted) continue;
 
-      $r=tvp_check_video_orchestrated($job);
+      $r=tvp_check_veo($job);
       if(!empty($r['ok']) && !empty($r['video_url'])){
         $jobs[$i]['video_url']=$r['video_url'];
         $jobs[$i]['status']='revisao_video';
