@@ -17,7 +17,7 @@ const number=new Intl.NumberFormat('pt-BR'),percent=new Intl.NumberFormat('pt-BR
 function el(tag,text,cls){const node=document.createElement(tag);if(text!==undefined)node.textContent=text;if(cls)node.className=cls;return node}
 function render(data){const fragment=document.createDocumentFragment();
 for(const race of data.races){const card=el('section',undefined,'race');card.append(el('h2',race.title));
-if(race.unavailable){card.append(el('p','Aguardando dados oficiais. A fonte ainda não pôde ser consultada.','status warning'));}
+if(race.unavailable){card.append(el('p',race.reason==='waiting'?'O TSE ainda informa totalização não iniciada. Aguardando a primeira atualização.':'Aguardando dados oficiais. A fonte ainda não pôde ser consultada.','status warning'));}
 else{card.append(el('p',percent.format(race.sections)+'% das seções totalizadas'));const progress=el('progress');progress.max=100;progress.value=race.sections;progress.setAttribute('aria-label','Seções totalizadas');card.append(progress);
 if(race.stale)card.append(el('p','Atualização atrasada. Exibindo a última leitura válida.','status warning'));
 else card.append(el('p',race.final?'Totalização final informada pelo TSE':'Apuração parcial','status'));

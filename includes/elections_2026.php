@@ -66,8 +66,8 @@ function tvs_election_snapshot(): array {
                     $url=sprintf('https://resultados.tse.jus.br/oficial/ele2026/%d/dados/%s/%s-c%04d-e%06d-u.json',$spec['election'],$spec['uf'],$spec['uf'],$spec['cargo'],$spec['election']);
                     $parsed=tvs_election_parse(tvs_election_fetch($url),$spec);
                     if (isset($cache['data']['updated_at']) && strtotime($parsed['updated_at'])<strtotime($cache['data']['updated_at'])) throw new RuntimeException('Arquivo anterior ao cache.');
-                    $cache['data']=$parsed; $cache['fetched_at']=time(); $cache['error']=false;
-                } catch (Throwable $error) { $cache['error']=true; }
+                    $cache['data']=$parsed; $cache['fetched_at']=time(); $cache['error']=false; $cache['reason']=null;
+                } catch (Throwable $error) { $cache['error']=true; $cache['reason']=$error->getMessage()==='Totalização ainda não iniciada.'?'waiting':'source_unavailable'; }
                 $temporary=tempnam($directory,'cache-');
                 if ($temporary!==false) {
                     if (file_put_contents($temporary,json_encode($cache,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR))!==false) @rename($temporary,$path);
@@ -79,6 +79,7 @@ function tvs_election_snapshot(): array {
         if ($lock) fclose($lock);
         $entry=$cache['data']??['title'=>$spec['title'],'candidates'=>[],'sections'=>null,'updated_at'=>null,'final'=>false];
         $entry['unavailable']=empty($cache['data']);
+        $entry['reason']=$cache['reason']??null;
         $entry['stale']=!empty($cache['error']) || time()-(int)($cache['fetched_at']??0)>120
             || (!empty($entry['updated_at']) && !$entry['final'] && time()-strtotime($entry['updated_at'])>180);
         $results[]=$entry;
