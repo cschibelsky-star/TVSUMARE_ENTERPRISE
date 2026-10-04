@@ -12,7 +12,6 @@ if (!function_exists('tvs_heygen_value')) {
 if (!function_exists('tvs_heygen_builtin_defaults')) {
   function tvs_heygen_builtin_defaults() {
     return [
-      'heygen_api_key' => '',
       'heygen_avatar_id' => 'fb1c964d8284436caab1b63796e7b644',
       'heygen_voice_id' => '21a8abfef8b145da96c701bb4a75670c',
       'heygen_style_id' => '',
@@ -52,7 +51,6 @@ if (!function_exists('tvs_heygen_apply_aliases')) {
   function tvs_heygen_apply_aliases($cfg) {
     if (!is_array($cfg)) $cfg = [];
     $aliases = [
-      'heygen_api_key' => ['heygen_key','api_key','key','x_api_key','HEYGEN_API_KEY'],
       'heygen_avatar_id' => ['avatar_id','HEYGEN_AVATAR_ID'],
       'heygen_voice_id' => ['voice_id','HEYGEN_VOICE_ID'],
       'heygen_style_id' => ['style_id','HEYGEN_STYLE_ID'],
@@ -82,15 +80,20 @@ if (!function_exists('tvs_heygen_env_and_global_defaults')) {
       $global = $GLOBALS[$k] ?? '';
       $out[$k] = tvs_heygen_value($env) !== '' ? tvs_heygen_value($env) : (tvs_heygen_value($global) !== '' ? tvs_heygen_value($global) : $fallback);
     }
+    $out['heygen_api_key'] = tvs_heygen_value(getenv('HEYGEN_API_KEY'));
     return $out;
   }
 }
 
 if (!function_exists('tvs_heygen_load_config')) {
   function tvs_heygen_load_config($cfg = []) {
-    $cfg = tvs_heygen_apply_aliases(is_array($cfg) ? $cfg : []);
+    $cfg = is_array($cfg) ? $cfg : [];
+    foreach (['heygen_api_key','heygen_key','api_key','key','x_api_key','HEYGEN_API_KEY'] as $secretKey) unset($cfg[$secretKey]);
+    $cfg = tvs_heygen_apply_aliases($cfg);
     foreach (tvs_heygen_config_paths() as $path) {
-      $disk = tvs_heygen_apply_aliases(tvs_heygen_read_json($path));
+      $disk = tvs_heygen_read_json($path);
+      foreach (['heygen_api_key','heygen_key','api_key','key','x_api_key','HEYGEN_API_KEY'] as $secretKey) unset($disk[$secretKey]);
+      $disk = tvs_heygen_apply_aliases($disk);
       foreach ($disk as $k => $v) {
         if (tvs_heygen_value($cfg[$k] ?? '') === '' && tvs_heygen_value($v) !== '') $cfg[$k] = tvs_heygen_value($v);
       }
@@ -99,6 +102,7 @@ if (!function_exists('tvs_heygen_load_config')) {
     foreach ($defaults as $k => $v) {
       if (tvs_heygen_value($cfg[$k] ?? '') === '' && tvs_heygen_value($v) !== '') $cfg[$k] = tvs_heygen_value($v);
     }
+    $cfg['heygen_api_key'] = tvs_heygen_value(getenv('HEYGEN_API_KEY'));
     if (!in_array(($cfg['heygen_orientation'] ?? 'landscape'), ['landscape','portrait'], true)) $cfg['heygen_orientation'] = 'landscape';
     if (tvs_heygen_value($cfg['heygen_incognito_mode'] ?? '') === '') $cfg['heygen_incognito_mode'] = '0';
     return $cfg;
@@ -111,7 +115,9 @@ if (!function_exists('tvs_heygen_repair_config')) {
     $path = tvs_heygen_config_paths()[0];
     $dir = dirname($path);
     if (!is_dir($dir)) @mkdir($dir, 0775, true);
-    @file_put_contents($path, json_encode($cfg, JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES), LOCK_EX);
+    $persisted = $cfg;
+    foreach (['heygen_api_key','heygen_key','api_key','key','x_api_key','HEYGEN_API_KEY'] as $secretKey) unset($persisted[$secretKey]);
+    @file_put_contents($path, json_encode($persisted, JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES), LOCK_EX);
     return $cfg;
   }
 }
@@ -133,12 +139,13 @@ if (!function_exists('tvs_heygen_diagnostics')) {
         'path' => $p,
         'exists' => file_exists($p),
         'writable' => file_exists($p) ? is_writable($p) : is_writable(dirname($p)),
-        'has_key' => tvs_heygen_value(tvs_heygen_read_json($p)['heygen_api_key'] ?? '') !== ''
+        'legacy_secret_present' => (function($data){ foreach(['heygen_api_key','heygen_key','api_key','key','x_api_key','HEYGEN_API_KEY'] as $k){ if(tvs_heygen_value($data[$k]??'')!=='') return true; } return false; })(tvs_heygen_read_json($p))
       ];
     }
     return [
       'root' => tvs_heygen_root(),
-      'key_masked' => tvs_heygen_mask($loaded['heygen_api_key'] ?? ''),
+      'key_configured' => tvs_heygen_value(getenv('HEYGEN_API_KEY')) !== '',
+      'key_source' => 'runtime:HEYGEN_API_KEY',
       'avatar_configured' => tvs_heygen_value($loaded['heygen_avatar_id'] ?? '') !== '',
       'voice_configured' => tvs_heygen_value($loaded['heygen_voice_id'] ?? '') !== '',
       'paths' => $paths
