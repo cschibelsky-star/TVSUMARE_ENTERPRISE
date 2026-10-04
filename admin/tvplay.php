@@ -126,7 +126,13 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
     if(($job['status']??'')!=='roteiro_aprovado') tvp_admin_redirect(['err'=>'Salve/aprove o roteiro antes de enviar para HeyGen.']);
     $r=tvp_send_heygen($job);
     if(!$r['ok']) tvp_admin_redirect(['err'=>$r['error']??'Falha no envio para HeyGen.']);
-    $jobs[$idx]['heygen_session_id']=$r['session_id']??''; $jobs[$idx]['heygen_video_id']=$r['video_id']??''; $jobs[$idx]['status']='gerando'; $jobs[$idx]['updated_at']=date('c'); tvp_save_video_jobs($jobs);
+    $jobs[$idx]['heygen_session_id']=$r['session_id']??'';
+    $jobs[$idx]['heygen_video_id']=$r['video_id']??'';
+    $jobs[$idx]['heygen_requested_at']=date('c');
+    $jobs[$idx]['generation_attempt']=(int)($jobs[$idx]['generation_attempt']??0)+1;
+    $jobs[$idx]['status']='gerando';
+    $jobs[$idx]['updated_at']=date('c');
+    tvp_save_video_jobs($jobs);
     header('Location: /admin/revisao-videos.php?'.http_build_query(['job_id'=>$jobs[$idx]['id'],'msg'=>'Sessão HeyGen criada. Acompanhe a geração e revise o vídeo antes de publicar.'])); exit;
   }
   if(in_array($action,['send_ai_video','send_veo'],true)){
@@ -143,6 +149,8 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
     $jobs[$idx]['media_models']=$r['models']??[];
     $jobs[$idx]['media_providers']=$r['providers']??[];
     $jobs[$idx]['media_quality_profile']=$r['quality_profile']??'balanced';
+    $jobs[$idx]['media_requested_at']=date('c');
+    $jobs[$idx]['generation_attempt']=(int)($jobs[$idx]['generation_attempt']??0)+1;
     $jobs[$idx]['status']='gerando';
     $jobs[$idx]['updated_at']=date('c');
     tvp_save_video_jobs($jobs);
@@ -151,16 +159,17 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
   if(in_array($action,['check_ai_video','check_veo'],true)){
     $idx=null; $jobs=null; $job=tvp_find_job($_POST['job_id']??'',$jobs,$idx);
     if(!$job) tvp_admin_redirect(['err'=>'Job não encontrado.']);
-    $r=tvp_check_video_orchestrated($job);
+    $legacyVeo=!empty($job['veo_operations']) && empty($job['media_operations']);
+    $r=$legacyVeo ? tvp_check_veo($job) : tvp_check_video_orchestrated($job);
     if(!$r['ok']){
-      $mediaError=(string)($r['error']??'Falha na geração de vídeo');
-      $terminal=str_contains($mediaError,'Centro IA informou falha');
+      $mediaError=(string)($r['error']??'Falha na geração da imagem/cena ou do vídeo.');
       if(!empty($r['operations'])) $jobs[$idx]['media_operations']=$r['operations'];
-      $jobs[$idx]['status']=$terminal?'erro':'gerando';
+      $jobs[$idx]['status']='erro';
       $jobs[$idx]['media_failure']=$mediaError;
+      $jobs[$idx]['last_provider_check_at']=date('c');
       $jobs[$idx]['updated_at']=date('c');
       tvp_save_video_jobs($jobs);
-      tvp_admin_redirect(['err'=>$mediaError.($terminal?'':' A operação foi preservada para nova tentativa.')]);
+      tvp_admin_redirect(['err'=>$mediaError.' Nenhuma nova geração foi iniciada automaticamente para evitar novo consumo de créditos.']);
     }
     if(!empty($r['operations'])) $jobs[$idx]['media_operations']=$r['operations'];
     if(isset($r['progress'])) $jobs[$idx]['media_progress']=$r['progress'];
@@ -175,7 +184,14 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
     $idx=null; $jobs=null; $job=tvp_find_job($_POST['job_id']??'',$jobs,$idx);
     if(!$job) tvp_admin_redirect(['err'=>'Job não encontrado.']);
     $r=tvp_check_heygen($job);
-    if(!$r['ok']) tvp_admin_redirect(['err'=>$r['error']??'Falha ao consultar HeyGen.']);
+    if(!$r['ok']){
+      $jobs[$idx]['status']='erro';
+      $jobs[$idx]['heygen_failure']=(string)($r['error']??'Falha ao consultar HeyGen.');
+      $jobs[$idx]['last_provider_check_at']=date('c');
+      $jobs[$idx]['updated_at']=date('c');
+      tvp_save_video_jobs($jobs);
+      tvp_admin_redirect(['err'=>$jobs[$idx]['heygen_failure'].' Nenhuma nova geração foi iniciada automaticamente para evitar novo consumo de créditos.']);
+    }
     if(isset($r['progress'])) $jobs[$idx]['heygen_progress']=$r['progress'];
     if(!empty($r['video_id'])) $jobs[$idx]['heygen_video_id']=$r['video_id'];
     if(!empty($r['video_url']) || !empty($r['captioned_video_url'])){ $jobs[$idx]['video_url']=$r['video_url']??''; $jobs[$idx]['captioned_video_url']=$r['captioned_video_url']??''; $jobs[$idx]['thumb']=$r['thumb']?:($jobs[$idx]['image']??'assets/cat-cidade.svg'); $jobs[$idx]['status']='revisao_video'; $jobs[$idx]['review_ready_at']=date('c'); }
