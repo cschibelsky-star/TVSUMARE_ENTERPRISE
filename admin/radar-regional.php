@@ -4014,7 +4014,7 @@ function tvs_radar_force_editor_queue_pass($limit=20,$ignoreSchedule=true){
   $result=tvs_radar_retry_pending_editor_articles($approval,$limit,$ignoreSchedule);
   tvs_queue_save($approval);
 
-  $afterReady=0; $afterPending=0; $manualReview=0; $processedNotReady=0; $blockedReasons=[];
+  $afterReady=0; $afterPending=0; $manualReview=0; $processedNotReady=0; $blockedReasons=[]; $blockedItems=[];
   foreach($approval as $item){
     if(!is_array($item)) continue;
     $readiness=function_exists('tvs_radar_queue_item_readiness')
@@ -4024,6 +4024,18 @@ function tvs_radar_force_editor_queue_pass($limit=20,$ignoreSchedule=true){
     elseif(empty($item['ai_editor_processed'])) $afterPending++;
     elseif(!empty($item['ai_editor_processed']) && empty($readiness['ready'])){
       $processedNotReady++;
+      $sourceUrl=(string)($item['source_url']??$item['url']??'');
+      $sourcePath=(string)(parse_url($sourceUrl,PHP_URL_PATH)??'');
+      $blockedItems[]=[
+        'id'=>(string)($item['id']??''),
+        'title'=>(string)($item['title']??''),
+        'source_original_title'=>(string)($item['source_original_title']??''),
+        'source_host'=>(string)(parse_url($sourceUrl,PHP_URL_HOST)??''),
+        'source_path'=>$sourcePath,
+        'city'=>(string)($item['city']??''),
+        'slug_title_score'=>tvs_radar_title_match_score((string)($item['source_original_title']??$item['title']??''),str_replace(['-','_'],' ',basename($sourcePath))),
+        'reasons'=>(array)($readiness['reasons']??[])
+      ];
       foreach((array)($readiness['reasons']??[]) as $reason){
         $reason=trim((string)$reason);
         if($reason!=='') $blockedReasons[$reason]=($blockedReasons[$reason]??0)+1;
@@ -4043,6 +4055,7 @@ function tvs_radar_force_editor_queue_pass($limit=20,$ignoreSchedule=true){
     'after_pending'=>$afterPending,
     'processed_not_ready'=>$processedNotReady,
     'blocked_reasons'=>$blockedReasons,
+    'blocked_items'=>$blockedItems,
     'manual_review'=>$manualReview
   ];
   tvs_save_json_file(dirname(__DIR__).'/data/editor_queue_recovery_status.json',$report);
