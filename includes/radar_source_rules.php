@@ -137,3 +137,18 @@ function tvs_radar_restore_original_title(array $item, array $records): array {
     $item['source_title_recovered_at']=date('c');
     return $item;
 }
+
+/** Verify legacy provenance against the actual article body and publication date. */
+function tvs_radar_verify_legacy_source(array $item, array $article, string $publishedAt): array {
+    $url=(string)($item['source_url']??$item['url']??'');
+    $title=trim((string)($article['title']??''));
+    $body=trim((string)($article['body']??''));
+    $date=strtotime($publishedAt);
+    $expected=strtotime((string)($item['published_at']??$item['created_at']??''));
+    $score=tvs_radar_title_match_score((string)($item['body']??''),$body);
+    if($title===''||!tvs_radar_is_article_path($url,$title,(string)($item['city']??'')))return ['ok'=>false,'reason'=>'source_path_not_article','body_score'=>$score];
+    if(tvs_strlen($body)<300||tvs_strlen((string)($item['body']??''))<300)return ['ok'=>false,'reason'=>'source_body_insufficient','body_score'=>$score];
+    if(!$date||!$expected||abs($date-$expected)>3*86400)return ['ok'=>false,'reason'=>'source_date_unconfirmed','body_score'=>$score];
+    if($score<45)return ['ok'=>false,'reason'=>'source_body_mismatch','body_score'=>$score];
+    return ['ok'=>true,'reason'=>'verified_source_body_date','body_score'=>$score,'title'=>$title];
+}

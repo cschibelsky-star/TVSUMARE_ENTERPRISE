@@ -42,3 +42,14 @@ $listing=$legacy;$listing['source_url']='https://exemplo.com/category/saude/doac
 $listingRecord=['url'=>$listing['source_url'],'city'=>'Sumaré','title'=>'Doação de sangue em Sumaré'];
 if(tvs_radar_restore_original_title($listing,[$listingRecord])!==$listing)throw new RuntimeException('Listagem liberada');
 echo "RADAR_PROVENANCE_RECOVERY_TEST=PASS\n";
+
+$sourceBody=str_repeat('O projeto sobre febre maculosa orientou estudantes e professores de Sumaré quanto aos sintomas, prevenção e atendimento nas unidades de saúde. ',8);
+$verified=$legacy;$verified['body']=$sourceBody;
+$article=['title'=>$record['title'],'body'=>$sourceBody];
+if(!tvs_radar_verify_legacy_source($verified,$article,'2026-10-04')['ok'])throw new RuntimeException('Fonte comprovada rejeitada');
+$unrelated=$article;$unrelated['body']=str_repeat('Um campeonato internacional reúne atletas profissionais para provas de velocidade, ciclismo e natação em diversos países. ',8);
+if(tvs_radar_verify_legacy_source($verified,$unrelated,'2026-10-04')['ok'])throw new RuntimeException('Corpo não correspondente aceito');
+foreach(['','2024-10-04'] as $date){if(tvs_radar_verify_legacy_source($verified,$article,$date)['ok'])throw new RuntimeException('Data não confirmada aceita');}
+$verified['source_url']=$listing['source_url'];
+if(tvs_radar_verify_legacy_source($verified,$article,'2026-10-04')['ok'])throw new RuntimeException('Listagem verificada como artigo');
+echo "RADAR_LEGACY_SOURCE_PROOF_TEST=PASS\n";

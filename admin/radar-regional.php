@@ -3870,11 +3870,40 @@ function tvs_radar_repair_queue_listing_urls($limit=20){
   $approval=tvs_queue_read();
   global $radarLogFile;
   $history=array_merge(tvs_radar_discovery_read(),(array)tvs_read_json_file($radarLogFile));
-  $restoredTitles=0;
+  $restoredTitles=0; $sourceVerified=0; $sourceChecks=[]; $sourceCheckCount=0;
   foreach($approval as &$legacyItem){
     if(!is_array($legacyItem)||empty($legacyItem['ai_editor_processed']))continue;
     $restored=tvs_radar_restore_original_title($legacyItem,$history);
     if($restored!==$legacyItem){$legacyItem=$restored;$restoredTitles++;}
+    $legacyReadiness=tvs_radar_queue_item_readiness($legacyItem);
+    if(empty($legacyReadiness['ready'])&&trim((string)($legacyItem['source_original_title']??''))===''&&($legacyItem['source_title_check_version']??'')!=='body_date_v1'&&$sourceCheckCount<$limit){
+      $sourceUrl=(string)($legacyItem['source_url']??$legacyItem['url']??'');
+      if(tvs_radar_external_url_is_valid($sourceUrl)){
+        $sourceCheckCount++;
+        $html=tvs_fetch_url($sourceUrl);
+        $article=tvs_extract_article($sourceUrl,'');
+        $publishedAt=$html!==''?tvs_radar_extract_published_at_from_html($html):'';
+        $check=tvs_radar_verify_legacy_source($legacyItem,$article,$publishedAt);
+        if(!empty($check['ok'])){
+          $validation=tvs_radar_validate_resolved_article($sourceUrl,$check['title'],(string)($legacyItem['city']??''),'https://'.tvs_radar_source_host($sourceUrl),(string)($legacyItem['published_at']??$legacyItem['created_at']??''),'legacy_current_source_body_date');
+          if(!empty($validation['ok'])){
+            $legacyItem['source_original_title']=$check['title'];
+            $legacyItem['source_title_recovery_method']='verified_current_source_body_date';
+            $legacyItem['source_title_recovered_at']=date('c');
+            $legacyItem['url_resolution_required']=0;
+            $legacyItem['url_resolution_status']='resolved';
+            $sourceVerified++;
+          }else{$check['ok']=false;$check['reason']=$validation['reason']??'source_validation_failed';}
+        }
+        $sourceChecks[]=['id'=>(string)($legacyItem['id']??''),'ok'=>!empty($check['ok']),'reason'=>$check['reason'],'body_score'=>$check['body_score']];
+        $legacyItem['source_title_check_version']='body_date_v1';
+        $legacyItem['source_title_check_reason']=$check['reason'];
+      }
+    }
+    $legacyReadiness=tvs_radar_queue_item_readiness($legacyItem);
+    $legacyItem['queue_pending_reasons']=$legacyReadiness['reasons'];
+    $legacyItem['queue_status']=!empty($legacyReadiness['ready'])?'ready':'processing';
+    $legacyItem['publication_eligible']=!empty($legacyReadiness['ready'])?1:0;
   }
   unset($legacyItem);
   $attempted=0; $resolved=0; $ready=0; $failed=0; $methods=[];
@@ -3998,6 +4027,8 @@ function tvs_radar_repair_queue_listing_urls($limit=20){
     'executed_at'=>date('c'),
     'mode'=>'queue_listing_url_repair',
     'original_titles_restored'=>$restoredTitles,
+    'current_sources_verified'=>$sourceVerified,
+    'source_checks'=>$sourceChecks,
     'attempted'=>$attempted,
     'resolved'=>$resolved,
     'ready'=>$ready,
