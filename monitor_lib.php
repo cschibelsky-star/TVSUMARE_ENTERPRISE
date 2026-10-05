@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__.'/includes/image_url_helpers.php';
 require_once __DIR__.'/includes/outbound_guard.php';
 function tvs_strlen($s){ return function_exists('mb_strlen') ? mb_strlen($s, 'UTF-8') : strlen($s); }
 function tvs_substr($s,$start,$len=null){ return function_exists('mb_substr') ? mb_substr($s,$start,$len,'UTF-8') : substr($s,$start,$len); }
@@ -209,7 +210,7 @@ function tvs_extract_meta_image_from_html($base, $html){
       $isImage = preg_match('~(?:property|name)=["\'](?:og:image|twitter:image|twitter:image:src)["\']~i',$tag);
       if($isImage && preg_match('~content=["\']([^"\']+)["\']~i',$tag,$m)){
         $img=tvs_absolute_url($base, html_entity_decode($m[1],ENT_QUOTES|ENT_HTML5,'UTF-8'));
-        if(tvs_is_valid_image_url($img)) return $img;
+        if(tvs_is_valid_image_url($img)) return tvs_normalize_source_image_url($img);
       }
     }
   }
@@ -218,7 +219,7 @@ function tvs_extract_meta_image_from_html($base, $html){
     foreach($imgs[0] as $tag){
       if(preg_match('~(?:src|data-src|data-original|data-lazy-src)=["\']([^"\']+)["\']~i',$tag,$m)){
         $img=tvs_absolute_url($base, html_entity_decode($m[1],ENT_QUOTES|ENT_HTML5,'UTF-8'));
-        if(tvs_is_valid_image_url($img)) return $img;
+        if(tvs_is_valid_image_url($img)) return tvs_normalize_source_image_url($img);
       }
     }
   }
@@ -230,7 +231,7 @@ function tvs_extract_image_from_rss_description($base, $desc){
   if($desc==='' || stripos($desc,'<img')===false) return '';
   if(preg_match('~<img\b[^>]*(?:src|data-src)=["\']([^"\']+)["\'][^>]*>~is',$desc,$m)){
     $img=tvs_absolute_url($base, html_entity_decode($m[1],ENT_QUOTES|ENT_HTML5,'UTF-8'));
-    if(tvs_is_valid_image_url($img)) return $img;
+    if(tvs_is_valid_image_url($img)) return tvs_normalize_source_image_url($img);
   }
   return '';
 }

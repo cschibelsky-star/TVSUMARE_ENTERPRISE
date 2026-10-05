@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__.'/image_url_helpers.php';
 if(!function_exists('tvs_h')){
 function tvs_h($s){ return htmlspecialchars((string)$s,ENT_QUOTES,'UTF-8'); }
 function tvs_json($file){ if(!file_exists($file)) return []; $d=json_decode(file_get_contents($file),true); return is_array($d)?$d:[]; }
@@ -28,7 +29,7 @@ function tvs_is_category_asset($img){ return (bool)preg_match('~(^|/)assets/cat-
 function tvs_real_image($n){
   $candidates=[];
   foreach(['image','og_image','rss_image','media','media_url','thumbnail','thumb','featured_image','image_url'] as $k){ if(!empty($n[$k])) $candidates[]=$n[$k]; }
-  foreach($candidates as $img){ $img=trim((string)$img); if($img!=='' && !tvs_is_category_asset($img)) return $img; }
+  foreach($candidates as $img){ $img=tvs_normalize_source_image_url((string)$img); if($img!=='' && !tvs_is_category_asset($img)) return $img; }
   return '';
 }
 function tvs_category_asset($n){
@@ -117,7 +118,7 @@ function tvs_category_match($n,$terms){
 }
 function tvs_news_category($n){ return trim((string)($n['category']??'Notícia')); }
 function tvs_video_url($v){ return trim((string)($v['url']??$v['video_url']??$v['captioned_video_url']??$v['videoUrl']??'')); }
-function tvs_video_thumb($v){ $img=trim((string)($v['thumb']??$v['thumbnail']??$v['image']??'')); return tvs_is_category_asset($img)?'':$img; }
+function tvs_video_thumb($v){ $img=tvs_normalize_source_image_url((string)($v['thumb']??$v['thumbnail']??$v['image']??'')); return tvs_is_category_asset($img)?'':$img; }
 function tvs_video_title($v){
   $title=trim((string)($v['title']??'Vídeo TV Sumaré'));
   return preg_replace('~\bSumare\b~u','Sumaré',$title);
