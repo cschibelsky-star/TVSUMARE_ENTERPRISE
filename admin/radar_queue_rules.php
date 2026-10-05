@@ -261,6 +261,14 @@ if (!function_exists('tvs_radar_queue_item_readiness')) {
 
             if (!$articleLike) {
                 $reasons[] = 'URL corresponde a página de listagem';
+                $sourceCheckReason = (string)($item['source_title_check_reason'] ?? '');
+                if ($sourceCheckReason === 'source_date_unconfirmed') {
+                    $reasons[] = 'Fonte pendente: data de origem ausente ou divergente';
+                } elseif ($sourceCheckReason === 'source_body_mismatch') {
+                    $reasons[] = 'Fonte pendente: conteúdo de origem não confirmado';
+                } elseif ($sourceCheckReason === 'source_body_insufficient') {
+                    $reasons[] = 'Fonte pendente: conteúdo de origem insuficiente';
+                }
             }
         }
 
