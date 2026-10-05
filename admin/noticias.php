@@ -129,11 +129,11 @@ usort($news,function($a,$b){return strcmp((string)($b['published_at']??$b['creat
               <div class="inline-actions">
                 <a class="btn small" href="../noticia.php?id=<?=rawurlencode((string)($n['id']??''))?>" target="_blank">Abrir</a>
                 <a class="btn small" href="instagram.php?id=<?=rawurlencode((string)($n['id']??''))?>">Distribuir nas redes</a>
-                <form method="post" onsubmit="return confirm('Enviar esta notícia para a Lixeira? Ela poderá ser restaurada depois.');">
+                <form method="post" onsubmit="return confirm('Excluir esta publicação? Ela será removida do site e poderá ser restaurada pela Lixeira.');">
                   <?=tvs_csrf_field()?>
                   <input type="hidden" name="action" value="trash">
                   <input type="hidden" name="id" value="<?=np_h($n['id']??'')?>">
-                  <button class="btn small danger" type="submit">Enviar para Lixeira</button>
+                  <button class="btn small danger" type="submit" title="Remove esta publicação do site e permite restaurá-la pela Lixeira.">Excluir publicação</button>
                 </form>
               </div>
             </td>
