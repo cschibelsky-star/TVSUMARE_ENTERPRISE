@@ -12,7 +12,7 @@ $whatsappStatus=(string)($radarNotification['whatsapp_status']??'aguardando_conf
 $today=date('Y-m-d'); $publishedToday=0;
 foreach($news as $n){ $d=substr((string)($n['published_at']??$n['created_at']??$n['date']??''),0,10); if($d===$today) $publishedToday++; }
 $geminiOk = !empty($GLOBALS['gemini_api_key'] ?? getenv('GEMINI_API_KEY'));
-$rep=j('reporter_ia_config.json'); $heygenOk = !empty($rep['heygen_api_key'] ?? getenv('HEYGEN_API_KEY'));
+$heygenOk = trim((string)(getenv('HEYGEN_API_KEY') ?: '')) !== '';
 $activeSources=0; foreach($fontes as $f){ if(!isset($f['active']) || $f['active']) $activeSources++; }
 ?><!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Dashboard | TV Sumaré Enterprise</title><link rel="stylesheet" href="admin.css?v=2.0.3"></head><body><div class="admin"><?php include __DIR__.'/_menu.php'; ?><main class="main">
 <div class="top"><div><span class="eyebrow">TVSUMARE_ENTERPRISE_2.0</span><h1>Dashboard Executivo</h1><p class="muted">Redação, IA, vídeos, fontes e operação comercial em uma visão única. Tecnologia by Vitrine AI Pro.</p></div><div class="actions"><a class="btn orange" href="radar-regional.php">Aprovações</a><a class="btn secondary" href="../index.php" target="_blank">Ver Portal</a></div></div>

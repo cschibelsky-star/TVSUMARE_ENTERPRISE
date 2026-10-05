@@ -2,6 +2,7 @@
 include 'config.php';
 require_once __DIR__.'/includes/tvs_public_helpers.php';
 
+
 $active='videos';
 $archiveMode=isset($_GET['arquivo']) && $_GET['arquivo']==='1';
 $videos=tvs_load_real_videos(0,$archiveMode?0:30);

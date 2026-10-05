@@ -1,4 +1,5 @@
 <?php
+require_once dirname(__DIR__).'/includes/radar_source_rules.php';
 
 
 if (!function_exists('tvs_radar_editorial_category')) {
@@ -231,25 +232,34 @@ if (!function_exists('tvs_radar_queue_item_readiness')) {
         } elseif (preg_match('~news\.google\.com~i', $url)) {
             $reasons[] = 'URL original não resolvida';
         } else {
-            $path = trim(
-                (string)(parse_url($url, PHP_URL_PATH) ?? ''),
-                '/'
-            );
+            $articleLike = null;
+            if (function_exists('tvs_radar_is_article_path')) {
+                $articleLike = tvs_radar_is_article_path(
+                    $url,
+                    (string)($item['source_original_title'] ?? $title),
+                    (string)($item['city'] ?? '')
+                );
+            }
 
-            $segments = array_values(
-                array_filter(explode('/', $path))
-            );
+            if ($articleLike === null) {
+                $path = trim(
+                    (string)(parse_url($url, PHP_URL_PATH) ?? ''),
+                    '/'
+                );
+                $segments = array_values(array_filter(explode('/', $path)));
+                $articleLike = !(
+                    $path === ''
+                    || count($segments) < 2
+                    || preg_match(
+                        '~(?:^|/)(category|categoria|tag|tags|author|autor|'
+                        .'search|busca|page|pagina|arquivo|archive|editoria|'
+                        .'secao|seção)(?:/|$)~iu',
+                        $path
+                    )
+                );
+            }
 
-            if (
-                $path === ''
-                || count($segments) < 2
-                || preg_match(
-                    '~(?:^|/)(category|categoria|tag|tags|author|autor|'
-                    .'search|busca|page|pagina|arquivo|archive|editoria|'
-                    .'secao|seção)(?:/|$)~iu',
-                    $path
-                )
-            ) {
+            if (!$articleLike) {
                 $reasons[] = 'URL corresponde a página de listagem';
             }
         }

@@ -586,41 +586,6 @@ function tvs_radar_external_url_is_valid($url){
 }
 
 
-function tvs_radar_normalize_title_for_match($title){
-  $title=tvs_lower(tvs_clean_text((string)$title));
-  $title=preg_replace('~[^\p{L}\p{N}]+~u',' ',$title);
-  return trim(preg_replace('~\s+~u',' ',$title));
-}
-
-function tvs_radar_title_match_score($expected,$candidate){
-  if(function_exists('tvs_radar_clean_google_title')){
-    $expected=tvs_radar_clean_google_title($expected);
-    $candidate=tvs_radar_clean_google_title($candidate);
-  }
-  $a=tvs_radar_normalize_title_for_match($expected);
-  $b=tvs_radar_normalize_title_for_match($candidate);
-
-  if($a==='' || $b==='') return 0;
-  if($a===$b) return 100;
-
-  $wa=array_values(array_unique(array_filter(
-    explode(' ',$a),
-    static fn($word)=>tvs_strlen($word)>=4
-  )));
-  $wb=array_values(array_unique(array_filter(
-    explode(' ',$b),
-    static fn($word)=>tvs_strlen($word)>=4
-  )));
-
-  if(!$wa || !$wb) return 0;
-
-  $common=count(array_intersect($wa,$wb));
-  $union=count(array_unique(array_merge($wa,$wb)));
-  if($union<1) return 0;
-
-  return (int)round(($common/$union)*100);
-}
-
 function tvs_radar_strong_entity_score($expected,$candidate,$city=''){
   $expectedText=tvs_clean_text((string)$expected);
   $candidateText=tvs_clean_text((string)$candidate);
@@ -901,62 +866,6 @@ function tvs_radar_source_section_urls($domain,$city=''){
   return array_values(array_unique($urls));
 }
 
-
-function tvs_radar_is_article_path($url,$title='',$city=''){
-  $queryParams=[];
-  parse_str((string)(parse_url((string)$url,PHP_URL_QUERY)??''),$queryParams);
-  $isQueryArticle=
-    tvs_lower((string)($queryParams['a']??''))==='noticia'
-    && preg_match('~^[0-9]+$~',(string)($queryParams['id']??''))===1;
-
-  // Alguns portais públicos, como Americana, identificam matérias por query string
-  // (?a=noticia&id=...). A confirmação final ainda valida título, corpo e cidade.
-  if($isQueryArticle) return true;
-
-  $path=(string)(parse_url((string)$url,PHP_URL_PATH)??'');
-  $path=trim($path,'/');
-  if($path==='') return false;
-
-  $segments=array_values(array_filter(explode('/',$path)));
-  if(!$segments) return false;
-
-  $last=(string)end($segments);
-  if($last==='') return false;
-
-  $generic=[
-    'category','categoria','tag','tags','author','autor','search','busca',
-    'page','pagina','arquivo','archive','editoria','secao','seção',
-    'cidade','cidades','noticia','noticias','notícia','notícias'
-  ];
-
-  // Só bloqueia se a URL inteira for uma seção/listagem. Caminhos como
-  // /noticias/titulo-da-materia e /cidades/sumare/titulo-da-materia
-  // são artigos válidos e não devem ser descartados.
-  if(count($segments)===1 && in_array(tvs_lower($segments[0]),$generic,true)){
-    return false;
-  }
-
-  $citySlug=tvs_slug((string)$city);
-  if(
-    $citySlug!=='' &&
-    (
-      tvs_slug($path)===$citySlug ||
-      tvs_slug($last)===$citySlug
-    )
-  ){
-    return false;
-  }
-
-  // Último segmento precisa parecer uma manchete, inclusive em URLs WordPress
-  // de um único nível (/titulo-da-materia).
-  $slugWords=array_values(array_filter(preg_split('~[-_]+~',$last)));
-  if(count($slugWords)<4) return false;
-
-  $slugText=str_replace(['-','_'],' ',$last);
-  $slugScore=tvs_radar_title_match_score($title,$slugText);
-
-  return $slugScore>=42;
-}
 
 function tvs_radar_validate_resolved_article($url,$expectedTitle,$city='',$expectedDomain='',$expectedPublishedAt='',$method=''){
   if(!tvs_radar_external_url_is_valid($url)){
@@ -2878,9 +2787,16 @@ function tvs_radar_candidates_for_city($city){
       $items[]=$it;
     }
   }
-  // Google Notícias por cidade sempre entra como complemento de abastecimento editorial.
-  if(count($items)<($volumeMode?60:30)){
-    foreach(tvs_radar_google_news($city,$volumeMode?60:36) as $it){ $it['priority']=$volumeMode?4:3; $items[]=$it; }
+  // Google Notícias é fallback de descoberta, não fonte principal do Radar.
+  // Em modo normal, só complementa quando as fontes diretas não entregam volume mínimo,
+  // e entra com limite pequeno para não recriar um backlog de URLs intermediárias.
+  $directTarget=$volumeMode?30:12;
+  if(count($items)<$directTarget){
+    $googleLimit=max(0,$directTarget-count($items));
+    foreach(tvs_radar_google_news($city,$googleLimit) as $it){
+      $it['priority']=$volumeMode?4:3;
+      $items[]=$it;
+    }
   }
   $unique=[]; $seen=[];
   foreach($items as $it){
@@ -3479,6 +3395,7 @@ function tvs_generate_ready_article($city,$cand){
     tvs_radar_discard($cand,$city,'Texto com frase interna ou genérica detectada');
     return null;
   }
+  $result['source_original_title']=trim((string)($mat['title']??$cand['title']??''));
   $result['id']=uniqid('aprov_');
   $result['city']=$city;
   if($requestedCity!==$city) $result['radar_requested_city']=$requestedCity;
@@ -3834,7 +3751,7 @@ function tvs_radar_factually_ready($package){
   ];
 }
 
-function tvs_radar_retry_pending_editor_articles(&$approval,$limit=6){
+function tvs_radar_retry_pending_editor_articles(&$approval,$limit=6,$ignoreSchedule=false){
   global $gemini_api_key;
   $recovered=0; $attempted=0;
   foreach($approval as &$item){
@@ -3843,7 +3760,7 @@ function tvs_radar_retry_pending_editor_articles(&$approval,$limit=6){
     if(trim((string)($item['title']??''))==='' || trim((string)($item['body']??''))==='') continue;
 
     $nextAiRetry=(string)($item['ai_editor_next_retry_at']??'');
-    if($nextAiRetry!=='' && ($nextAiTs=strtotime($nextAiRetry)) && $nextAiTs>time()) continue;
+    if(!$ignoreSchedule && $nextAiRetry!=='' && ($nextAiTs=strtotime($nextAiRetry)) && $nextAiTs>time()) continue;
     $previousAttempts=(int)($item['ai_editor_attempts']??0);
     if($previousAttempts>=3){
       $item['queue_status']='processing';
@@ -3922,6 +3839,7 @@ function tvs_radar_retry_pending_editor_articles(&$approval,$limit=6){
         ." city=".str_replace(' ','_',(string)($item['city']??'Região'))
         ." title=".substr(preg_replace('/\\s+/u',' ',(string)($item['title']??'')),0,120)."\n";
     }
+    $item['source_original_title']=$item['source_original_title']??$item['title']??'';
     $preservedId=$item['id']??uniqid('aprov_'); $preservedCreated=$item['created_at']??date('c');
     $item=array_merge($item,$edited); $item['id']=$preservedId; $item['created_at']=$preservedCreated;
     $item['ai_editor_processed']=1; $item['ai_editor_stage']='completed';
@@ -3935,6 +3853,200 @@ function tvs_radar_retry_pending_editor_articles(&$approval,$limit=6){
   }
   unset($item);
   return ['attempted'=>$attempted,'recovered'=>$recovered];
+}
+
+function tvs_radar_repair_queue_listing_urls($limit=20){
+  $limit=max(1,min(40,(int)$limit));
+  $approval=tvs_queue_read();
+  $attempted=0; $resolved=0; $ready=0; $failed=0; $methods=[];
+
+  foreach($approval as &$item){
+    if($attempted>=$limit) break;
+    if(!is_array($item) || empty($item['ai_editor_processed'])) continue;
+
+    $readiness=function_exists('tvs_radar_queue_item_readiness')
+      ? tvs_radar_queue_item_readiness($item)
+      : ['ready'=>1,'reasons'=>[]];
+    if(!empty($readiness['ready'])) continue;
+
+    $reasons=(array)($readiness['reasons']??[]);
+    if(!in_array('URL corresponde a página de listagem',$reasons,true)) continue;
+
+    $retryAt=strtotime((string)($item['queue_url_repair_next_retry_at']??''))?:0;
+    if($retryAt>time()) continue;
+    $attempted++;
+    $title=trim((string)($item['source_original_title']??$item['title']??''));
+    $city=trim((string)($item['city']??''));
+    $current=trim((string)($item['source_url']??$item['url']??''));
+    $source=(string)($item['source']??'');
+
+    $sourceDomain=tvs_radar_source_domain_hint($source,$title);
+    if($sourceDomain==='' && $current!==''){
+      $host=tvs_radar_source_host($current);
+      if($host!=='') $sourceDomain='https://'.$host;
+    }
+
+    $candidate='';
+    $method='';
+    $validation=null;
+    $tryCandidate=function($url,$candidateMethod) use (&$candidate,&$method,&$validation,$title,$city,$sourceDomain,$item){
+      $url=trim((string)$url);
+      if($url==='') return false;
+      $check=tvs_radar_validate_resolved_article(
+        $url,
+        $title,
+        $city,
+        $sourceDomain,
+        (string)($item['published_at']??$item['created_at']??''),
+        $candidateMethod
+      );
+      if(empty($check['ok'])) return false;
+      $candidate=$url;
+      $method=$candidateMethod;
+      $validation=$check;
+      return true;
+    };
+
+    if($current!=='' && $sourceDomain!==''){
+      $GLOBALS['tvs_radar_resolution_city']=$city;
+      $listingHtml=tvs_fetch_url($current);
+      if($listingHtml!==''){
+        $tryCandidate(
+          tvs_radar_find_article_in_html($sourceDomain,$listingHtml,$title),
+          'queue_current_listing_title_match'
+        );
+      }
+    }
+    if($candidate==='' && $sourceDomain!==''){
+      $tryCandidate(tvs_radar_find_article_on_source($sourceDomain,$title,$city),'queue_source_domain_title_match');
+    }
+    if($candidate==='' && $sourceDomain!==''){
+      $tryCandidate(tvs_radar_resolve_by_sitemap($sourceDomain,$title,$city),'queue_source_sitemap_title_match');
+    }
+    if($candidate==='' && $sourceDomain!==''){
+      $tryCandidate(tvs_radar_resolve_by_bing_site($sourceDomain,$title,$city),'queue_bing_site_title_match');
+    }
+    if($candidate==='' && $sourceDomain!==''){
+      $tryCandidate(tvs_radar_resolve_by_bing_web($title,$city,$source,$sourceDomain),'queue_bing_web_title_match');
+    }
+    if($candidate===''){
+      $tryCandidate(tvs_radar_known_current_url($title),'queue_known_current_title');
+    }
+    if($candidate===''){
+      $tryCandidate(tvs_radar_resolve_by_bing_news($title,$city,$source),'queue_bing_news_title_match');
+    }
+
+    if($candidate===''){
+      $failed++;
+      $item['queue_url_repair_attempts']=(int)($item['queue_url_repair_attempts']??0)+1;
+      $item['queue_url_repair_last_attempt_at']=date('c');
+      $item['queue_url_repair_next_retry_at']=date('c',time()+21600);
+      $item['queue_pending_reasons']=$reasons;
+      $item['queue_status']='processing';
+      $item['publication_eligible']=0;
+      continue;
+    }
+
+    $item['source_url']=$candidate;
+    $item['url']=$candidate;
+    $item['url_resolution_required']=0;
+    $item['url_resolution_status']='resolved';
+    $item['url_resolution_method']=$method;
+    $item['url_resolution_confidence']=(int)($validation['confidence']??0);
+    $item['queue_url_repaired_at']=date('c');
+    unset($item['queue_url_repair_next_retry_at']);
+    $resolved++;
+    $methods[$method]=($methods[$method]??0)+1;
+
+    $after=function_exists('tvs_radar_queue_item_readiness')
+      ? tvs_radar_queue_item_readiness($item)
+      : ['ready'=>1,'reasons'=>[]];
+    $item['queue_pending_reasons']=array_values(array_unique(array_filter((array)($after['reasons']??[]))));
+    if(!empty($after['ready'])){
+      $item['queue_status']='ready';
+      $item['publication_eligible']=1;
+      $item['editorial_status']='Editor IA concluído';
+      $ready++;
+    } else {
+      $item['queue_status']='processing';
+      $item['publication_eligible']=0;
+    }
+  }
+  unset($item);
+
+  tvs_queue_save($approval);
+  $report=[
+    'executed_at'=>date('c'),
+    'mode'=>'queue_listing_url_repair',
+    'attempted'=>$attempted,
+    'resolved'=>$resolved,
+    'ready'=>$ready,
+    'failed'=>$failed,
+    'methods'=>$methods
+  ];
+  tvs_save_json_file(dirname(__DIR__).'/data/queue_listing_url_repair_status.json',$report);
+  return $report;
+}
+
+function tvs_radar_force_editor_queue_pass($limit=20,$ignoreSchedule=true){
+  $limit=max(1,min(40,(int)$limit));
+  $approval=tvs_queue_read();
+  $beforeReady=0; $beforePending=0;
+  foreach($approval as $item){
+    if(!is_array($item)) continue;
+    $readiness=function_exists('tvs_radar_queue_item_readiness')
+      ? tvs_radar_queue_item_readiness($item)
+      : ['ready'=>!empty($item['publication_eligible'])];
+    if(!empty($item['ai_editor_processed']) && !empty($readiness['ready'])) $beforeReady++;
+    elseif(empty($item['ai_editor_processed'])) $beforePending++;
+  }
+
+  $result=tvs_radar_retry_pending_editor_articles($approval,$limit,$ignoreSchedule);
+  tvs_queue_save($approval);
+
+  $afterReady=0; $afterPending=0; $manualReview=0; $processedNotReady=0; $blockedReasons=[];
+  foreach($approval as $item){
+    if(!is_array($item)) continue;
+    $readiness=function_exists('tvs_radar_queue_item_readiness')
+      ? tvs_radar_queue_item_readiness($item)
+      : ['ready'=>!empty($item['publication_eligible']),'reasons'=>[]];
+    if(!empty($item['ai_editor_processed']) && !empty($readiness['ready'])) $afterReady++;
+    elseif(empty($item['ai_editor_processed'])) $afterPending++;
+    elseif(!empty($item['ai_editor_processed']) && empty($readiness['ready'])){
+      $processedNotReady++;
+      foreach((array)($readiness['reasons']??[]) as $reason){
+        $reason=trim((string)$reason);
+        if($reason!=='') $blockedReasons[$reason]=($blockedReasons[$reason]??0)+1;
+      }
+    }
+    if(($item['ai_editor_stage']??'')==='manual_review') $manualReview++;
+  }
+
+  $report=[
+    'executed_at'=>date('c'),
+    'mode'=>'editor_queue_forced_pass',
+    'before_ready'=>$beforeReady,
+    'before_pending'=>$beforePending,
+    'attempted'=>(int)($result['attempted']??0),
+    'recovered'=>(int)($result['recovered']??0),
+    'after_ready'=>$afterReady,
+    'after_pending'=>$afterPending,
+    'processed_not_ready'=>$processedNotReady,
+    'blocked_reasons'=>$blockedReasons,
+    'manual_review'=>$manualReview
+  ];
+  tvs_save_json_file(dirname(__DIR__).'/data/editor_queue_recovery_status.json',$report);
+
+  $st=tvs_radar_status();
+  $st=is_array($st)?$st:[];
+  $st['last_editor_recovery_run']=$report['executed_at'];
+  $st['last_editor_recovery_attempted']=$report['attempted'];
+  $st['last_editor_recovery_recovered']=$report['recovered'];
+  $st['last_editor_recovery_ready']=$report['after_ready'];
+  $st['last_editor_recovery_pending']=$report['after_pending'];
+  tvs_radar_save_status($st);
+
+  return $report;
 }
 
 function tvs_radar_run_telemetry_file(){
@@ -3992,7 +4104,7 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5,$options=[]
   $approval=tvs_queue_read();
   $editorRetry=!empty($options['skip_editor_retry'])
     ? ['attempted'=>0,'recovered'=>0]
-    : tvs_radar_retry_pending_editor_articles($approval,tvs_radar_is_volume_mode($mode)?8:4);
+    : tvs_radar_retry_pending_editor_articles($approval,tvs_radar_is_volume_mode($mode)?20:12);
   $publishedHistory=tvs_read_json_file($newsFile); if(!is_array($publishedHistory)) $publishedHistory=[];
 
   $auditHistory=array_merge($approval,$publishedHistory);
@@ -5582,16 +5694,19 @@ $editorBlocks=[];
 foreach($processingQueue as $diagItem){
   $k=tvs_radar_discovery_key($diagItem);
   if(isset($sourcePendingKeys[$k])) continue;
-  $label=trim((string)($diagItem['ai_editor_last_error_label']??'Aguardando nova tentativa'));
+  $validation=tvs_radar_queue_item_readiness($diagItem);
+  $label=!empty($diagItem['ai_editor_processed'])
+    ? implode(' · ',(array)($validation['reasons']??['Validação editorial pendente']))
+    : trim((string)($diagItem['ai_editor_last_error_label']??'Aguardando nova tentativa'));
   $editorBlocks[$label]=($editorBlocks[$label]??0)+1;
 }
 $runTelemetry=tvs_read_json_file(tvs_radar_run_telemetry_file());
 $lastRunTelemetry=is_array($runTelemetry) && $runTelemetry ? end($runTelemetry) : [];
-?><div class="notice">Pipeline ativo: <?=$totalPipelineCurrent?> pauta(s) — <?=$totalSourcePending?> em fonte/enriquecimento · <?=$totalEditorPending?> aguardando Editor IA · <?=$totalSensitive?> em revisão obrigatória · <?=$totalImageReview?> em revisão de imagem · <?=$totalReady?> pronta(s) para aprovação.<?php if($totalAuditTerminal>0): ?> Fora do backlog ativo: <?=$totalSourceTerminal?> fonte(s) esgotada(s) · <?=$totalManualPipeline?> em revisão manual do pipeline.<?php endif; ?></div><div class="cards"><div class="stat"><span>Prontas para aprovação</span><b><?=$totalReady?></b><small>Editor IA e validação concluídos, sem pendência adicional</small></div><div class="stat"><span>Fonte / enriquecimento ativo</span><b><?=$totalSourcePending?></b><small>resolver: <?=$sourceStageCounts['precisa_resolver_fonte']?> · aguardando fonte: <?=$sourceStageCounts['aguardando_fonte']?> · fonte resolvida: <?=$sourceStageCounts['fonte_resolvida']?> · enriquecendo: <?=$sourceStageCounts['enriquecimento_ativo']?> · aguardando enriquecimento: <?=$sourceStageCounts['aguardando_enriquecimento']?></small></div><div class="stat"><span>Aguardando Editor IA</span><b><?=$totalEditorPending?></b><small><a href="drafts.php">ver matérias e motivos</a></small></div><div class="stat"><span>Revisão obrigatória</span><b><?=$totalSensitive?></b><small>pautas sensíveis ou de alto impacto</small></div><div class="stat"><span>Revisão de imagem</span><b><?=$totalImageReview?></b><small>texto pronto; imagem precisa ser confirmada</small></div></div>
+?><div class="notice">Pipeline ativo: <?=$totalPipelineCurrent?> pauta(s) — <?=$totalSourcePending?> em fonte/enriquecimento · <?=$totalEditorPending?> em processamento editorial · <?=$totalSensitive?> em revisão obrigatória · <?=$totalImageReview?> em revisão de imagem · <?=$totalReady?> pronta(s) para aprovação.<?php if($totalAuditTerminal>0): ?> Fora do backlog ativo: <?=$totalSourceTerminal?> fonte(s) esgotada(s) · <?=$totalManualPipeline?> em revisão manual do pipeline.<?php endif; ?></div><div class="cards"><div class="stat"><span>Prontas para aprovação</span><b><?=$totalReady?></b><small>Editor IA e validação concluídos, sem pendência adicional</small></div><div class="stat"><span>Fonte / enriquecimento ativo</span><b><?=$totalSourcePending?></b><small>resolver: <?=$sourceStageCounts['precisa_resolver_fonte']?> · aguardando fonte: <?=$sourceStageCounts['aguardando_fonte']?> · fonte resolvida: <?=$sourceStageCounts['fonte_resolvida']?> · enriquecendo: <?=$sourceStageCounts['enriquecimento_ativo']?> · aguardando enriquecimento: <?=$sourceStageCounts['aguardando_enriquecimento']?></small></div><div class="stat"><span>Processamento editorial</span><b><?=$totalEditorPending?></b><small><a href="drafts.php">ver matérias e motivos</a></small></div><div class="stat"><span>Revisão obrigatória</span><b><?=$totalSensitive?></b><small>pautas sensíveis ou de alto impacto</small></div><div class="stat"><span>Revisão de imagem</span><b><?=$totalImageReview?></b><small>texto pronto; imagem precisa ser confirmada</small></div></div>
 <div class="settings-box"><strong>Diagnóstico do gargalo</strong><div style="margin-top:8px;display:flex;gap:7px;flex-wrap:wrap"><?php
 $factLabels=['sem_auditoria'=>'Ainda sem auditoria','fonte_nao_resolvida'=>'Fonte não resolvida','texto_insuficiente'=>'Conteúdo factual insuficiente','quatro_w_incompleto'=>'4W incompleto','fonte_nao_confiavel'=>'Fonte não confiável','fora_janela'=>'Fora da janela','sem_interesse_editorial'=>'Interesse editorial não detectado'];
 foreach($factBlocks as $key=>$count){ if($count>0): ?><span class="badge"><?=h($factLabels[$key])?>: <?=$count?></span><?php endif; }
-foreach($editorBlocks as $label=>$count){ if($count>0): ?><span class="badge" style="background:#f5f3ff;color:#6d28d9">Editor IA — <?=h($label)?>: <?=$count?></span><?php endif; }
+foreach($editorBlocks as $label=>$count){ if($count>0): ?><span class="badge" style="background:#f5f3ff;color:#6d28d9">Pendência editorial — <?=h($label)?>: <?=$count?></span><?php endif; }
 ?></div><small class="muted">Uma pauta pode aparecer em mais de um motivo factual; os cards superiores continuam mutuamente exclusivos.</small></div>
 <?php if($lastRunTelemetry): ?><div class="settings-box"><strong>Telemetria da última execução</strong><div style="margin-top:8px;display:flex;gap:7px;flex-wrap:wrap"><span class="badge">Etapa: <?=h($lastRunTelemetry['retroactive_stage']??'normal')?></span><span class="badge">Selecionadas: <?=h((string)($lastRunTelemetry['selected_count']??0))?></span><span class="badge">Processadas: <?=h((string)($lastRunTelemetry['processed_count']??0))?></span><span class="badge">Persistidas: <?=h((string)($lastRunTelemetry['persisted_count']??0))?></span><span class="badge">Alteradas: <?=h((string)($lastRunTelemetry['changed_count']??0))?></span><span class="badge">Erros: <?=h((string)($lastRunTelemetry['error_count']??0))?></span><span class="badge">Cursor: <?=h((string)($lastRunTelemetry['cursor_before']??'-'))?> → <?=h((string)($lastRunTelemetry['cursor_after']??'-'))?></span></div><small class="muted">Run <?=h($lastRunTelemetry['run_id']??'')?> · início <?=h($lastRunTelemetry['started_at']??'')?> · fim <?=h($lastRunTelemetry['finished_at']??'')?> · regra <?=h($lastRunTelemetry['rule_version']??'')?></small></div><?php endif; ?>
 <?php if($sensitiveQueue): ?><section class="city-block"><h2>Revisão obrigatória <small class="muted">(<?=count($sensitiveQueue)?>)</small></h2><div class="queue-grid"><?php foreach($sensitiveQueue as $m): ?><article class="matter"><span class="badge" style="background:#fef2f2;color:#b91c1c">Revisão obrigatória</span><span class="badge"><?=h($m['editorial_status']??'Revisão')?></span><?php if(isset($m['editorial_score'])): ?><span class="badge">Score <?=h($m['editorial_score'])?></span><?php endif; ?><h3><?=h($m['title']??'Sem título')?></h3><p><?=h($m['subtitle']??($m['summary']??''))?></p><a class="btn orange" href="?edit=<?=h($m['id'])?>">Revisar</a></article><?php endforeach; ?></div></section><?php endif; ?>
