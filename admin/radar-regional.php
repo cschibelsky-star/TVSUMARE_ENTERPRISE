@@ -3868,6 +3868,15 @@ function tvs_radar_retry_pending_editor_articles(&$approval,$limit=6,$ignoreSche
 function tvs_radar_repair_queue_listing_urls($limit=20){
   $limit=max(1,min(40,(int)$limit));
   $approval=tvs_queue_read();
+  global $radarLogFile;
+  $history=array_merge(tvs_radar_discovery_read(),(array)tvs_read_json_file($radarLogFile));
+  $restoredTitles=0;
+  foreach($approval as &$legacyItem){
+    if(!is_array($legacyItem)||empty($legacyItem['ai_editor_processed']))continue;
+    $restored=tvs_radar_restore_original_title($legacyItem,$history);
+    if($restored!==$legacyItem){$legacyItem=$restored;$restoredTitles++;}
+  }
+  unset($legacyItem);
   $attempted=0; $resolved=0; $ready=0; $failed=0; $methods=[];
 
   foreach($approval as &$item){
@@ -3988,6 +3997,7 @@ function tvs_radar_repair_queue_listing_urls($limit=20){
   $report=[
     'executed_at'=>date('c'),
     'mode'=>'queue_listing_url_repair',
+    'original_titles_restored'=>$restoredTitles,
     'attempted'=>$attempted,
     'resolved'=>$resolved,
     'ready'=>$ready,

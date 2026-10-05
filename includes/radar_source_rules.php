@@ -115,3 +115,25 @@ function tvs_radar_normalize_source_terminal_state(array $item): array {
     $item['pipeline_updated_at']=date('c');
     return $item;
 }
+
+/** Restore missing provenance only from an exact URL/city match in collected records. */
+function tvs_radar_restore_original_title(array $item, array $records): array {
+    if(trim((string)($item['source_original_title']??''))!=='')return $item;
+    $url=trim((string)($item['source_url']??$item['url']??''));
+    $city=trim((string)($item['city']??''));
+    if($url===''||$city==='')return $item;
+    $titles=[];
+    foreach($records as $record){
+        if(!is_array($record))continue;
+        $recordUrl=trim((string)($record['source_url']??$record['url']??''));
+        if($recordUrl!==$url||trim((string)($record['city']??''))!==$city)continue;
+        $title=trim((string)($record['source_original_title']??$record['title']??''));
+        if($title===''||!tvs_radar_is_article_path($url,$title,$city))continue;
+        $titles[tvs_radar_normalize_title_for_match($title)]=$title;
+    }
+    if(count($titles)!==1)return $item;
+    $item['source_original_title']=reset($titles);
+    $item['source_title_recovery_method']='exact_url_city_history';
+    $item['source_title_recovered_at']=date('c');
+    return $item;
+}

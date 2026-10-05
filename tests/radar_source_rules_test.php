@@ -26,3 +26,19 @@ foreach(['revisao_manual_pipeline','fonte_resolvida','aguardando_enriquecimento'
 $original=$pending;$original['url']='https://noticiasumare.com.br/materia';
 if(tvs_radar_normalize_source_terminal_state($original)!==$original)throw new RuntimeException('Fonte já resolvida alterada');
 echo "RADAR_TERMINAL_STATE_TEST=PASS\n";
+
+$legacy=['id'=>'legacy','title'=>'Escola em Sumaré recebe ação de conscientização','body'=>str_repeat('A prefeitura informou detalhes do atendimento público à população. ',12),'city'=>'Sumaré','source_url'=>'https://sumare.portaldacidade.com/noticias/saude/projeto-leva-informacoes-sobre-febre-maculosa-a-alunos-de-escola-em-sumare-3119','published_at'=>'2026-10-04'];
+$record=['city'=>'Sumaré','url'=>$legacy['source_url'],'title'=>'Projeto leva informações sobre febre maculosa a alunos de escola em Sumaré'];
+$restored=tvs_radar_restore_original_title($legacy,[$record]);
+if(empty($restored['source_original_title'])||!tvs_radar_queue_item_readiness($restored)['ready'])throw new RuntimeException('Título original não recuperou prontidão');
+if($restored['id']!==$legacy['id']||$restored['title']!==$legacy['title']||$restored['body']!==$legacy['body'])throw new RuntimeException('Conteúdo editorial alterado');
+if(tvs_radar_restore_original_title($restored,[])!==$restored)throw new RuntimeException('Proveniência existente alterada');
+$wrongCity=$record;$wrongCity['city']='Campinas';
+$wrongUrl=$record;$wrongUrl['url'].='-outra';
+if(tvs_radar_restore_original_title($legacy,[$wrongCity,$wrongUrl])!==$legacy)throw new RuntimeException('Correspondência não exata aceita');
+$other=$record;$other['title']='Projeto leva informações sobre febre maculosa a alunos de outra escola em Sumaré';
+if(tvs_radar_restore_original_title($legacy,[$record,$other])!==$legacy)throw new RuntimeException('Histórico ambíguo aceito');
+$listing=$legacy;$listing['source_url']='https://exemplo.com/category/saude/doacao-de-sangue-em-sumare';
+$listingRecord=['url'=>$listing['source_url'],'city'=>'Sumaré','title'=>'Doação de sangue em Sumaré'];
+if(tvs_radar_restore_original_title($listing,[$listingRecord])!==$listing)throw new RuntimeException('Listagem liberada');
+echo "RADAR_PROVENANCE_RECOVERY_TEST=PASS\n";
