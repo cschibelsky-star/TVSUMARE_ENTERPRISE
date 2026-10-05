@@ -36,7 +36,7 @@ $categories=['Cidade','Política','Saúde','Segurança','Educação','Esportes',
 
 function h($s){ return htmlspecialchars((string)$s,ENT_QUOTES,'UTF-8'); }
 function tvs_admin_img($img,$category='Cidade'){
-  $img=trim((string)$img);
+  $img=tvs_normalize_source_image_url((string)$img);
   if($img==='' || preg_match('~logo-tv-sumare|placeholder|sprite|icon|icone~i',$img)) $img=tvs_category_image($category);
   if(preg_match('~^https?://~i',$img)) return $img;
   if(strpos($img,'../')===0) return $img;
