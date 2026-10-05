@@ -219,7 +219,7 @@ function tvs_extract_meta_image_from_html($base, $html){
     foreach($imgs[0] as $tag){
       if(preg_match('~(?:src|data-src|data-original|data-lazy-src)=["\']([^"\']+)["\']~i',$tag,$m)){
         $img=tvs_absolute_url($base, html_entity_decode($m[1],ENT_QUOTES|ENT_HTML5,'UTF-8'));
-        if(tvs_is_valid_image_url($img)) return tvs_normalize_source_image_url($img);
+        if(tvs_is_valid_image_url($img)) return $img;
       }
     }
   }
