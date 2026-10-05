@@ -3461,14 +3461,15 @@ function tvs_generate_ready_article($city,$cand){
 
   // Imagem é um atributo paralelo. Falta de foto não altera o estado editorial.
   // A passagem pelo Editor IA, porém, é obrigatória para publicação.
-  $result['image_status']=!empty($result['image_review_required'])?'missing':'verified';
+  $imageReady=$hasVerifiedSourceImage && trim((string)$result['image'])!=='' && empty($result['image_review_required']);
+  $result['image_status']=$imageReady?'verified':'missing';
   $result['editorial_state']=$editorProcessed?'qualified':'needs_ai_editor';
   $result['region_status']='confirmed';
   $result['freshness_status']='current';
   $result['source_status']='original';
   $result['duplicate_status']='unique';
   $result['publication_eligible']=$editorProcessed?1:0;
-  $result['home_eligible']=!empty($result['image_review_required'])?0:1;
+  $result['home_eligible']=$imageReady?1:0;
   $result['video_eligible']=1;
   $result['created_at']=date('c');
   if(!tvs_radar_quality_ok($result,$reason)){
