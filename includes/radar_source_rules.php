@@ -101,3 +101,17 @@ function tvs_radar_is_article_path($url,$title='',$city=''){
 
   return $slugScore>=42;
 }
+
+function tvs_radar_normalize_source_terminal_state(array $item): array {
+    $stage=(string)($item['pipeline_stage']??'');
+    if(!in_array($stage,['','pauta_encontrada','precisa_resolver_fonte','aguardando_fonte','fonte_esgotada'],true))return $item;
+    $url=(string)($item['url']??$item['source_url']??'');
+    if(strtolower((string)parse_url($url,PHP_URL_HOST))!=='news.google.com')return $item;
+    if(($item['url_resolution_status']??'')!=='unresolved_final'&&(int)($item['source_resolution_attempts']??0)<6)return $item;
+    if($stage==='fonte_esgotada'&&($item['url_resolution_status']??'')==='unresolved_final')return $item;
+    $item['url_resolution_status']='unresolved_final';
+    $item['pipeline_stage']='fonte_esgotada';
+    $item['pipeline_reason']='Fonte original esgotou as tentativas/TTL; preservada fora do backlog ativo para auditoria.';
+    $item['pipeline_updated_at']=date('c');
+    return $item;
+}

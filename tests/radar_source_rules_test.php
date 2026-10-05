@@ -13,3 +13,16 @@ $check=tvs_radar_queue_item_readiness(['title'=>$title,'body'=>str_repeat('A pre
 if(in_array('URL corresponde a página de listagem',$check['reasons'],true)===$expected)throw new RuntimeException('Prontidão: '.$url);
 }
 echo "RADAR_SOURCE_RULES_TEST=PASS\n";
+
+$pending=['id'=>'keep','url'=>'https://news.google.com/rss/articles/test','pipeline_stage'=>'aguardando_fonte','source_resolution_attempts'=>6,'title'=>'Pauta preservada'];
+$terminal=tvs_radar_normalize_source_terminal_state($pending);
+if($terminal['pipeline_stage']!=='fonte_esgotada'||$terminal['id']!=='keep'||$terminal['title']!==$pending['title'])throw new RuntimeException('Terminal não normalizado ou pauta alterada');
+if(tvs_radar_normalize_source_terminal_state($terminal)!==$terminal)throw new RuntimeException('Normalização não idempotente');
+$retry=$pending;$retry['source_resolution_attempts']=5;
+if(tvs_radar_normalize_source_terminal_state($retry)!==$retry)throw new RuntimeException('Tentativa elegível encerrada');
+$retry['url_resolution_status']='unresolved_final';
+if(tvs_radar_normalize_source_terminal_state($retry)['pipeline_stage']!=='fonte_esgotada')throw new RuntimeException('TTL final ignorado');
+foreach(['revisao_manual_pipeline','fonte_resolvida','aguardando_enriquecimento'] as $stage){$protected=$pending;$protected['pipeline_stage']=$stage;if(tvs_radar_normalize_source_terminal_state($protected)!==$protected)throw new RuntimeException('Estado protegido alterado');}
+$original=$pending;$original['url']='https://noticiasumare.com.br/materia';
+if(tvs_radar_normalize_source_terminal_state($original)!==$original)throw new RuntimeException('Fonte já resolvida alterada');
+echo "RADAR_TERMINAL_STATE_TEST=PASS\n";

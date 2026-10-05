@@ -1630,9 +1630,17 @@ function tvs_radar_process_due_source_resolution($limit=8){
     ];
   }
 
+  $terminalReconciled=0;
+  foreach($items as &$row){
+    if(!is_array($row))continue;
+    $normalized=tvs_radar_normalize_source_terminal_state($row);
+    if($normalized!==$row){$row=$normalized;$terminalReconciled++;}
+  }
+  unset($row);
   $candidates=[];
   foreach($items as $idx=>$item){
     if(!is_array($item)) continue;
+    if(in_array((string)($item['pipeline_stage']??''),['fonte_esgotada','revisao_manual_pipeline','expirada_sem_enriquecimento'],true))continue;
     $url=trim((string)($item['url']??$item['source_url']??''));
     if(!tvs_radar_is_google_news_url($url)) continue;
 
@@ -1696,6 +1704,7 @@ function tvs_radar_process_due_source_resolution($limit=8){
         $item['pipeline_reason']='Fonte original ainda não resolvida; nova tentativa automática agendada.';
       }
       $item['pipeline_updated_at']=date('c');
+      $item=tvs_radar_normalize_source_terminal_state($item);
     }
 
     $items[$idx]=$item;
@@ -1719,6 +1728,7 @@ function tvs_radar_process_due_source_resolution($limit=8){
   $report=[
     'executed_at'=>date('c'),
     'mode'=>'source_resolution_queue',
+    'terminal_reconciled'=>$terminalReconciled,
     'due_before'=>$dueBefore,
     'processed'=>$processed,
     'resolved'=>$resolved,
