@@ -45,7 +45,11 @@ endpoint assertion. CI runs it before Docker and again after all Docker
 applicators, guarding against a build-time regression to v1/v2.
 
 Local PHP 8.2: 66 simulated-HTTP assertions, editorial policy tests and lint
-of 134 PHP files passed. CI uses PHP 8.3 and the full Docker build/smoke.
+of 134 PHP files passed. All 18 PHP Docker applicators and the final test/smoke
+sequence also passed locally. CI uses PHP 8.3 and the full Docker build/smoke.
+The Docker test explicitly disables curl_init/curl_setopt_array/curl_exec/
+curl_error/curl_getinfo/curl_close via disable_functions, because statically
+compiled cURL survives php -n. The test refuses any real curl_init function.
 A real generation is intentionally not part of validation.
 
 ## Official references
