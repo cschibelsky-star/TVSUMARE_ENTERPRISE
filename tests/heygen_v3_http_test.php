@@ -1,7 +1,7 @@
 <?php
-// Run with php -n: real cURL is forbidden, so no request can reach HeyGen.
-if (PHP_SAPI !== 'cli' || extension_loaded('curl')) {
-    fwrite(STDERR, "Run this test with php -n (no real HTTP transport).\n");
+// Real cURL functions must be disabled; mocks never reach HeyGen.
+if (PHP_SAPI !== 'cli' || function_exists('curl_init')) {
+    fwrite(STDERR, "Run with real cURL disabled (php -n plus disable_functions for static cURL).\n");
     exit(1);
 }
 foreach (['CURLOPT_RETURNTRANSFER', 'CURLOPT_CUSTOMREQUEST', 'CURLOPT_HTTPHEADER',
