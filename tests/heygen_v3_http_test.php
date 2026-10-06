@@ -62,7 +62,7 @@ expect($p['type'] === 'avatar' && $p['avatar_id'] === 'cfg-avatar' && $p['voice_
 expect($p['script'] === 'Notícia regional. Veja', 'script cleaning retained');
 expect($p['aspect_ratio'] === '16:9' && $p['resolution'] === '720p' && $p['output_format'] === 'mp4', 'legacy output dimensions mapped to v3');
 expect($p['engine'] === ['type'=>'avatar_iii'] && $p['voice_settings']['speed'] == 1, 'renderer and voice speed retained');
-expect(!isset($p['video_inputs'], $p['dimension']), 'no v2 payload fields');
+expect(!isset($p['video_inputs']) && !isset($p['dimension']), 'no v2 payload fields');
 expect(in_array('X-Api-Key: mock-key-never-sent', $q['options'][CURLOPT_HTTPHEADER], true), 'existing authentication header retained');
 expect($q['options'][CURLOPT_TIMEOUT] === 75 && $q['options'][CURLOPT_FOLLOWLOCATION] === false, 'outbound guard options retained');
 expect(end($guardCalls) === [$q['url'],75], 'creation passes through outbound guard');
