@@ -6,7 +6,9 @@ if (PHP_SAPI !== 'cli' || function_exists('curl_init')) {
 }
 foreach (['CURLOPT_RETURNTRANSFER', 'CURLOPT_CUSTOMREQUEST', 'CURLOPT_HTTPHEADER',
           'CURLOPT_POSTFIELDS', 'CURLOPT_TIMEOUT', 'CURLOPT_FOLLOWLOCATION',
-          'CURLINFO_HTTP_CODE'] as $i => $name) define($name, $i + 1);
+          'CURLINFO_HTTP_CODE'] as $i => $name) {
+    if (!defined($name)) define($name, $i + 1);
+}
 
 $calls = [];
 $guardCalls = [];
