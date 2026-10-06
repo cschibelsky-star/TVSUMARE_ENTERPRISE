@@ -35,6 +35,9 @@ jobs:
       - name: Teste da politica editorial V3
         run: php tests/editorial_policy_v3_test.php
 
+      - name: HeyGen v3 com HTTP simulado (sem rede ou creditos)
+        run: php -n tests/heygen_v3_http_test.php
+
       - name: Validar regras editoriais criticas
         shell: bash
         run: |

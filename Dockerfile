@@ -31,6 +31,7 @@ RUN php /var/www/html/docker/apply-radar-editorial-policy.php \
     && php /var/www/html/docker/apply-youtube-publishing-integration.php \
     && php /var/www/html/docker/apply-tvsumare-recovery-20260911.php \
     && php /var/www/html/docker/apply-editorial-policy-v3.php \
+    && php -n -d disable_functions=curl_init,curl_setopt_array,curl_exec,curl_error,curl_getinfo,curl_close /var/www/html/tests/heygen_v3_http_test.php \
     && php /var/www/html/tests/editorial_policy_v3_test.php \
     && php /var/www/html/docker/test-reporter-dedup.php \
     && php /var/www/html/docker/test-youtube-integration.php \
