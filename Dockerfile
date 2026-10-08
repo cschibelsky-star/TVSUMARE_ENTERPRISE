@@ -14,7 +14,8 @@ RUN apt-get update \
 
 COPY . /var/www/html/
 
-RUN php /var/www/html/tests/image_url_helpers_test.php \
+RUN php /var/www/html/tests/heygen_video_model_test.php \
+    && php /var/www/html/tests/image_url_helpers_test.php \
     && php /var/www/html/tests/radar_image_state_test.php \
     && php -l /var/www/html/admin/radar-regional.php \
     && php /var/www/html/tests/radar_source_rules_test.php \
