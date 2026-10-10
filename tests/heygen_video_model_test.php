@@ -9,4 +9,9 @@ hv_assert(!tvs_hvm_plan(['prompt'=>'Teste','resolution'=>'1080p','aspect_ratio'=
 hv_assert(!tvs_hvm_plan(['prompt'=>'Teste','mode'=>'image_to_video'])['ok'],'Imagem obrigatória');
 hv_assert(!tvs_hvm_plan(['prompt'=>'Teste','mode'=>'reference_to_video'])['ok'],'Referências obrigatórias');
 hv_assert(!tvs_hvm_submit(['prompt'=>'Teste'])['ok'],'Geração paga bloqueada');
+$catalogue=tvs_hvm_catalogue();
+hv_assert($catalogue['available_for_generation']===false && $catalogue['editorial_review_required']===true,'Catálogo mantém revisão obrigatória e geração bloqueada');
+hv_assert($catalogue['presenter']===false && $catalogue['role']==='synthetic_support_scenes','Motor não substitui apresentador');
+$estimate=tvs_hvm_estimate(['prompt'=>'Vinheta abstrata','duration'=>5]);
+hv_assert($estimate['ok'] && $estimate['cost_estimate']===null && $estimate['can_generate']===false,'Preço desconhecido impede geração');
 echo "HEYGEN_VIDEO_MODEL_TEST=PASS\n";
