@@ -43,6 +43,39 @@ if (!function_exists('tvs_hvm_validate')) {
     if(!$v['ok']) return $v;
     return ['ok'=>true,'engine'=>'heygen_video_1','billable'=>true,'enabled'=>tvs_hvm_enabled(),'payload'=>$v['payload'],'requires_explicit_approval'=>true];
   }
+  /**
+   * Read-only engine catalogue entry for Hub IA and editorial review.
+   * It does not create a video job or call the paid provider.
+   */
+  function tvs_hvm_catalogue(): array {
+    return [
+      'id'=>'heygen_video_1',
+      'label'=>'HeyGen Video 1.0 (experimental)',
+      'role'=>'synthetic_support_scenes',
+      'presenter'=>false,
+      'available_for_generation'=>false,
+      'billing_requires_approval'=>true,
+      'editorial_review_required'=>true,
+      'synthetic_disclosure_required'=>true,
+      'model'=>'heygen-video-1',
+      'endpoint'=>'/v3/models/videos',
+      'modes'=>['text_to_video','image_to_video','reference_to_video'],
+      'duration_seconds'=>['min'=>5,'max'=>15],
+      'pricing_status'=>'not_verified',
+      'comparison_ready'=>false,
+    ];
+  }
+  function tvs_hvm_estimate(array $request): array {
+    $plan=tvs_hvm_plan($request);
+    if(!$plan['ok']) return $plan;
+    return [
+      'ok'=>true,'engine'=>'heygen_video_1','duration_seconds'=>$plan['payload']['duration'],
+      'resolution'=>$plan['payload']['resolution'],
+      'cost_estimate'=>null,'currency'=>null,
+      'status'=>'pricing_not_verified','can_generate'=>false,
+      'next_step'=>'Verificar precificação contratual e homologar integração antes de liberar qualquer cobrança',
+    ];
+  }
   function tvs_hvm_submit(array $request, string $approvalToken=''): array {
     $v=tvs_hvm_plan($request);
     if(!$v['ok']) return $v;
