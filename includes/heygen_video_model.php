@@ -37,7 +37,7 @@ if (!function_exists('tvs_hvm_validate')) {
     }
     return ['ok'=>true,'payload'=>$payload];
   }
-  function tvs_hvm_enabled(): bool { return getenv('TVSUMARE_HEYGEN_VIDEO_PAID_ENABLED')==='1'; }
+  function tvs_hvm_enabled(): bool { return false; } // Hard gate: no billable execution in experimental phase.
   function tvs_hvm_plan(array $request): array {
     $v=tvs_hvm_validate($request);
     if(!$v['ok']) return $v;
