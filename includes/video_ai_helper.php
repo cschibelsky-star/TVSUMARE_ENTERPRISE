@@ -17,6 +17,17 @@ if (!function_exists('tvp_root')) {
   function tvp_abs_url($u){ $u=trim((string)$u); if($u==='') return ''; if(preg_match('~^https?://~i',$u)) return $u; return tvp_site_url().'/'.ltrim($u,'/'); }
 }
 
+// Experimental provider catalogue: discovery only, never triggers a paid render.
+require_once __DIR__.'/heygen_video_model.php';
+if (!function_exists('tvp_experimental_video_engines')) {
+  function tvp_experimental_video_engines(): array {
+    return [tvs_hvm_catalogue()];
+  }
+  function tvp_experimental_video_quote(array $request): array {
+    return tvs_hvm_estimate($request);
+  }
+}
+
 if (!function_exists('tvp_news_id')) {
   function tvp_news_id($n){ return (string)tvp_value($n,['id','news_id','codigo'], md5(json_encode($n))); }
   function tvp_news_title($n){ return tvp_clean(tvp_value($n,['title','titulo'],'Sem título')); }
