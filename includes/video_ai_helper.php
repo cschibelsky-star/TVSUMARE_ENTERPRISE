@@ -26,6 +26,20 @@ if (!function_exists('tvp_experimental_video_engines')) {
   function tvp_experimental_video_quote(array $request): array {
     return tvs_hvm_estimate($request);
   }
+  // This preview is not a selectable production engine and never creates a job.
+  function tvp_experimental_engine_preview(array $request): array {
+    $quote=tvp_experimental_video_quote($request);
+    if(empty($quote['ok'])) return $quote;
+    return [
+      'ok'=>true,
+      'engine'=>tvs_hvm_catalogue(),
+      'quote'=>$quote,
+      'workflow'=>['plan','cost_verification','explicit_approval','provider_job','durable_asset','editorial_review','publish'],
+      'current_stage'=>'plan',
+      'blocked_reasons'=>['pricing_not_verified','paid_generation_disabled','provider_job_not_implemented'],
+      'production_engine_unchanged'=>true,
+    ];
+  }
 }
 
 if (!function_exists('tvp_news_id')) {
