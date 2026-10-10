@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__.'/includes/image_url_helpers.php';
 require_once __DIR__.'/includes/outbound_guard.php';
 function tvs_strlen($s){ return function_exists('mb_strlen') ? mb_strlen($s, 'UTF-8') : strlen($s); }
 function tvs_substr($s,$start,$len=null){ return function_exists('mb_substr') ? mb_substr($s,$start,$len,'UTF-8') : substr($s,$start,$len); }
@@ -11,6 +12,42 @@ function tvs_clean_text($s){
   $s = strip_tags($s);
   $s = preg_replace('/\s+/u', ' ', $s);
   return trim($s);
+}
+
+function tvs_editorial_clean_title($title,$source=''){
+  $title=tvs_clean_text((string)$title);
+  if($title==='') return '';
+  $sources=['G1','Portal ON','sampi.net.br','Sampi Campinas','Hora Campinas','Notícia FM','Noticias FM','Hortonews','Google News','Google Notícias','R7','UOL','CNN Brasil','Todo Dia','O Regional Net'];
+  $source=tvs_clean_text((string)$source);
+  if($source!=='') $sources[]=$source;
+  foreach(array_unique($sources) as $src){
+    $src=trim((string)$src);
+    if($src==='') continue;
+    $q=preg_quote($src,'~');
+    $title=preg_replace('~\s*(?:[-–—|•:]\s*)?'.$q.'\s*$~iu','',$title);
+  }
+  return trim(preg_replace('/\s+/u',' ',$title));
+}
+
+function tvs_editorial_body_is_thin($title,$body,$source=''){
+  $title=tvs_editorial_clean_title($title,$source);
+  $body=tvs_clean_text((string)$body);
+  if($body==='') return true;
+  $bodyWithoutSource=$body;
+  foreach(['G1','Portal ON','sampi.net.br','Sampi Campinas','Hora Campinas','Notícia FM','Noticias FM','Hortonews','Google News','Google Notícias','R7','UOL','CNN Brasil','Todo Dia','O Regional Net'] as $src){
+    $bodyWithoutSource=preg_replace('~\s*(?:[-–—|•:]\s*)?'.preg_quote($src,'~').'\s*$~iu','',$bodyWithoutSource);
+  }
+  $norm=function($s){
+    $s=tvs_lower(tvs_clean_text((string)$s));
+    $s=preg_replace('~[^\p{L}\p{N}]+~u',' ',$s);
+    return trim(preg_replace('/\s+/u',' ',$s));
+  };
+  $nt=$norm($title); $nb=$norm($bodyWithoutSource);
+  $words=preg_split('/\s+/u',trim($bodyWithoutSource),-1,PREG_SPLIT_NO_EMPTY);
+  if($nt!=='' && ($nb===$nt || (strpos($nb,$nt)===0 && count($words)<35))) return true;
+  if(count($words)<55) return true;
+  if(tvs_strlen($bodyWithoutSource)<300) return true;
+  return false;
 }
 
 
@@ -108,19 +145,49 @@ function tvs_remove_boilerplate_from_html($html){
 
 function tvs_fetch_url($url){
   if(!function_exists('curl_init') || !function_exists('tvs_outbound_curl_options')) return '';
-  $options=tvs_outbound_curl_options($url,6);
-  if($options===null) return '';
-  $ch=curl_init((string)$url);
-  curl_setopt_array($ch,$options+[
-    CURLOPT_RETURNTRANSFER=>true,
-    CURLOPT_USERAGENT=>'TVSumareBot/2.0',
-    CURLOPT_HTTPHEADER=>['Accept: text/html,application/xhtml+xml,application/rss+xml']
-  ]);
-  $html=curl_exec($ch);
-  $http=(int)curl_getinfo($ch,CURLINFO_HTTP_CODE);
-  curl_close($ch);
-  if(!is_string($html) || $http<200 || $http>=300) return '';
-  return substr($html,0,2097152);
+
+  $current=trim((string)$url);
+  for($hop=0;$hop<3;$hop++){
+    $options=tvs_outbound_curl_options($current,6);
+    if($options===null) return '';
+
+    $location='';
+    $host=tvs_lower((string)(parse_url($current,PHP_URL_HOST)??''));
+    $userAgent=in_array($host,['liberal.com.br','www.liberal.com.br'],true)
+      ? 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/154 Safari/537.36'
+      : 'TVSumareBot/2.0';
+
+    $ch=curl_init($current);
+    curl_setopt_array($ch,$options+[
+      CURLOPT_RETURNTRANSFER=>true,
+      CURLOPT_USERAGENT=>$userAgent,
+      CURLOPT_HTTPHEADER=>['Accept: text/html,application/xhtml+xml,application/rss+xml'],
+      CURLOPT_HEADERFUNCTION=>function($ch,$line) use (&$location){
+        $len=strlen($line);
+        if(stripos($line,'Location:')===0) $location=trim(substr($line,9));
+        return $len;
+      }
+    ]);
+
+    $html=curl_exec($ch);
+    $http=(int)curl_getinfo($ch,CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if(is_string($html) && $http>=200 && $http<300){
+      return substr($html,0,2097152);
+    }
+
+    if($http<300 || $http>=400 || $location==='') return '';
+
+    $next=tvs_absolute_url($current,html_entity_decode($location,ENT_QUOTES|ENT_HTML5,'UTF-8'));
+    if($next==='' || $next===$current) return '';
+
+    // Cada salto é revalidado pela mesma política de saída antes de ser seguido.
+    if(tvs_outbound_curl_options($next,6)===null) return '';
+    $current=$next;
+  }
+
+  return '';
 }
 function tvs_absolute_url($base, $href){
   if(!$href) return '';
@@ -143,7 +210,7 @@ function tvs_extract_meta_image_from_html($base, $html){
       $isImage = preg_match('~(?:property|name)=["\'](?:og:image|twitter:image|twitter:image:src)["\']~i',$tag);
       if($isImage && preg_match('~content=["\']([^"\']+)["\']~i',$tag,$m)){
         $img=tvs_absolute_url($base, html_entity_decode($m[1],ENT_QUOTES|ENT_HTML5,'UTF-8'));
-        if(tvs_is_valid_image_url($img)) return $img;
+        if(tvs_is_valid_image_url($img)) return tvs_normalize_source_image_url($img);
       }
     }
   }
@@ -164,7 +231,7 @@ function tvs_extract_image_from_rss_description($base, $desc){
   if($desc==='' || stripos($desc,'<img')===false) return '';
   if(preg_match('~<img\b[^>]*(?:src|data-src)=["\']([^"\']+)["\'][^>]*>~is',$desc,$m)){
     $img=tvs_absolute_url($base, html_entity_decode($m[1],ENT_QUOTES|ENT_HTML5,'UTF-8'));
-    if(tvs_is_valid_image_url($img)) return $img;
+    if(tvs_is_valid_image_url($img)) return tvs_normalize_source_image_url($img);
   }
   return '';
 }
@@ -409,20 +476,83 @@ function tvs_parse_rss($rssUrl, $src){
     $link='';
     if(isset($it->link['href'])) $link=(string)$it->link['href'];
     else $link=(string)($it->link ?? '');
-    $desc=tvs_clean_text((string)($it->description ?? $it->summary ?? $it->content ?? ''));
+
+    $rawDesc=(string)($it->description ?? $it->summary ?? $it->content ?? '');
+    $desc=tvs_clean_text($rawDesc);
     $pub=(string)($it->pubDate ?? $it->published ?? $it->updated ?? '');
+    $image='';
+
+    $media=$it->children('media', true);
+    if($media){
+      if(isset($media->content)){
+        foreach($media->content as $mediaContent){
+          $attrs=$mediaContent->attributes();
+          $candidate=trim((string)($attrs['url']??''));
+          $type=tvs_lower((string)($attrs['type']??''));
+          if($candidate!=='' && ($type==='' || strpos($type,'image/')===0) && tvs_is_valid_image_url($candidate)){
+            $image=$candidate;
+            break;
+          }
+        }
+      }
+      if($image==='' && isset($media->thumbnail)){
+        $attrs=$media->thumbnail->attributes();
+        $candidate=trim((string)($attrs['url']??''));
+        if(tvs_is_valid_image_url($candidate)) $image=$candidate;
+      }
+    }
+
+    if($image==='' && isset($it->enclosure)){
+      $attrs=$it->enclosure->attributes();
+      $candidate=trim((string)($attrs['url']??''));
+      $type=tvs_lower((string)($attrs['type']??''));
+      if($candidate!=='' && strpos($type,'image/')===0 && tvs_is_valid_image_url($candidate)) $image=$candidate;
+    }
+
+    if($image==='') $image=tvs_extract_image_from_rss_description($link,$rawDesc);
+
     if(!$title || !$link) continue;
-    $items[]=['title'=>$title,'url'=>$link,'description'=>$desc,'published_at'=>$pub,'source'=>$src['name']??'', 'city'=>$src['city']??'Região'];
+    $items[]=[
+      'title'=>$title,
+      'url'=>$link,
+      'description'=>$desc,
+      'published_at'=>$pub,
+      'source'=>$src['name']??'',
+      'city'=>$src['city']??'Região',
+      'image'=>$image,
+      'image_source_type'=>$image!==''?'rss:source':''
+    ];
     if(count($items)>=5) break;
   }
   return $items;
 }
 function tvs_capture_source_items($src){
+  $sourceUrl=trim((string)($src['url']??''));
+  $host=tvs_lower((string)(parse_url($sourceUrl,PHP_URL_HOST)??''));
+  $host=preg_replace('~^www\.~i','',$host);
+
+  // Portais cuja home nem sempre expõe todas as chamadas como links simples.
+  // O feed restrito preserva cidade/data e continua exigindo resolução da fonte original
+  // antes de qualquer matéria seguir para redação.
+  if(in_array($host,['liberal.com.br','sumare.portaldacidade.com'],true)){
+    $city=(string)($src['city']??'');
+    $query='site:'.$host;
+    if($city!=='' && $city!=='Região') $query.=' "'.$city.'"';
+    $query.=' when:3d';
+    $feed='https://news.google.com/rss/search?q='.urlencode($query)
+      .'&hl=pt-BR&gl=BR&ceid=BR:pt-419';
+    $rssSrc=$src;
+    $rssSrc['name']=$src['name']??($host==='liberal.com.br'?'Liberal':'Portal da Cidade Sumaré');
+    $rssSrc['city']=$city!==''?$city:'Região';
+    $items=tvs_parse_rss($feed,$rssSrc);
+    if($items) return $items;
+  }
+
   if(!empty($src['rss'])){
     $items=tvs_parse_rss($src['rss'],$src);
     if($items) return $items;
   }
-  $home=tvs_fetch_url($src['url']??'');
+  $home=tvs_fetch_url($sourceUrl);
   $links=tvs_extract_links($src['url']??'', $home);
   $out=[];
   foreach($links as $l){ $out[]=['title'=>$l['title'],'url'=>$l['url'],'description'=>'','source'=>$src['name']??'', 'city'=>$src['city']??'Região']; }
@@ -479,7 +609,8 @@ if(!function_exists('tvs_is_valid_image_url')){
     $img = trim((string)$img);
     if($img==='') return false;
     if(preg_match('~^(data:|javascript:)~i',$img)) return false;
-    if(preg_match('~(logo|icone|icon|avatar|sprite|placeholder|whatsapp|facebook|instagram|youtube|twitter|linkedin)~i',$img)) return false;
+    if(preg_match('~(logo|icone|icon|avatar|sprite|placeholder|whatsapp|facebook|instagram|youtube|twitter|linkedin|favicon|blank|default-image|no-image)~i',$img)) return false;
+    if(preg_match('~\.svg(?:\?|$)~i',$img)) return false;
     return true;
   }
 }

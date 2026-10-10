@@ -108,8 +108,11 @@ function tvs_reporter_publish($data){
   $nf=dirname(__DIR__).'/data/noticias.json'; $news=tvs_read_json_file($nf);
   $id=uniqid('news_');
   $title=trim($data['title']??''); $body=trim($data['body']??'');
+  if(empty($data['ai_editor_processed'])) return false;
+  if(function_exists('tvs_editorial_clean_title')) $title=tvs_editorial_clean_title($title,$data['source']??'');
   if($title==='' || $body==='') return false;
-  $item=['id'=>$id,'title'=>$title,'subtitle'=>trim($data['subtitle']??''),'summary'=>trim($data['summary']??''),'body'=>$body,'category'=>trim($data['category']??'Cidade'),'city'=>trim($data['city']??'Região'),'source'=>trim($data['source']??'Fontes consultadas'),'source_url'=>trim($data['source_url']??''),'image'=>trim($data['image']??''),'tags'=>array_values(array_filter(array_map('trim',explode(',',is_array($data['tags']??null)?implode(',',$data['tags']):($data['tags']??''))))),'seo_title'=>trim($data['seo_title']??$title),'meta_description'=>trim($data['meta_description']??($data['summary']??'')),'slug'=>trim($data['slug']??tvs_slug($title)),'instagram_caption'=>trim($data['instagram_caption']??''),'whatsapp_text'=>trim($data['whatsapp_text']??''),'published_at'=>date('c'),'created_at'=>date('c')];
+  if(function_exists('tvs_editorial_body_is_thin') && tvs_editorial_body_is_thin($title,$body,$data['source']??'')) return false;
+  $item=['id'=>$id,'title'=>$title,'subtitle'=>trim($data['subtitle']??''),'summary'=>trim($data['summary']??''),'body'=>$body,'category'=>trim($data['category']??'Cidade'),'city'=>trim($data['city']??'Região'),'source'=>trim($data['source']??'Fontes consultadas'),'source_url'=>trim($data['source_url']??''),'image'=>trim($data['image']??''),'tags'=>array_values(array_filter(array_map('trim',explode(',',is_array($data['tags']??null)?implode(',',$data['tags']):($data['tags']??''))))),'seo_title'=>trim($data['seo_title']??$title),'meta_description'=>trim($data['meta_description']??($data['summary']??'')),'slug'=>trim($data['slug']??tvs_slug($title)),'instagram_caption'=>trim($data['instagram_caption']??''),'whatsapp_text'=>trim($data['whatsapp_text']??''),'ai_editor_processed'=>1,'ai_editor_processed_at'=>trim($data['ai_editor_processed_at']??date('c')),'ai_editor_stage'=>'editor_materia_ia','editorial_origin'=>'editor_ia_manual','published_at'=>date('c'),'created_at'=>date('c')];
   $news[]=$item; tvs_save_json_file($nf,array_values($news)); return $id;
 }
 
@@ -131,13 +134,37 @@ if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'){
       if(!$articles){ $error='Nenhuma fonte com conteúdo suficiente foi encontrada. Tente um tema mais específico ou cadastre uma fonte oficial com página de notícias/RSS.'; }
       else {
         $material=tvs_reporter_material($city,$theme,$category,$articles);
-        $result=gemini_reporter_article($gemini_api_key??'', $material, ['city'=>$city,'theme'=>$theme,'category'=>$category]);
-        if(!$result) $result=tvs_reporter_fallback($city,$theme,$category,$articles);
-        $result=tvs_sanitize_ai_article($result,['city'=>$city,'name'=>'Fontes consultadas'],['title'=>$theme,'description'=>$material,'body'=>$material,'url'=>$articles[0]['url']??'']);
-        $result['city']=$city; $result['category']=$result['category'] ?: $category; $result['image']=$articles[0]['image']??'';
-        $result['source']='Fontes consultadas'; $result['source_url']=$articles[0]['url']??'';
+        $draft=gemini_reporter_article($gemini_api_key??'', $material, ['city'=>$city,'theme'=>$theme,'category'=>$category]);
+        if(!$draft) $draft=tvs_reporter_fallback($city,$theme,$category,$articles);
+        $draft=tvs_sanitize_ai_article($draft,['city'=>$city,'name'=>'Fontes consultadas'],['title'=>$theme,'description'=>$material,'body'=>$material,'url'=>$articles[0]['url']??'']);
+        $draft['city']=$city;
+        $draft['category']=$draft['category'] ?: $category;
+        $draft['image']=$articles[0]['image']??'';
+        $draft['source']='Fontes consultadas';
+        $draft['source_url']=$articles[0]['url']??'';
+
+        $result=function_exists('tvs_ai_editor_process_article')
+          ? tvs_ai_editor_process_article($gemini_api_key??'',$draft,[
+              'city'=>$city,
+              'category'=>$draft['category']??$category,
+              'source'=>'Fontes consultadas',
+              'source_url'=>$articles[0]['url']??'',
+              'origin'=>'editor_ia_manual'
+            ])
+          : null;
+
+        if(!$result){
+          $error='O Editor de Matéria IA não concluiu a revisão. Nada foi liberado para publicação.';
+          $result=$draft;
+          $result['ai_editor_processed']=0;
+          $result['ai_editor_stage']='pending';
+        } else {
+          $result['image']=$articles[0]['image']??'';
+          $result['source']='Fontes consultadas';
+          $result['source_url']=$articles[0]['url']??'';
+          $notice='Reportagem passou pelo Editor de Matéria IA. Revise e publique quando estiver correta.';
+        }
         $result['sources_json']=json_encode(array_map(function($a){return ['title'=>$a['title']??'', 'source'=>$a['source']??'', 'url'=>$a['url']??''];},$articles),JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
-        $notice='Reportagem profissional gerada. Revise, edite se necessário e publique.';
       }
     }
   }
@@ -151,4 +178,4 @@ $sourcesJson=$_POST['sources_json']??($result['sources_json']??'');
 <!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Repórter IA | TV Sumaré</title><link rel="stylesheet" href="admin.css?v=60"><style>.form-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.textarea-large{min-height:360px}.hint{color:#64748b;font-size:13px}.source-list{display:grid;gap:8px;margin-top:12px}.source-item{border:1px solid #e2e8f0;background:#f8fafc;border-radius:12px;padding:10px;font-size:13px}.actions{display:flex;gap:10px;flex-wrap:wrap}@media(max-width:900px){.form-grid{grid-template-columns:1fr}}</style></head><body><div class="admin"><?php include __DIR__.'/_menu.php'; ?><main class="main"><div class="top"><div><span class="eyebrow">Redação automatizada com revisão humana</span><h1>Repórter IA TV Sumaré</h1><p class="hint">Informe cidade, tema e categoria. A IA pesquisa fontes públicas/cadastradas, produz uma reportagem profissional e você decide se publica.</p></div><a class="btn secondary" href="fontes.php">Fontes Oficiais</a></div><?php if($notice): ?><div class="notice"><?=h($notice)?></div><?php endif; ?><?php if($error): ?><div class="notice error"><?=h($error)?></div><?php endif; ?>
 <div class="box"><form method="post" class="form"><?=tvs_csrf_field()?><h2>1. Pesquisar e produzir reportagem</h2><div class="form-grid"><div><label>Cidade</label><select name="city"><?php foreach($cities as $c): ?><option <?=($_POST['city']??'Sumaré')===$c?'selected':''?>><?=h($c)?></option><?php endforeach; ?></select></div><div><label>Categoria</label><select name="category"><?php foreach($categories as $c): ?><option <?=($_POST['category']??'Cidade')===$c?'selected':''?>><?=h($c)?></option><?php endforeach; ?></select></div><div><label>Tema</label><input name="theme" placeholder="Ex.: HORTOCOPA, saúde, obras, vagas de emprego" value="<?=h($_POST['theme']??'')?>"></div></div><p class="hint">Padrão fixo: profissional jornalístico. Sem profundidade, sem rascunhos complexos e sem texto base manual.</p><button class="btn orange" name="action" value="search_generate">Pesquisar e Produzir Reportagem</button>
 <?php if($sourcesFound): ?><div class="field-card"><h3>Fontes encontradas</h3><div class="source-list"><?php foreach(array_slice($sourcesFound,0,6) as $s): ?><div class="source-item"><b><?=h($s['title']??'Fonte')?></b><br><span><?=h($s['source']??'Fonte consultada')?></span><br><a href="<?=h($s['url']??'#')?>" target="_blank">Ver fonte</a></div><?php endforeach; ?></div></div><?php endif; ?>
-<hr style="border:0;border-top:1px solid #e3e8f2;margin:24px 0"><h2>2. Revisar e publicar</h2><input type="hidden" name="sources_json" value="<?=h($sourcesJson)?>"><input type="hidden" name="source" value="<?=val('source','Fontes consultadas')?>"><input type="hidden" name="source_url" value="<?=val('source_url')?>"><label>Título</label><input name="title" value="<?=val('title')?>"><label>Subtítulo</label><input name="subtitle" value="<?=val('subtitle')?>"><label>Resumo curto</label><input name="summary" value="<?=val('summary')?>"><label>Imagem destacada / URL</label><input name="image" value="<?=val('image')?>"><label>Texto completo</label><textarea class="textarea-large" name="body"><?=h($body)?></textarea><div class="form-grid"><div><label>SEO Title</label><input name="seo_title" value="<?=val('seo_title')?>"></div><div><label>Slug</label><input name="slug" value="<?=val('slug')?>"></div><div><label>Tags</label><input name="tags" value="<?=h($tags)?>"></div></div><label>Meta description</label><input name="meta_description" value="<?=val('meta_description')?>"><label>Legenda Instagram</label><textarea name="instagram_caption"><?=val('instagram_caption')?></textarea><label>Texto WhatsApp</label><textarea name="whatsapp_text"><?=val('whatsapp_text')?></textarea><div class="actions"><button class="btn" name="action" value="publish" onclick="return confirm('Publicar esta reportagem no portal?')">Publicar</button><button class="btn secondary" type="button" onclick="document.querySelector('[name=body]').focus()">Editar texto</button><a class="btn danger" href="editor-ia.php">Excluir/limpar</a></div></form></div></main></div></body></html>
+<hr style="border:0;border-top:1px solid #e3e8f2;margin:24px 0"><h2>2. Revisar e publicar</h2><input type="hidden" name="sources_json" value="<?=h($sourcesJson)?>"><input type="hidden" name="source" value="<?=val('source','Fontes consultadas')?>"><input type="hidden" name="source_url" value="<?=val('source_url')?>"><input type="hidden" name="ai_editor_processed" value="<?=val('ai_editor_processed','0')?>"><input type="hidden" name="ai_editor_processed_at" value="<?=val('ai_editor_processed_at')?>"><label>Título</label><input name="title" value="<?=val('title')?>"><label>Subtítulo</label><input name="subtitle" value="<?=val('subtitle')?>"><label>Resumo curto</label><input name="summary" value="<?=val('summary')?>"><label>Imagem destacada / URL</label><input name="image" value="<?=val('image')?>"><label>Texto completo</label><textarea class="textarea-large" name="body"><?=h($body)?></textarea><div class="form-grid"><div><label>SEO Title</label><input name="seo_title" value="<?=val('seo_title')?>"></div><div><label>Slug</label><input name="slug" value="<?=val('slug')?>"></div><div><label>Tags</label><input name="tags" value="<?=h($tags)?>"></div></div><label>Meta description</label><input name="meta_description" value="<?=val('meta_description')?>"><label>Legenda Instagram</label><textarea name="instagram_caption"><?=val('instagram_caption')?></textarea><label>Texto WhatsApp</label><textarea name="whatsapp_text"><?=val('whatsapp_text')?></textarea><div class="actions"><button class="btn" name="action" value="publish" onclick="return confirm('Publicar esta reportagem no portal?')">Publicar</button><button class="btn secondary" type="button" onclick="document.querySelector('[name=body]').focus()">Editar texto</button><a class="btn danger" href="editor-ia.php">Excluir/limpar</a></div></form></div></main></div></body></html>
