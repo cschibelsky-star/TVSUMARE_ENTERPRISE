@@ -1,5 +1,27 @@
 <?php
-require_once dirname(__DIR__).'/includes/tvs_public_helpers.php';
+require_once dirname(__DIR__).'/includes/editorial_lifecycle.php';
+require_once dirname(__DIR__).'/includes/image_url_helpers.php';
+// Public and admin modules each define tvs_clean_text; test real functions in isolation.
+function loadProductionFunction($path,$name){
+    $tokens=token_get_all(file_get_contents($path));
+    $count=count($tokens);
+    for($i=0;$i<$count;$i++){
+        if(!is_array($tokens[$i]) || $tokens[$i][0]!==T_FUNCTION) continue;
+        $j=$i+1;
+        while($j<$count && is_array($tokens[$j]) && $tokens[$j][0]===T_WHITESPACE) $j++;
+        if(!is_array($tokens[$j]) || $tokens[$j][0]!==T_STRING || $tokens[$j][1]!==$name) continue;
+        $code=''; $depth=0; $opened=false;
+        for(;$i<$count;$i++){
+            $token=$tokens[$i]; $code.=is_array($token)?$token[1]:$token;
+            if($token==='{'){ $depth++; $opened=true; }
+            if($token==='}' && --$depth===0 && $opened){ eval($code); return; }
+        }
+    }
+    throw new RuntimeException('Production function not found: '.$name);
+}
+foreach(['tvs_lc','tvs_date_ts','tvs_sort_recent','tvs_is_category_asset','tvs_real_image'] as $name){
+    loadProductionFunction(dirname(__DIR__).'/includes/tvs_public_helpers.php',$name);
+}
 require_once dirname(__DIR__).'/admin/radar_queue_rules.php';
 $checks=0;
 function check($condition, $message){ global $checks; $checks++; if(!$condition) throw new RuntimeException($message); }
@@ -63,28 +85,8 @@ try {
     check(file_get_contents($newsPath)==='{broken' && file_get_contents($queuePath)===$beforeQueue,'Corrupt datasets never replaced or consumed');
     check(!tvs_editorial_atomic_write($dir.'/missing/file.json',[$other]),'Write failure reported');
     // Execute the real Radar publish handler without booting UI, cron or AI providers.
-    $tokens=token_get_all(file_get_contents(dirname(__DIR__).'/admin/radar-regional.php'));
-    $capture=false; $named=false; $depth=0; $opened=false; $function='';
-    foreach($tokens as $token){
-        if(is_array($token) && $token[0]===T_FUNCTION){ $capture=true; $named=false; $opened=false; $depth=0; $function=''; }
-        if(!$capture) continue;
-        $text=is_array($token)?$token[1]:$token;
-        $function.=$text;
-        if(is_array($token) && $token[0]===T_STRING && !$named){ $named=$token[1]; }
-        if($token==='{'){ $depth++; $opened=true; }
-        if($token==='}'){
-            $depth--;
-            if($opened && $depth===0){
-                if($named==='tvs_publish_from_queue'){ eval($function); break; }
-                $capture=false;
-            }
-        }
-    }
+    loadProductionFunction(dirname(__DIR__).'/admin/radar-regional.php','tvs_publish_from_queue');
     function tvs_queue_read(){ global $queueFile; return tvs_editorial_read_strict($queueFile); }
-    function tvs_read_json_file($path){ try{return tvs_editorial_read_strict($path);}catch(Throwable $e){return [];} }
-    function tvs_is_valid_image_url($url){ return $url!=='' && str_starts_with($url,'https://'); }
-    function tvs_image_credit_from_source($source,$image){ return $source; }
-    function tvs_slug($title){ return 'test-story'; }
     $newsFile=$newsPath; $queueFile=$queuePath;
     $candidate=$ready+['id'=>'actual-handler','ai_editor_processed'=>1,'source'=>'Official source','image'=>'','created_at'=>'2026-10-01T00:00:00Z','audit_extra'=>'retained'];
     file_put_contents($newsPath,json_encode([$legacy]));
