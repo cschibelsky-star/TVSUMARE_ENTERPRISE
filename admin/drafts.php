@@ -240,11 +240,6 @@ if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'){
     }
 
     $news=tvs_read_json_file($nf); if(!is_array($news)) $news=[];
-    if(tvs_admin_draft_already_published($news,$id)){
-      array_splice($drafts,$idx,1);
-      tvs_save_json_file($df,$drafts);
-      header('Location: noticias.php?published=existing'); exit;
-    }
 
     $published=$drafts[$idx];
     $published['id']=uniqid('news_');
@@ -256,7 +251,6 @@ if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'){
     $published['created_at']=$published['created_at']??date('c');
     $sourceDate=tvs_editorial_source_date($drafts[$idx]);
     if($sourceDate && empty($published['source_published_at'])) $published['source_published_at']=gmdate(DATE_ATOM,$sourceDate);
-    $published['published_at']=date('c');
     $published['author']=$published['author']??'Redação TV Sumaré';
     $published['source']=$published['source']??'Fonte consultada';
     $published['source_url']=$published['source_url']??'';
