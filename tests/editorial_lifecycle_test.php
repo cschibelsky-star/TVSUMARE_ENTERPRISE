@@ -34,7 +34,7 @@ check(tvs_editorial_display_date(0)==='Data não informada','Unknown date label'
 $items=[['id'=>'missing'],['id'=>'old','published_at'=>'2026-09-01'],['id'=>'new','published_at'=>'2026-10-01']];
 usort($items,'tvs_sort_recent');
 check(array_column($items,'id')===['new','old','missing'],'Public ordering deterministic');
-$ready=['title'=>'Sumaré anuncia novas atividades culturais na cidade','body'=>str_repeat('Atividades abertas à população com informações oficiais. ',12),'source_url'=>'https://example.com/noticias/sumare-evento','created_at'=>date(DATE_ATOM)];
+$ready=['title'=>'Sumaré anuncia novas atividades culturais na cidade','body'=>str_repeat('Atividades abertas à população com informações oficiais. ',12),'source_url'=>'https://example.com/noticias/sumare-anuncia-novas-atividades-culturais-na-cidade','created_at'=>date(DATE_ATOM)];
 check(!tvs_radar_queue_item_readiness($ready)['ready'],'Capture time alone cannot confirm source date');
 $ready['source_published_at']=date(DATE_ATOM);
 check(tvs_radar_queue_item_readiness($ready)['ready'],'Source date qualifies complete candidate: '.json_encode(tvs_radar_queue_item_readiness($ready))); 
