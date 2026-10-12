@@ -16,12 +16,16 @@ $metaPageUrl=trim((string)(getenv('META_PAGE_URL')?:''));
 $marketingEngineUrl=rtrim(trim((string)(getenv('MARKETING_ENGINE_URL')?:'')),'/');
 $marketingEngineToken=trim((string)(getenv('MARKETING_ENGINE_TOKEN')?:''));
 $facebookReady=$metaPageId!=='' && $marketingEngineUrl!=='' && $marketingEngineToken!=='';
+$facebookConfigIssues=[];
+if($metaPageId==='') $facebookConfigIssues[]='META_PAGE_ID ausente';
+if($marketingEngineUrl==='') $facebookConfigIssues[]='MARKETING_ENGINE_URL ausente';
+if($marketingEngineToken==='') $facebookConfigIssues[]='MARKETING_ENGINE_TOKEN ausente';
 $publishResult=null;
 
 if(($_SERVER['REQUEST_METHOD']??'GET')==='POST' && ($_POST['action']??'')==='publish_facebook'){
     tvs_verify_csrf();
     if(!$facebookReady){
-        $publishResult=['ok'=>false,'message'=>'Facebook configurado parcialmente: integração com o Marketing IA ainda não está pronta.'];
+        $publishResult=['ok'=>false,'message'=>'Publicação bloqueada por configuração incompleta: '.implode(', ',$facebookConfigIssues).'. Nenhuma postagem foi enviada.'];
     }elseif(!function_exists('curl_init')){
         $publishResult=['ok'=>false,'message'=>'Publicação indisponível: extensão cURL não encontrada no container.'];
     }else{
@@ -53,6 +57,7 @@ if(($_SERVER['REQUEST_METHOD']??'GET')==='POST' && ($_POST['action']??'')==='pub
             $publishResult=['ok'=>true,'message'=>'Publicação enviada para a Página do Facebook. ID: '.(string)$json['external_id']];
         }else{
             $apiMessage=is_array($json)?(string)($json['message']??$json['error']??''):'';
+            if($apiMessage==='meta_publisher_not_configured') $apiMessage='Publicador Meta não configurado no Marketing IA. Verifique a Página oficial e as permissões do publicador; nenhuma nova tentativa automática foi iniciada.';
             $publishResult=['ok'=>false,'message'=>'Não foi possível publicar no Facebook'.($apiMessage!==''?': '.$apiMessage:($curlError!==''?': '.$curlError:'.'))];
         }
     }
@@ -60,7 +65,7 @@ if(($_SERVER['REQUEST_METHOD']??'GET')==='POST' && ($_POST['action']??'')==='pub
 ?><!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Distribuir nas redes | TV Sumaré</title><link rel="stylesheet" href="admin.css?v=7"><style>.post-preview{display:grid;grid-template-columns:360px 1fr;gap:18px}.insta-card{aspect-ratio:1/1;border-radius:24px;overflow:hidden;background:linear-gradient(135deg,#061a4d,#ff7a00);color:#fff;display:flex;flex-direction:column;justify-content:flex-end;padding:24px;box-shadow:0 20px 50px rgba(0,0,0,.2)}.insta-card img{width:120px;height:75px;object-fit:contain;background:#fff;border-radius:14px;padding:6px;margin-bottom:auto}.insta-card h2{font-size:25px;line-height:1.08;margin:18px 0 10px}.insta-card span{font-weight:900;letter-spacing:.08em;color:#ffd29e}.copybox{min-height:260px}.social-status{padding:12px 14px;border-radius:12px;background:#f8fafc;margin:12px 0}.social-status.ok{background:#ecfdf3}.social-status.warn{background:#fff7ed}@media(max-width:850px){.post-preview{grid-template-columns:1fr}}</style></head><body><div class="admin"><?php include __DIR__.'/_menu.php'; ?><main class="main"><div class="top"><div><span class="eyebrow">Distribuição</span><h1>Facebook e Instagram</h1></div><a class="btn secondary" href="noticias.php">Voltar</a></div>
 <?php if($publishResult): ?><div class="notice <?=$publishResult['ok']?'':'error'?>"><?=htmlspecialchars($publishResult['message'])?></div><?php endif; ?>
 <div class="post-preview"><div class="insta-card"><img src="../assets/logo-tv-sumare.jpeg" alt="TV Sumaré"><span><?=htmlspecialchars($cat)?></span><h2><?=htmlspecialchars($title)?></h2><p><?=htmlspecialchars($city)?> • Leia no portal</p></div><div class="box"><h2>Texto de distribuição</h2><textarea class="copybox" id="caption"><?=htmlspecialchars($caption)?></textarea>
-<div class="social-status <?=$facebookReady?'ok':'warn'?>"><strong>Facebook:</strong> <?=$facebookReady?'pronto para publicar via Marketing IA':'Página cadastrada; integração com Marketing IA pendente'?><?php if($metaPageUrl!==''): ?> · <a target="_blank" href="<?=htmlspecialchars($metaPageUrl)?>">abrir Página</a><?php endif; ?></div>
+<div class="social-status <?=$facebookReady?'ok':'warn'?>"><strong>Facebook:</strong> <?=$facebookReady?'configuração local presente; publicação depende do publicador Meta no Marketing IA':'Configuração incompleta: '.implode(', ',$facebookConfigIssues)?><?php if($metaPageUrl!==''): ?> · <a target="_blank" href="<?=htmlspecialchars($metaPageUrl)?>">abrir Página</a><?php endif; ?></div>
 <div class="actions"><button class="btn orange" type="button" onclick="navigator.clipboard.writeText(document.getElementById('caption').value);alert('Legenda copiada!')">Copiar legenda</button><a class="btn" target="_blank" href="https://www.instagram.com/">Abrir Instagram</a><a class="btn secondary" target="_blank" href="<?=htmlspecialchars($url)?>">Abrir matéria</a></div>
 <form method="post" style="margin-top:14px"><?=tvs_csrf_field()?><input type="hidden" name="action" value="publish_facebook"><button class="btn orange" type="submit" <?=$facebookReady?'':'disabled'?>>Publicar na Página do Facebook</button></form>
 <p><small>A publicação automática usa credencial somente pelo runtime; o token não é salvo no código nem exibido no painel.</small></p></div></div></main></div></body></html>
