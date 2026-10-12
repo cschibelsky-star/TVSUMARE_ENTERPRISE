@@ -6,6 +6,7 @@ require_once dirname(__DIR__).'/config.php';
 require_once __DIR__.'/gemini.php';
 require_once __DIR__.'/monitor_lib.php';
 require_once dirname(__DIR__).'/includes/heygen_helper.php';
+require_once dirname(__DIR__).'/includes/editorial_director.php';
 require_once dirname(__DIR__).'/includes/reporter_presenter_policy.php';
 $activeAdmin='reporter_ia';
 
@@ -56,15 +57,19 @@ function rpia_job_orientation($job,$cfg){ $v=trim((string)($job['orientation']??
 function rpia_video_agent_prompt($job,$cfg){
   $orientation=rpia_job_orientation($job,$cfg)==='portrait'?'vertical/portrait 9:16':'landscape 16:9'; $durationTarget=trim((string)($job['duration_target']??'45 a 60 segundos')); if($durationTarget==='') $durationTarget='45 a 60 segundos';
   $script=trim((string)($job['script']??'')); $title=tvs_clean_text($job['title']??'Giro regional TV Sumaré'); $city=tvs_clean_text($job['city']??'Região'); $source=tvs_clean_text($job['source']??'fonte consultada');
-  $isBoletim=!empty($job['boletim']); $presenter=tvs_clean_text($job['presenter_name']??''); $tone=tvs_clean_text($job['presenter_tone']??'');
+  $isBoletim=!empty($job['boletim']); $presenter=(($job['director_mode']??'')==='virtual')?'apresentador virtual sem nome':tvs_clean_text($job['presenter_name']??''); $tone=tvs_clean_text($job['presenter_tone']??'');
   if($isBoletim){ if($presenter==='') $presenter='apresentador digital dos boletins da TV Sumaré'; if($tone==='') $tone='informal, próximo, ágil e confiável'; $presentation="Persona: {$presenter}. Tom: {$tone}. Apresente como conteúdo nativo de redes sociais: natural, direto, simpático e conversacional, sem perder precisão jornalística. Evite postura rígida de telejornal e linguagem excessivamente formal."; }
   else $presentation="Tom: apresentador de telejornal regional, claro, confiável, objetivo e sem sensacionalismo.";
-  return "Crie um vídeo jornalístico regional para a TV Sumaré, portal regional de notícias de Sumaré e Região Metropolitana de Campinas.\n\nFormato: {$orientation}. Duração alvo: {$durationTarget}. {$presentation}\n\nUse o avatar e a voz fornecidos na configuração deste vídeo. Use identidade visual limpa e moderna. Inclua legendas e cards discretos de apoio.\n\nTítulo da pauta: {$title}\nCidade/região: {$city}\nFonte: {$source}\n\nTexto falado obrigatório, sem inventar dados além deste roteiro:\n{$script}\n\nRegras editoriais: não cite que o conteúdo foi gerado por IA; não acrescente números, datas, nomes ou acusações que não estejam no roteiro; preserve a informação jornalística; finalize reforçando que o público acompanhe a TV Sumaré.";
+  $policy=tvs_director_instructions(['mode'=>$job['director_mode']??'review']);
+  return "Crie um vídeo jornalístico regional para a TV Sumaré, portal regional de notícias de Sumaré e Região Metropolitana de Campinas.\n\nFormato: {$orientation}. Duração alvo: {$durationTarget}. {$presentation}\n\n{$policy} Use o BrandKit oficial configurado e somente artes aprovadas, sem redesenhar o logo. Use identidade visual limpa e moderna. Inclua legendas e cards discretos de apoio.\n\nTítulo da pauta: {$title}\nCidade/região: {$city}\nFonte: {$source}\n\nTexto falado obrigatório, sem inventar dados além deste roteiro:\n{$script}\n\nRegras editoriais: não cite que o conteúdo foi gerado por IA; não acrescente números, datas, nomes ou acusações que não estejam no roteiro; preserve a informação jornalística; finalize reforçando que o público acompanhe a TV Sumaré.";
 }
 function rpia_heygen_create($job,$cfg){
+  $decision=tvs_director_decide($job,$cfg); if(!$decision['ok']) return ['ok'=>false,'error'=>$decision['error']];
+  $job['director_mode']=$decision['mode']; $job['presenter_name']=$decision['presenter_name'];
   $key=rpia_heygen_key($cfg); if($key==='') return ['ok'=>false,'error'=>'Configure a chave da HeyGen.'];
   $orientation=rpia_job_orientation($job,$cfg); $payload=['prompt'=>rpia_video_agent_prompt($job,$cfg),'mode'=>'generate','incognito_mode'=>rpia_bool($cfg['heygen_incognito_mode']??'0')];
   $payload=array_merge($payload,tvs_reporter_presenter_payload($job,$cfg));
+  $payload=tvs_director_apply_payload($payload,$decision,$cfg);
   $callbackToken=trim((string)($cfg['heygen_callback_token']??'')); if($callbackToken!==''){ $payload['callback_url']=rpia_abs_url('api/heygen-callback.php?token='.rawurlencode($callbackToken)); $payload['callback_id']=$job['id']??('job_'.time()); }
   $r=rpia_heygen_request('POST','/v3/video-agents',$key,$payload,45); if(!$r['ok']) return ['ok'=>false,'error'=>$r['error']??'Falha ao criar sessão HeyGen.','raw'=>$r];
   $data=$r['data']['data']??($r['data']??[]); $session=$data['session_id']??''; $video=$data['video_id']??''; $status=$data['status']??'generating'; if($session==='' && $video==='') return ['ok'=>false,'error'=>'HeyGen não retornou session_id nem video_id: '.substr($r['raw']??'',0,700),'raw'=>$r]; return ['ok'=>true,'session_id'=>$session,'video_id'=>$video,'status'=>$status,'payload'=>$payload,'raw'=>$r['data']];
