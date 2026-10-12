@@ -5,6 +5,7 @@ require_once __DIR__.'/monitor_lib.php';
 require_once dirname(__DIR__).'/config.php';
 require_once __DIR__.'/gemini.php';
 require_once __DIR__.'/radar_queue_rules.php';
+require_once dirname(__DIR__).'/includes/editorial_lifecycle.php';
 
 $activeAdmin='drafts';
 
@@ -106,9 +107,11 @@ if($normalizedChanged) tvs_save_json_file($df,$drafts);
 
 $radarProcessing=[];
 $radarSeen=[];
+$publishedNews=tvs_read_json_file($nf);
 $radarQueue=tvs_read_json_file($radarQueueFile); if(!is_array($radarQueue)) $radarQueue=[];
 foreach($radarQueue as $item){
   if(!is_array($item)) continue;
+  if(tvs_editorial_matches_publication($item,$publishedNews)) continue;
   $readiness=function_exists('tvs_radar_queue_item_readiness')
     ? tvs_radar_queue_item_readiness($item)
     : ['ready'=>!empty($item['ai_editor_processed'])];
@@ -129,6 +132,7 @@ foreach($radarQueue as $item){
 $radarDiscovery=tvs_read_json_file($radarDiscoveryFile); if(!is_array($radarDiscovery)) $radarDiscovery=[];
 foreach($radarDiscovery as $item){
   if(!is_array($item)) continue;
+  if(tvs_editorial_matches_publication($item,$publishedNews)) continue;
   $key=trim((string)($item['url']??$item['source_url']??''));
   if($key==='') $key='id:'.(string)($item['id']??uniqid('radar_'));
   if(isset($radarSeen[$key])) continue;
@@ -146,6 +150,8 @@ if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'){
   $idx=tvs_admin_find_draft_index($drafts,$id);
 
   if($idx<0){ header('Location: drafts.php?erro=rascunho-nao-encontrado'); exit; }
+
+  $originSnapshotSha=hash('sha256',json_encode($drafts[$idx]));
 
   if($action==='delete'){
     array_splice($drafts,$idx,1);
@@ -248,17 +254,22 @@ if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'){
     $published['reviewed_at']=date('c');
     $published['slug']=!empty($published['slug'])?$published['slug']:tvs_admin_slugify($published['title']??'noticia-tv-sumare');
     $published['created_at']=$published['created_at']??date('c');
+    $sourceDate=tvs_editorial_source_date($drafts[$idx]);
+    if($sourceDate && empty($published['source_published_at'])) $published['source_published_at']=gmdate(DATE_ATOM,$sourceDate);
     $published['published_at']=date('c');
     $published['author']=$published['author']??'Redação TV Sumaré';
     $published['source']=$published['source']??'Fonte consultada';
     $published['source_url']=$published['source_url']??'';
 
-    $news[]=$published;
-    if(!tvs_save_json_file($nf,$news)){
+    $published=tvs_editorial_publication_metadata($published,'drafts',(string)$id,date('c'));
+    $published['id']=uniqid('news_');
+    $published['editorial_mode']='REVISAO_HUMANA';
+    $published['origin_snapshot_sha']=$originSnapshotSha;
+    $result=tvs_editorial_persist_publication($nf,$df,'drafts',(string)$id,$published);
+    if(empty($result['ok'])){
       header('Location: drafts.php?edit='.urlencode($id).'&erro=falha-ao-publicar'); exit;
     }
-    array_splice($drafts,$idx,1);
-    if(!tvs_save_json_file($df,$drafts)){
+    if(empty($result['queue_cleaned'])){
       header('Location: noticias.php?published=1&warning=rascunho-nao-removido'); exit;
     }
     header('Location: noticias.php?published=1'); exit;
@@ -269,7 +280,7 @@ if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'){
 
 $invalidCount=0;
 $visibleDrafts=[];
-foreach($drafts as $d){ $r=''; if(tvs_admin_invalid_draft($d,$r)){ $invalidCount++; continue; } $visibleDrafts[]=$d; }
+foreach($drafts as $d){ if(tvs_editorial_matches_publication($d,$publishedNews)) continue; $r=''; if(tvs_admin_invalid_draft($d,$r)){ $invalidCount++; continue; } $visibleDrafts[]=$d; }
 $editId=(string)($_GET['edit']??'');
 $edit=null;
 foreach($drafts as $d){ if((string)($d['id']??'')===$editId){ $edit=$d; break; } }

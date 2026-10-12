@@ -35,6 +35,9 @@ jobs:
       - name: Teste da politica editorial V3
         run: php tests/editorial_policy_v3_test.php
 
+      - name: Transicoes editoriais, persistencia, datas e imagens
+        run: php tests/editorial_lifecycle_test.php
+
       - name: Validar regras editoriais criticas
         shell: bash
         run: |
@@ -54,3 +57,4 @@ jobs:
 
       - name: Build + aplicadores + smoke de homologacao
         run: docker build -t tvsumare-ci .
+

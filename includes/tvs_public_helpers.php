@@ -1,10 +1,11 @@
 <?php
 require_once __DIR__.'/image_url_helpers.php';
+require_once __DIR__.'/editorial_lifecycle.php';
 if(!function_exists('tvs_h')){
 function tvs_h($s){ return htmlspecialchars((string)$s,ENT_QUOTES,'UTF-8'); }
 function tvs_json($file){ if(!file_exists($file)) return []; $d=json_decode(file_get_contents($file),true); return is_array($d)?$d:[]; }
 function tvs_lc($s){ return function_exists('mb_strtolower')?mb_strtolower((string)$s,'UTF-8'):strtolower((string)$s); }
-function tvs_date_ts($n){ return strtotime($n['published_at']??$n['created_at']??$n['date']??'now') ?: time(); }
+function tvs_date_ts($n){ return tvs_editorial_date((array)$n,['published_at','created_at','date']); }
 function tvs_sort_recent($a,$b){ return tvs_date_ts($b)<=>tvs_date_ts($a); }
 function tvs_words($text){ return str_word_count(strip_tags((string)$text),0,'áàâãéèêíïóôõöúçñÁÀÂÃÉÈÊÍÏÓÔÕÖÚÇÑ'); }
 function tvs_read_time($body){ return max(1,(int)ceil(tvs_words($body)/220)); }
@@ -29,7 +30,7 @@ function tvs_is_category_asset($img){ return (bool)preg_match('~(^|/)assets/cat-
 function tvs_real_image($n){
   $candidates=[];
   foreach(['image','og_image','rss_image','media','media_url','thumbnail','thumb','featured_image','image_url'] as $k){ if(!empty($n[$k])) $candidates[]=$n[$k]; }
-  foreach($candidates as $img){ $img=tvs_normalize_source_image_url((string)$img); if($img!=='' && !tvs_is_category_asset($img)) return $img; }
+  foreach($candidates as $img){ if(!is_string($img)) continue; $img=tvs_normalize_source_image_url($img); if($img!=='' && !tvs_is_category_asset($img) && tvs_editorial_image_candidate($img,(array)$n)) return $img; }
   return '';
 }
 function tvs_category_asset($n){
@@ -194,12 +195,10 @@ function tvs_clean_source_suffix($text){
   return trim($text," \t\n\r\0\x0B-–—|•:");
 }
 function tvs_news_age_days($n){
-  $raw=$n['published_at']??$n['created_at']??$n['date']??'';
-  if(!$raw) return 0;
-  $ts=strtotime((string)$raw);
-  if(!$ts) return 0;
-  return (int)floor((time()-$ts)/86400);
+  $ts=tvs_date_ts($n);
+  return $ts ? (int)floor((time()-$ts)/86400) : null;
 }
+
 function tvs_is_news_old($n,$maxDays=30){
   $age=tvs_news_age_days($n);
   return $age>$maxDays;
@@ -329,7 +328,7 @@ function tvs_prepare_public_news_v2($news,$maxDays=90){
     if($detected!=='') $n['city']=$detected;
     $img=tvs_real_image($n);
     $fallback=tvs_category_asset($n);
-    $n['image_status']=$img!==''?'verified':'editorial_fallback';
+    $n['image_status']=$img!==''?'unverified':'editorial_fallback';
     $n['hero_eligible']=$img!=='' ? 1 : 0;
     $n['home_eligible']=($img!=='' || $fallback!=='') ? 1 : 0;
     $n['publication_eligible']=1;
@@ -395,3 +394,4 @@ function tvs_city_sections($news,$perCity=5){
 }
 
 ?>
+
