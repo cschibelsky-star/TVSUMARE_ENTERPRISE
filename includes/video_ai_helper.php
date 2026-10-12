@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__.'/outbound_guard.php';
+require_once __DIR__.'/editorial_director.php';
 // TV Sumaré Enterprise 1.1-A — Assistente de Produção IA
 // Helper único para sugestões, roteiro, fila, HeyGen e publicação no TV Play.
 
@@ -154,8 +155,9 @@ if (!function_exists('tvp_generate_script')) {
     if(!preg_match('/^(Boa noite|Olá|A TV Sumaré|Confira|Nesta edição)/iu',$script)){
       $script=tvp_script_opening_for_profile($profile,$job['category']??'').' '.$script;
     }
-    if(stripos($script,'Cristian Schibelsky')===false){
-      $script.=' Edição: Cristian Schibelsky, Editor Responsável da TV Sumaré.';
+    if(tvs_director_classify_city($job['city']??'')==='virtual') {
+      $script=preg_replace('/Eu sou Cristian Schibelsky\.\s*Até o próximo boletim\./iu','Continue acompanhando a TV Sumaré.',$script);
+      $script=preg_replace('/Edição:\s*Cristian Schibelsky,\s*Editor Responsável da TV Sumaré\.?/iu','',$script);
     }
     return tvp_clean($script);
   }
@@ -187,7 +189,7 @@ if (!function_exists('tvp_generate_script')) {
   }
   function tvp_generate_script($job){
     $profile=$job['presenter_profile']??tvp_avatar_profile_for_category($job['category']??'');
-    $presenter=tvp_presenter_label($profile);
+    $presenter=tvs_director_classify_city($job['city']??'')==='cristian'?'Cristian Schibelsky':'apresentador virtual sem identificacao nominal';
     $opening=tvp_script_opening_for_profile($profile,$job['category']??'');
     $body=tvp_clean(($job['body']??'').' '.($job['summary']??''));
     $prompt="Você é redator-chefe de telejornal regional da TV Sumaré. Gere APENAS o texto final que será falado pelo apresentador em vídeo, sem markdown, sem tópicos, sem rótulos e sem explicar o formato.\n\n".
@@ -205,7 +207,7 @@ if (!function_exists('tvp_generate_script')) {
       "Fonte: ".($job['source']??'')."\n".
       "URL: ".($job['source_url']??'')."\n".
       "Conteúdo disponível: {$body}\n\n".
-      "Finalize obrigatoriamente com: 'Eu sou Cristian Schibelsky. Até o próximo boletim.'";
+      (tvs_director_classify_city($job['city']??'')==='cristian' ? "Finalize com: 'Eu sou Cristian Schibelsky. Até o próximo boletim.'" : "Finalize com: 'Continue acompanhando a TV Sumaré.' Nunca identifique nominalmente o apresentador.");
     $script='';
     if(trim((string)($GLOBALS['gemini_api_key']??''))!=='' && function_exists('tvs_gemini_generate_text')){
       $r=tvs_gemini_generate_text($GLOBALS['gemini_api_key'],$prompt,['temperature'=>0.18,'maxOutputTokens'=>1100],35);
@@ -251,14 +253,16 @@ if (!function_exists('tvp_heygen_config')) {
   }
   function tvp_video_agent_prompt($job){
     $cfg=tvp_heygen_config(); $orientation=(($cfg['heygen_orientation']??'landscape')==='portrait')?'vertical 9:16':'landscape 16:9';
-    $profile=$job['presenter_profile']??'cristian_editor';
-    $presenter = $profile==='negocios_empregos' ? 'apresentador de Empregos e Negócios' : ($profile==='servicos_publicos' ? 'apresentadora de Serviços Públicos' : 'Cristian Schibelsky, Editor Responsável');
-    return "Crie um vídeo jornalístico regional para a TV Sumaré.\n\nFormato: {$orientation}. Duração: 60 a 90 segundos. Tom: telejornal regional, natural, profissional e sem sensacionalismo. Use legendas, cortes limpos e identidade visual de emissora local.\n\nIdentidade na tela: TV SUMARÉ — BOLETIM REGIONAL.\nGC/assinatura: {$presenter}.\nEncerramento: Produção TV Sumaré IA News. Editor: Cristian Schibelsky.\n\nTítulo: ".($job['title']??'')."\nCidade: ".($job['city']??'')."\nCategoria: ".($job['category']??'')."\nFonte: ".($job['source']??'')."\n\nTexto falado obrigatório:\n".($job['script']??'')."\n\nNão invente dados. Não mencione IA. Finalize sem pronunciar domínio ou URL. O domínio deve aparecer apenas como texto visual na tela final.";
+    $presenter=tvs_director_classify_city($job['city']??'')==='cristian'?'Cristian Schibelsky':'sem nome de apresentador';
+    $policy=tvs_director_instructions(['mode'=>tvs_director_classify_city($job['city']??'')]);
+    return "Crie um vídeo jornalístico regional para a TV Sumaré.\n\nFormato: {$orientation}. Duração: 60 a 90 segundos. Tom: telejornal regional, natural, profissional e sem sensacionalismo. Use legendas, cortes limpos e identidade visual de emissora local.\n\nIdentidade na tela: TV SUMARÉ — BOLETIM REGIONAL.\nGC/assinatura: {$presenter}. {$policy}\nEncerramento: Produção TV Sumaré IA News.\n\nTítulo: ".($job['title']??'')."\nCidade: ".($job['city']??'')."\nCategoria: ".($job['category']??'')."\nFonte: ".($job['source']??'')."\n\nTexto falado obrigatório:\n".($job['script']??'')."\n\nNão invente dados. Não mencione IA. Finalize sem pronunciar domínio ou URL. O domínio deve aparecer apenas como texto visual na tela final.";
   }
   function tvp_send_heygen($job){
     $cfg=tvp_heygen_config();
+    $decision=tvs_director_decide($job,$cfg); if(!$decision['ok']) return ['ok'=>false,'error'=>$decision['error']];
     $payload=['prompt'=>tvp_video_agent_prompt($job),'mode'=>'generate','incognito_mode'=>in_array((string)($cfg['heygen_incognito_mode']??'0'),['1','true','on'],true)];
-    foreach(['avatar_id'=>'heygen_avatar_id','voice_id'=>'heygen_voice_id','style_id'=>'heygen_style_id','brand_kit_id'=>'heygen_brand_kit_id'] as $api=>$local){ $v=trim((string)($cfg[$local]??'')); if($v!=='') $payload[$api]=$v; }
+    $style=trim((string)($cfg['heygen_style_id']??'')); if($style!=='') $payload['style_id']=$style;
+    $payload=tvs_director_apply_payload($payload,$decision,$cfg);
     if(in_array(($cfg['heygen_orientation']??'landscape'),['landscape','portrait'],true)) $payload['orientation']=$cfg['heygen_orientation'];
     // Correção CTO: não enviar arquivos externos para a HeyGen nesta fase.
     // URLs de RSS/prefeituras/portais podem bloquear download e causar: Invalid URL in files[0].
