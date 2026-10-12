@@ -37,7 +37,7 @@ check(array_column($items,'id')===['new','old','missing'],'Public ordering deter
 $ready=['title'=>'Sumaré anuncia novas atividades culturais na cidade','body'=>str_repeat('Atividades abertas à população com informações oficiais. ',12),'source_url'=>'https://example.com/noticias/sumare-evento','created_at'=>date(DATE_ATOM)];
 check(!tvs_radar_queue_item_readiness($ready)['ready'],'Capture time alone cannot confirm source date');
 $ready['source_published_at']=date(DATE_ATOM);
-check(tvs_radar_queue_item_readiness($ready)['ready'],'Source date qualifies complete candidate');
+check(tvs_radar_queue_item_readiness($ready)['ready'],'Source date qualifies complete candidate: '.json_encode(tvs_radar_queue_item_readiness($ready))); 
 check(tvs_real_image(['image'=>'javascript:alert(1)','og_image'=>'https://example.com/photo.jpg'])==='https://example.com/photo.jpg','Reject unsupported scheme and try next candidate');
 check(tvs_real_image(['image'=>'uploads/missing.jpg','og_image'=>'https://example.com/photo.jpg'])==='https://example.com/photo.jpg','Missing local file does not mask next candidate');
 check(tvs_real_image(['image'=>'https://example.com/failed.jpg','unavailable_images'=>['https://example.com/failed.jpg'],'og_image'=>'https://example.com/ok.jpg'])==='https://example.com/ok.jpg','Known unavailable reference does not mask alternate');

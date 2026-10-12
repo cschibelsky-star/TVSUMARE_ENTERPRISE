@@ -3460,6 +3460,8 @@ function tvs_generate_ready_article($city,$cand){
     $result['ai_editor_stage']='pending';
   }
 
+  $sourceDate=tvs_editorial_source_date($cand);
+  if($sourceDate) $result['source_published_at']=gmdate(DATE_ATOM,$sourceDate);
   // Imagem é um atributo paralelo. Falta de foto não altera o estado editorial.
   // A passagem pelo Editor IA, porém, é obrigatória para publicação.
   $imageReady=$hasVerifiedSourceImage && trim((string)$result['image'])!=='' && empty($result['image_review_required']);
@@ -3472,8 +3474,6 @@ function tvs_generate_ready_article($city,$cand){
   $result['publication_eligible']=$editorProcessed?1:0;
   $result['home_eligible']=$imageReady?1:0;
   $result['video_eligible']=1;
-  $sourceDate=tvs_editorial_source_date($cand);
-  if($sourceDate) $result['source_published_at']=gmdate(DATE_ATOM,$sourceDate);
   $result['created_at']=date('c');
   if(!tvs_radar_quality_ok($result,$reason)){
     tvs_radar_discard($cand,$city,$reason);
