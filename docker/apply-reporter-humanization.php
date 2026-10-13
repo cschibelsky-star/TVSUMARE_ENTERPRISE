@@ -2,7 +2,7 @@
 $reporter='/var/www/html/admin/reporter-ia.php';
 $code=file_get_contents($reporter);
 if($code===false){fwrite(STDERR,"Reporter IA não encontrado\n");exit(1);}
-function hum_patch(&$code,$old,$new,$label){$n=substr_count($code,$old);if($n!==1){fwrite(STDERR,"{$label}: trecho esperado count={$n}; abortando\n");exit(2);} $code=str_replace($old,$new,$code);}
+function hum_patch(&$code,$old,$new,$label){$n=substr_count($code,$old);if($n===0 && $label==='Humanized Video Agent prompt' && strpos($code,'tvs_director_instructions')!==false){echo "{$label}: política territorial moderna preservada.\n";return;}if($n===0 && $label==='Preferred human voice' && strpos($code,'tvs_director_apply_payload')!==false){echo "{$label}: identidade resolvida pela política territorial.\n";return;}if($n!==1){fwrite(STDERR,"{$label}: trecho esperado count={$n}; abortando\n");exit(2);} $code=str_replace($old,$new,$code);}
 
 hum_patch($code,
 "function rpia_job_orientation(\$job,\$cfg){ \$v=trim((string)(\$job['orientation']??'')); if(in_array(\$v,['landscape','portrait'],true)) return \$v; \$v=trim((string)(\$cfg['heygen_orientation']??'landscape')); return in_array(\$v,['landscape','portrait'],true)?\$v:'landscape'; }",
