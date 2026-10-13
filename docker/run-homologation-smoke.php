@@ -42,6 +42,8 @@ check($boletim!=='' && (has($boletim,'quantity') || has($boletim,'quantidade')),
 check($reporter!=='' && has($reporter,'rpia_provider_blocked'), 'Repórter bloqueia provedor indisponível');
 check($reporter!=='' && has($reporter,'rpia_job_state'), 'Repórter usa máquina de estados');
 check($reporter!=='' && has($reporter,'send_lock_at'), 'Repórter protege envio duplicado');
+check($reporter!=='' && has($reporter,'name="heygen_cristian_avatar_id"') && has($reporter,'name="heygen_cristian_voice_id"'), 'Repórter expõe overrides territoriais de Cristian');
+check($reporter!=='' && has($reporter,'tvs_director_apply_payload($payload,$decision,$cfg)') && has($reporter,'DIREÇÃO HUMANA:'), 'Repórter preserva política territorial e humanização');
 $heygenHelper=txt($root.'/includes/heygen_helper.php');
 $reporterPublic=txt($root.'/reporter-ia.php');
 $adminIndex=txt($root.'/admin/index.php');
