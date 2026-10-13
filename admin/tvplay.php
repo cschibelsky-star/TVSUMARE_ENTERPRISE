@@ -1,4 +1,5 @@
 <?php
+require_once dirname(__DIR__).'/includes/script_generation.php';
 require_once __DIR__.'/auth.php'; require_login();
 require_once dirname(__DIR__).'/config.php';
 require_once __DIR__.'/gemini.php';
@@ -64,6 +65,7 @@ if(isset($_GET['yt_err'])) $err=(string)$_GET['yt_err'];
 if($_SERVER['REQUEST_METHOD']==='POST'){
   tvs_verify_csrf();
   $action=$_POST['action']??'';
+  try {
   if($action==='suggest_top3'){
     $r=tvp_generate_top_suggestions(3);
     tvp_admin_redirect(['msg'=>'Sugestões geradas: '.($r['created']??0).'.']);
@@ -226,20 +228,22 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
   if($action==='generate_script'){
     $idx=null; $jobs=null; $job=tvp_find_job($_POST['job_id']??'',$jobs,$idx);
     if(!$job) tvp_admin_redirect(['err'=>'Job não encontrado.']);
-    $script=tvp_generate_script($job); $jobs[$idx]['script']=$script; $jobs[$idx]['status']='roteiro_revisao'; $jobs[$idx]['updated_at']=date('c'); tvp_save_video_jobs($jobs);
+    if(!in_array($job['status']??'',['roteiro_pendente','roteiro_revisao'],true)) throw new TvsScriptException('script_state_locked');
+    $script=tvs_script_require_text(tvp_generate_script($job)); $jobs[$idx]['script']=$script; $jobs[$idx]['status']='roteiro_revisao'; $jobs[$idx]['updated_at']=date('c'); tvs_script_store_job(tvp_data_path('videos_ia.json'),$jobs[$idx],$job);
     $engine=$jobs[$idx]['video_engine']??tvp_video_engine_decide($jobs[$idx],'auto');
     tvp_admin_redirect(['msg'=>'Roteiro gerado. Revise antes de enviar para '.($engine==='heygen'?'HeyGen':'VEO').'.']);
   }
   if($action==='save_script'){
     $idx=null; $jobs=null; $job=tvp_find_job($_POST['job_id']??'',$jobs,$idx);
     if(!$job) tvp_admin_redirect(['err'=>'Job não encontrado.']);
-    $jobs[$idx]['script']=tvp_polish_script(trim((string)($_POST['script']??'')),$job); $jobs[$idx]['status']='roteiro_aprovado'; $jobs[$idx]['updated_at']=date('c'); tvp_save_video_jobs($jobs);
+    if(!in_array($job['status']??'',['roteiro_pendente','roteiro_revisao','roteiro_aprovado'],true)) throw new TvsScriptException('script_state_locked');
+    $jobs[$idx]['script']=tvs_script_require_text(tvp_polish_script(tvs_script_require_text($_POST['script']??null),$job)); $jobs[$idx]['status']='roteiro_aprovado'; $jobs[$idx]['updated_at']=date('c'); tvs_script_store_job(tvp_data_path('videos_ia.json'),$jobs[$idx],$job);
     tvp_admin_redirect(['msg'=>'Roteiro salvo e aprovado.']);
   }
   if($action==='send_heygen'){
     $idx=null; $jobs=null; $job=tvp_find_job($_POST['job_id']??'',$jobs,$idx);
     if(!$job) tvp_admin_redirect(['err'=>'Job não encontrado.']);
-    if(trim((string)($job['script']??''))==='') tvp_admin_redirect(['err'=>'Gere e aprove o roteiro antes de enviar para HeyGen.']);
+    tvs_script_require_text($job['script']??null);
     if(($job['status']??'')!=='roteiro_aprovado') tvp_admin_redirect(['err'=>'Salve/aprove o roteiro antes de enviar para HeyGen.']);
     $r=tvp_send_heygen($job);
     if(!$r['ok']) tvp_admin_redirect(['err'=>$r['error']??'Falha no envio para HeyGen.']);
@@ -255,7 +259,7 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
   if(in_array($action,['send_ai_video','send_veo'],true)){
     $idx=null; $jobs=null; $job=tvp_find_job($_POST['job_id']??'',$jobs,$idx);
     if(!$job) tvp_admin_redirect(['err'=>'Job não encontrado.']);
-    if(trim((string)($job['script']??''))==='') tvp_admin_redirect(['err'=>'Gere e aprove o roteiro antes de gerar o vídeo.']);
+    tvs_script_require_text($job['script']??null);
     if(($job['status']??'')!=='roteiro_aprovado') tvp_admin_redirect(['err'=>'Salve/aprove o roteiro antes de gerar o vídeo.']);
     $qualityProfile=trim((string)($_POST['quality_profile']??($job['media_quality_profile']??'balanced')));
     $r=tvp_send_video_orchestrated($job,$qualityProfile);
@@ -339,6 +343,7 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
     $jobs[$idx]['status']='publicado'; $jobs[$idx]['published_at']=date('c'); $jobs[$idx]['updated_at']=date('c'); tvp_save_video_jobs($jobs);
     tvp_admin_redirect(['msg'=>'Vídeo publicado no TV Play.']);
   }
+  } catch(Throwable $e){ tvp_admin_redirect(['err'=>tvs_script_failure('tvplay_'.$action,$e)]); }
 }
 
 $jobs=tvp_load_video_jobs();
