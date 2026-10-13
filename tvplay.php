@@ -2,8 +2,8 @@
 require_once __DIR__.'/auth.php'; require_login();
 require_once dirname(__DIR__).'/config.php';
 require_once __DIR__.'/gemini.php';
-require_once dirname(__DIR__).'/includes/heygen_helper.php';
 require_once dirname(__DIR__).'/includes/video_ai_helper.php';
+require_once dirname(__DIR__).'/includes/heygen_helper.php';
 $activeAdmin='tvplay';
 $msg=''; $err='';
 
