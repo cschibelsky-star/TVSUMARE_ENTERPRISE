@@ -430,8 +430,15 @@ function tvs_radar_infer_queue_age_days($q){
 }
 
 function tvs_radar_enforce_queue_rules($save=true){
+  global $newsFile;
   $queue=tvs_queue_read(); $new=[]; $removed=0; $changed=0;
+  $published=tvs_read_json_file($newsFile); if(!is_array($published)) $published=[];
   foreach($queue as $q){
+    if(tvs_radar_history_duplicate($q,$published)){
+      $removed++;
+      tvs_radar_log_event($q['title']??'', $q['source']??'', $q['city']??'', 'DESCARTADA', 'Pauta já publicada: removida da fila de aprovação', $q['source_url']??'');
+      continue;
+    }
     $reason='';
     $cand=[
       'title'=>$q['title']??'',
@@ -5343,6 +5350,10 @@ function tvs_publish_from_queue($id,$post){
     return false;
   }
   $news=tvs_read_json_file($newsFile); if(!is_array($news)) $news=[];
+  if(tvs_radar_history_duplicate($candidate,$news)){
+    $TVS_PUBLISH_ERROR='Publicação bloqueada: esta pauta já consta no histórico de notícias publicadas.';
+    return false;
+  }
   $publishedImage=trim($post['image']??$found['image']??'');
   if(!tvs_is_valid_image_url($publishedImage)) $publishedImage='';
   $news[]=['id'=>uniqid('news_'),'title'=>$title,'subtitle'=>trim($post['subtitle']??$found['subtitle']??''),'summary'=>trim($post['summary']??$found['summary']??''),'body'=>$body,'category'=>trim($post['category']??$found['category']??'Cidade'),'city'=>trim($post['city']??$found['city']??'Região'),'source'=>trim($post['source']??$found['source']??'Fonte consultada'),'source_url'=>trim($post['source_url']??$found['source_url']??''),'image'=>$publishedImage,'image_status'=>$publishedImage!==''?'verified':'missing','home_eligible'=>$publishedImage!==''?1:0,'editorial_state'=>'published','image_credit'=>trim($post['image_credit']??$found['image_credit']??tvs_image_credit_from_source($found['source']??$post['source']??'Fonte consultada', $publishedImage)),'tags'=>is_array($found['tags']??null)?$found['tags']:array_filter(array_map('trim',explode(',',(string)($post['tags']??'')))),'seo_title'=>trim($post['seo_title']??$found['seo_title']??$title),'meta_description'=>trim($post['meta_description']??$found['meta_description']??''),'slug'=>trim($post['slug']??$found['slug']??tvs_slug($title)),'instagram_caption'=>trim($post['instagram_caption']??$found['instagram_caption']??''),'whatsapp_text'=>trim($post['whatsapp_text']??$found['whatsapp_text']??''),'human_review_override'=>$humanReview?1:0,'human_reviewed_at'=>$humanReview?date('c'):null,'approved_by'=>$humanReview?'human_editor':'editorial_pipeline','views'=>0,'shares'=>0,'published_at'=>date('c'),'created_at'=>date('c')];
