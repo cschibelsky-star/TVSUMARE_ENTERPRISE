@@ -32,14 +32,11 @@ services:
       - /var/run/apache2:rw,nosuid,nodev,size=8m,mode=0755
       - /var/lock/apache2:rw,nosuid,nodev,size=8m,mode=0755
       - /var/lib/php/sessions:rw,noexec,nosuid,nodev,size=16m,mode=1733,uid=33,gid=33
+    # The central HML provider owns the public router for tv-hml.vitrineiapro.com.br.
+    # Disable direct Docker discovery here to avoid two Traefik routers for one hostname.
+    # Keep the shared proxy network below so the provider can reach this upstream.
     labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.tvsumare-hml.rule=Host(`tv-hml.vitrineiapro.com.br`)"
-      - "traefik.http.routers.tvsumare-hml.entrypoints=websecure"
-      - "traefik.http.routers.tvsumare-hml.tls=true"
-      - "traefik.http.routers.tvsumare-hml.tls.certresolver=le"
-      - "traefik.http.services.tvsumare-hml.loadbalancer.server.port=80"
-      - "traefik.docker.network=n8n-traefik_app_network"
+      - "traefik.enable=false"
     networks:
       - tvsumare_internal
       - tvsumare_egress
