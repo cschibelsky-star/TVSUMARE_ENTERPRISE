@@ -4651,6 +4651,11 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5,$options=[]
     'mode'=>$mode,
     'retroactive_stage'=>$retroactiveStage,
     'selected_count'=>$selectedCount,
+    // selected_count representa o inventário consultado, não pautas elegíveis.
+    'selection_scope'=>!empty($options['only_ids'])?'requested_ids':'discovery_inventory',
+    'noop_reason'=>($selectedCount>0 && count($processedIds)===0)
+      ? 'Nenhuma pauta passou pelos filtros de elegibilidade do ciclo; verificar cotas por cidade, estágio, auditoria e janela de retry.'
+      : '',
     'processed_count'=>count($processedIds),
     'changed_count'=>$changedCount,
     'unchanged_count'=>max(0,count($processedIds)-$changedCount),
