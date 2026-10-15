@@ -2,6 +2,7 @@ name: tvsumare
 
 services:
   web:
+    image: tvsumare-web-hml:sso-20261015
     build:
       context: .
       dockerfile: Dockerfile
