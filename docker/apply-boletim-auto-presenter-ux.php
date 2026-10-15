@@ -49,8 +49,9 @@ if($start!==false){
 HTML;
   $b=substr($b,0,$start).$advanced.substr($b,$end+strlen($oldEnd));
   echo "Boletim config UI: aplicada.\n";
-}elseif(strpos($b,'Seleção automática do apresentador')!==false){
-  echo "Boletim config UI: hardening já aplicado.\n";
+}elseif(strpos($b,'Seleção automática do apresentador')!==false || (strpos($b,'Configurações avançadas dos apresentadores')!==false && strpos($b,'Criar boletim — IA escolhe roteiro e apresentador')!==false)){
+  // A interface atual já separa as configurações avançadas da operação editorial.
+  echo "Boletim config UI: interface moderna preservada.\n";
 }else{
   fwrite(STDERR,"Boletim config UI início não encontrado\n");exit(4);
 }
