@@ -1,0 +1,66 @@
+/* Radar 1.3 — mobile compact, 15/10/2026. No changes to business logic. */
+.radar-overview .cards{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px}
+.radar-overview .cards .stat{min-width:0}
+.radar-overview .radar-metrics-details summary{cursor:pointer;font-weight:750;color:#18315d;list-style-position:inside}
+.radar-overview .radar-metrics-details summary:focus-visible{outline:2px solid #ff8b24;outline-offset:3px}
+.radar-overview .radar-metrics-details[open] summary{margin-bottom:12px}
+.radar-overview .radar-metrics-details .settings-box{margin:10px 0}
+.radar-overview .radar-metrics-details .badge{white-space:normal;overflow-wrap:anywhere}
+.radar-overview .radar-metrics-details small{display:block;overflow-wrap:anywhere;line-height:1.5}
+.radar-overview .radar-command-bar .muted{flex-basis:100%}
+.radar-overview .radar-command-bar form{margin:0}
+.radar-overview .radar-command-bar .btn{white-space:normal;text-align:center}
+.radar-overview .queue-grid .matter{min-width:0}
+.radar-overview .queue-grid .matter h3{overflow-wrap:anywhere}
+@media(max-width:1100px){
+ .radar-overview .cards{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+@media(max-width:700px){
+ .radar-overview .main{padding:12px!important}
+ .radar-overview .top{gap:12px}
+ .radar-overview .top h1{font-size:clamp(22px,6vw,30px);line-height:1.15}
+ .radar-overview .top .muted{font-size:13px;line-height:1.45}
+ .radar-overview .top-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;width:100%}
+ .radar-overview .top-actions form,.radar-overview .top-actions button{width:100%;margin:0}
+ .radar-overview .top-actions .btn{padding:10px 8px;font-size:12px;min-height:42px;white-space:normal}
+ .radar-overview .settings-box{padding:12px;margin:10px 0;border-radius:14px}
+ .radar-overview .settings-inline{gap:9px;align-items:center}
+ .radar-overview .settings-inline label.check{flex-basis:100%;font-size:13px}
+ .radar-overview .settings-inline label:not(.check){flex:1;min-width:110px}
+ .radar-overview .settings-inline input[type=number]{width:100%;max-width:130px;padding:8px}
+ .radar-overview .settings-inline .btn{padding:9px 10px;min-height:40px;font-size:12px}
+ .radar-overview .settings-inline>.muted{flex-basis:100%;font-size:12px;line-height:1.4}
+ .radar-overview .radar-command-bar{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px!important}
+ .radar-overview .radar-command-bar form{min-width:0}
+ .radar-overview .radar-command-bar .btn{width:100%;min-height:42px;padding:8px;font-size:12px}
+ .radar-overview .radar-command-bar .muted{grid-column:1/-1;font-size:12px;line-height:1.45}
+ .radar-overview .notice{font-size:13px;line-height:1.45;padding:10px 12px;border-radius:12px;overflow-wrap:anywhere}
+ .radar-overview .cards{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin:12px 0}
+ .radar-overview .cards .stat{padding:12px!important;border-radius:15px;min-height:0}
+ .radar-overview .cards .stat:first-child{grid-column:1/-1;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:4px 12px}
+ .radar-overview .cards .stat:first-child span{grid-column:1;grid-row:1;font-size:12px}
+ .radar-overview .cards .stat:first-child b{grid-column:2;grid-row:1/3;font-size:34px}
+ .radar-overview .cards .stat:first-child small{grid-column:1;grid-row:2}
+ .radar-overview .cards .stat span{font-size:10px!important;line-height:1.3;letter-spacing:.02em}
+ .radar-overview .cards .stat b{font-size:28px!important;line-height:1.15;margin:4px 0}
+ .radar-overview .cards .stat small{font-size:11px!important;line-height:1.4;overflow-wrap:anywhere}
+ .radar-overview .radar-metrics-details{padding:12px}
+ .radar-overview .radar-metrics-details summary{font-size:13px}
+ .radar-overview .radar-metrics-details .badge{font-size:11px;padding:5px 7px;margin:3px 2px 3px 0}
+ .radar-overview .city-block{margin:18px 0}
+ .radar-overview .city-block h2{font-size:20px;margin:10px 0}
+ .radar-overview .queue-grid{gap:10px}
+ .radar-overview .matter{padding:12px;border-radius:15px}
+ .radar-overview .matter .badge{font-size:11px;padding:5px 8px;margin:3px 2px 3px 0}
+ .radar-overview .matter h3{font-size:16px;line-height:1.35;margin:9px 0 6px}
+ .radar-overview .matter p{font-size:13px;line-height:1.5;margin:7px 0 10px}
+ .radar-overview .matter .btn{padding:9px 13px;font-size:13px;min-height:40px}
+ .radar-overview .matter img,.radar-overview .matter .image-pending{height:145px!important}
+ .radar-overview .bulk-row{gap:7px}
+ .radar-overview .bulk-row .btn{font-size:12px;padding:9px}
+}
+@media(max-width:360px){
+ .radar-overview .cards{gap:6px}
+ .radar-overview .cards .stat{padding:9px!important}
+ .radar-overview .radar-command-bar{grid-template-columns:1fr}
+}
