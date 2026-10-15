@@ -82,6 +82,14 @@ check($presenters!=='' && has($presenters,'Catálogo de Apresentadores IA'), 'Ca
 check($presenters!=='' && has($presenters,"'homologado'") && has($presenters,'Critérios de homologação'), 'Catálogo controla homologação humana');
 check($presenters!=='' && has($presenters,'Rosto/fotorealismo') && has($presenters,'Sincronização labial'), 'Catálogo avalia naturalidade audiovisual');
 check($menu!=='' && has($menu,'apresentadores-ia.php'), 'Sidebar expõe Apresentadores IA');
+$navCss=txt($root.'/admin/admin-navigation.css');
+$navJs=txt($root.'/admin/admin-navigation.js');
+check($menu!=='' && has($menu,'admin-navigation.css') && has($menu,'admin-navigation.js'), 'Menu compartilha camada responsiva versionada');
+check(has($menu,'data-nav-toggle') && has($menu,'aria-controls="tvs-admin-nav"') && has($menu,'id="tvs-admin-nav"'), 'Menu mobile tem controle acessivel');
+check(has($navCss,'@media(max-width:1100px)') && has($navCss,'@media(max-width:640px)') && has($navCss,'data-nav-ready'), 'Menu tem layout responsivo e fallback sem JavaScript');
+check(has($navJs,"event.key === 'Escape'") && has($navJs,"aria-expanded"), 'Menu mobile suporta Escape e estado acessivel');
+check(has($menu,'editor-ia.php') && has($menu,'boletim-ia.php') && has($menu,'reporter-ia.php') && has($menu,'revisao-videos.php') && has($menu,'distribuicao-social.php') && has($menu,'tvplay.php'), 'Menu preserva fluxo Editor, Estudio, Conferencia e Distribuicao');
+
 check($callback!=='' && has($callback,'heygen_last_callback_hash'), 'Callback HeyGen idempotente');
 check($callback!=='' && has($callback,"['published','cancelled']"), 'Callback não regride estados terminais');
 check($social!=='' && has($social,'ds_queue_active'), 'Social possui fila operacional');
