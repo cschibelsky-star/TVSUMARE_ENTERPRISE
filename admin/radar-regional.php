@@ -4651,6 +4651,25 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5,$options=[]
     }
   }
   $cursorAfter=tvs_radar_cursor_state();
+  // Diagnostico por pauta, sem alterar gates editoriais nem publicar conteudo.
+  $itemDiagnostics=[];
+  foreach($processedIds as $processedId){
+    foreach($persistedRows as $row){
+      if(!is_array($row)) continue;
+      if((string)($row['id']??'')!==$processedId && (string)($row['source_candidate_id']??'')!==$processedId && (string)($row['original_id']??'')!==$processedId) continue;
+      $itemDiagnostics[]=[
+        'id'=>$processedId,
+        'city'=>(string)($row['city']??''),
+        'previous_stage'=>(string)($row['previous_pipeline_stage']??''),
+        'current_stage'=>(string)($row['new_pipeline_stage']??$row['pipeline_stage']??$row['queue_status']??'terminal'),
+        'reason'=>(string)($row['pipeline_reason']??$row['entry_audit_reason']??''),
+        'pending_reasons'=>array_slice((array)($row['queue_pending_reasons']??[]),0,5),
+        'next_retry_at'=>(string)($row['enrichment_next_retry_at']??$row['ai_editor_next_retry_at']??''),
+        'pipeline_attempts'=>(int)($row['pipeline_attempts']??0)
+      ];
+      break;
+    }
+  }
   $metrics=[
     'run_id'=>$runId,
     'started_at'=>$runStartedAt,
@@ -4659,6 +4678,7 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5,$options=[]
     'retroactive_stage'=>$retroactiveStage,
     'selected_count'=>$selectedCount,
     'processed_count'=>count($processedIds),
+    'item_diagnostics'=>$itemDiagnostics,
     'changed_count'=>$changedCount,
     'unchanged_count'=>max(0,count($processedIds)-$changedCount),
     'persisted_count'=>$persistedCount,
