@@ -26,14 +26,17 @@ function tvs_admin_link($key,$href,$label,$active){
     <?=tvs_admin_link('lixeira','lixeira.php','Lixeira',$activeAdmin)?>
     <?=tvs_admin_link('log_editorial','log-editorial.php','Log Editorial',$activeAdmin)?>
 
-    <span class="menu-group">Inteligência Artificial</span>
-    <?=tvs_admin_link('editor_ia','editor-ia.php','Editor IA',$activeAdmin)?>
-    <?=tvs_admin_link('boletim_ia','boletim-ia.php','Boletim IA',$activeAdmin)?>
-    <?=tvs_admin_link('reporter_ia','reporter-ia.php','Repórter IA',$activeAdmin)?>
-    <?=tvs_admin_link('distribuicao_social','distribuicao-social.php','Distribuição Social',$activeAdmin)?>
-    <?=tvs_admin_link('apresentadores_ia','apresentadores-ia.php','Apresentadores IA',$activeAdmin)?>
-    <?=tvs_admin_link('tvplay','tvplay.php','TV Play IA',$activeAdmin)?>
-    <?=tvs_admin_link('revisao_videos','revisao-videos.php','Revisão de Vídeos',$activeAdmin)?>
+    <span class="menu-group">Central Editorial IA</span>
+    <?=tvs_admin_link('editor_ia','editor-ia.php','Editor IA · Notícias',$activeAdmin)?>
+    <?=tvs_admin_link('boletim_ia','boletim-ia.php','Estúdio IA · Boletins',$activeAdmin)?>
+    <?=tvs_admin_link('reporter_ia','reporter-ia.php','Estúdio IA · Reportagens',$activeAdmin)?>
+    <?=tvs_admin_link('revisao_videos','revisao-videos.php','Estúdio IA · Conferência',$activeAdmin)?>
+    <?=tvs_admin_link('distribuicao_social','distribuicao-social.php','Distribuição IA · Redes',$activeAdmin)?>
+    <?=tvs_admin_link('tvplay','tvplay.php','Distribuição IA · TV Play',$activeAdmin)?>
+    <details class="menu-advanced" <?=($activeAdmin==='apresentadores_ia'?'open':'')?>>
+      <summary>Configurações avançadas</summary>
+      <?=tvs_admin_link('apresentadores_ia','apresentadores-ia.php','Apresentadores IA',$activeAdmin)?>
+    </details>
 
     <span class="menu-group">Conteúdo</span>
     <?=tvs_admin_link('rss','rss-central.php','Central RSS',$activeAdmin)?>
