@@ -40,8 +40,10 @@ function tvs_openai_generate_text($apiKey,$prompt,$options=[],$timeout=25){
     if($res===false || $res===''){ tvs_openai_log('Sem resposta: '.$err); return ['ok'=>false,'error'=>'Sem resposta da OpenAI.']; }
     if(strlen((string)$res)>2097152){ tvs_openai_log('Resposta excedeu limite seguro.'); return ['ok'=>false,'error'=>'Resposta OpenAI excedeu o limite seguro.']; }
     $json=json_decode((string)$res,true);
-    if($http>=400){ tvs_openai_log('HTTP '.$http.': '.substr((string)$res,0,1200)); return ['ok'=>false,'error'=>'HTTP OpenAI '.$http,'http'=>$http]; }
+    if($http>=400){ tvs_openai_log('HTTP '.$http); return ['ok'=>false,'error'=>'HTTP OpenAI '.$http,'http'=>$http]; }
+    if(!is_array($json) || (!empty($json['status']) && $json['status']!=='completed') || !empty($json['error'])){ tvs_openai_log('Resposta inválida ou incompleta.'); return ['ok'=>false,'error'=>'Resposta OpenAI inválida ou incompleta.']; }
     $text=tvs_openai_extract_text($json);
     if($text===''){ tvs_openai_log('Resposta sem texto utilizável.'); return ['ok'=>false,'error'=>'Resposta OpenAI sem texto.']; }
     return ['ok'=>true,'text'=>$text,'model'=>$model,'http'=>$http];
 }
+

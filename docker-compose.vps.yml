@@ -2,6 +2,8 @@ name: tvsumare
 
 services:
   web:
+    # Dedicated HML tag: never replace the production tvsumare-web:latest image.
+    image: tvsumare-web-hml:scriptfix-20261014
     build:
       context: .
       dockerfile: Dockerfile
@@ -22,24 +24,22 @@ services:
       SITE_FACTORY_TOKEN: ${SITE_FACTORY_TOKEN:-}
       TVSUMARE_OUTBOUND_HOSTS: ${TVSUMARE_OUTBOUND_HOSTS:-}
       TVSUMARE_WHATSAPP_WEBHOOK_URL: ${TVSUMARE_WHATSAPP_WEBHOOK_URL:-}
+    # Never mount production state into the HML web container.
     volumes:
-      - /srv/tvsumare/shared/data:/var/www/html/data:rw,z
-      - /srv/tvsumare/shared/uploads:/var/www/html/uploads:rw,z
-      - /srv/tvsumare/shared/videos:/var/www/html/videos:rw,z
-      - /srv/tvsumare/shared/logs:/var/www/html/logs:rw,z
+      - tvsumare_hml_data:/var/www/html/data:rw
+      - tvsumare_hml_uploads:/var/www/html/uploads:rw
+      - tvsumare_hml_videos:/var/www/html/videos:rw
+      - tvsumare_hml_logs:/var/www/html/logs:rw
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777
       - /var/run/apache2:rw,nosuid,nodev,size=8m,mode=0755
       - /var/lock/apache2:rw,nosuid,nodev,size=8m,mode=0755
       - /var/lib/php/sessions:rw,noexec,nosuid,nodev,size=16m,mode=1733,uid=33,gid=33
+    # The central HML provider owns the public router for tv-hml.vitrineiapro.com.br.
+    # Disable direct Docker discovery here to avoid two Traefik routers for one hostname.
+    # Keep the shared proxy network below so the provider can reach this upstream.
     labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.tvsumare-hml.rule=Host(`tv-hml.vitrineiapro.com.br`)"
-      - "traefik.http.routers.tvsumare-hml.entrypoints=websecure"
-      - "traefik.http.routers.tvsumare-hml.tls=true"
-      - "traefik.http.routers.tvsumare-hml.tls.certresolver=le"
-      - "traefik.http.services.tvsumare-hml.loadbalancer.server.port=80"
-      - "traefik.docker.network=n8n-traefik_app_network"
+      - "traefik.enable=false"
     networks:
       - tvsumare_internal
       - tvsumare_egress
@@ -185,6 +185,16 @@ services:
     pids_limit: 64
     mem_limit: 256m
     cpus: 0.5
+
+volumes:
+  tvsumare_hml_data:
+    name: tvsumare_hml_data
+  tvsumare_hml_uploads:
+    name: tvsumare_hml_uploads
+  tvsumare_hml_videos:
+    name: tvsumare_hml_videos
+  tvsumare_hml_logs:
+    name: tvsumare_hml_logs
 
 networks:
   tvsumare_internal:

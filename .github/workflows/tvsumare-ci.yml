@@ -32,8 +32,17 @@ jobs:
           done < <(find . -type f -name '*.php' -print0)
           echo "PHP_LINT=PASS"
 
+      - name: Roteiros invalidos, provedores e persistencia sem chamadas pagas
+        run: php tests/script_generation_test.php
+
       - name: Teste da politica editorial V3
         run: php tests/editorial_policy_v3_test.php
+
+      - name: Teste do Diretor Editorial territorial
+        run: php tests/editorial_director_test.php
+
+      - name: Transicoes editoriais, persistencia, datas e imagens
+        run: php tests/editorial_lifecycle_test.php
 
       - name: Validar regras editoriais criticas
         shell: bash
@@ -54,3 +63,4 @@ jobs:
 
       - name: Build + aplicadores + smoke de homologacao
         run: docker build -t tvsumare-ci .
+

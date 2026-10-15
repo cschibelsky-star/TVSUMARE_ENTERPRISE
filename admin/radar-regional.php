@@ -12,6 +12,7 @@ require_once dirname(__DIR__).'/config.php';
 require_once __DIR__.'/gemini.php';
 require_once __DIR__.'/monitor_lib.php';
 require_once __DIR__.'/radar_queue_rules.php';
+require_once dirname(__DIR__).'/includes/editorial_lifecycle.php';
 $activeAdmin='radar';
 if($TVS_RADAR_IS_CLI_CRON){
   $notice='';
@@ -525,7 +526,7 @@ function tvs_radar_enforce_queue_rules($save=true){
       $q['editorial_status']='Aguardando Editor IA';
       $q['ai_editor_stage']=$q['ai_editor_stage']??'pending';
     }
-    $q['image_status']=$hasImage?'verified':'missing';
+    $q['image_status']=$hasImage?'unverified':'missing';
     $q['home_eligible']=$hasImage?1:0;
     $q['image_review_required']=0;
     $q['sensitive_review_required']=!empty($st['sensitive']) ? 1 : 0;
@@ -3466,10 +3467,12 @@ function tvs_generate_ready_article($city,$cand){
     $result['ai_editor_stage']='pending';
   }
 
+  $sourceDate=tvs_editorial_source_date($cand);
+  if($sourceDate) $result['source_published_at']=gmdate(DATE_ATOM,$sourceDate);
   // Imagem é um atributo paralelo. Falta de foto não altera o estado editorial.
   // A passagem pelo Editor IA, porém, é obrigatória para publicação.
   $imageReady=$hasVerifiedSourceImage && trim((string)$result['image'])!=='' && empty($result['image_review_required']);
-  $result['image_status']=$imageReady?'verified':'missing';
+  $result['image_status']=$imageReady?'unverified':'missing';
   $result['editorial_state']=$editorProcessed?'qualified':'needs_ai_editor';
   $result['region_status']='confirmed';
   $result['freshness_status']='current';
@@ -5293,7 +5296,7 @@ function tvs_radar_update_queue($perCity=15,$mode='normal'){
   return $generated;
 }
 function tvs_publish_from_queue($id,$post){
-  global $newsFile, $TVS_PUBLISH_ERROR;
+  global $newsFile, $queueFile, $TVS_PUBLISH_ERROR;
   $TVS_PUBLISH_ERROR='';
   $queue=tvs_queue_read(); $found=null; $newq=[];
   foreach($queue as $item){ if(($item['id']??'')===$id) $found=$item; else $newq[]=$item; }
@@ -5356,8 +5359,19 @@ function tvs_publish_from_queue($id,$post){
   }
   $publishedImage=trim($post['image']??$found['image']??'');
   if(!tvs_is_valid_image_url($publishedImage)) $publishedImage='';
-  $news[]=['id'=>uniqid('news_'),'title'=>$title,'subtitle'=>trim($post['subtitle']??$found['subtitle']??''),'summary'=>trim($post['summary']??$found['summary']??''),'body'=>$body,'category'=>trim($post['category']??$found['category']??'Cidade'),'city'=>trim($post['city']??$found['city']??'Região'),'source'=>trim($post['source']??$found['source']??'Fonte consultada'),'source_url'=>trim($post['source_url']??$found['source_url']??''),'image'=>$publishedImage,'image_status'=>$publishedImage!==''?'verified':'missing','home_eligible'=>$publishedImage!==''?1:0,'editorial_state'=>'published','image_credit'=>trim($post['image_credit']??$found['image_credit']??tvs_image_credit_from_source($found['source']??$post['source']??'Fonte consultada', $publishedImage)),'tags'=>is_array($found['tags']??null)?$found['tags']:array_filter(array_map('trim',explode(',',(string)($post['tags']??'')))),'seo_title'=>trim($post['seo_title']??$found['seo_title']??$title),'meta_description'=>trim($post['meta_description']??$found['meta_description']??''),'slug'=>trim($post['slug']??$found['slug']??tvs_slug($title)),'instagram_caption'=>trim($post['instagram_caption']??$found['instagram_caption']??''),'whatsapp_text'=>trim($post['whatsapp_text']??$found['whatsapp_text']??''),'human_review_override'=>$humanReview?1:0,'human_reviewed_at'=>$humanReview?date('c'):null,'approved_by'=>$humanReview?'human_editor':'editorial_pipeline','views'=>0,'shares'=>0,'published_at'=>date('c'),'created_at'=>date('c')];
-  tvs_save_json_file($newsFile,$news); tvs_queue_save($newq); return true;
+  $published=['id'=>uniqid('news_'),'title'=>$title,'subtitle'=>trim($post['subtitle']??$found['subtitle']??''),'summary'=>trim($post['summary']??$found['summary']??''),'body'=>$body,'category'=>trim($post['category']??$found['category']??'Cidade'),'city'=>trim($post['city']??$found['city']??'Região'),'source'=>trim($post['source']??$found['source']??'Fonte consultada'),'source_url'=>trim($post['source_url']??$found['source_url']??''),'image'=>$publishedImage,'image_status'=>$publishedImage!==''?'unverified':'missing','home_eligible'=>$publishedImage!==''?1:0,'editorial_state'=>'published','image_credit'=>trim($post['image_credit']??$found['image_credit']??tvs_image_credit_from_source($found['source']??$post['source']??'Fonte consultada', $publishedImage)),'tags'=>is_array($found['tags']??null)?$found['tags']:array_filter(array_map('trim',explode(',',(string)($post['tags']??'')))),'seo_title'=>trim($post['seo_title']??$found['seo_title']??$title),'meta_description'=>trim($post['meta_description']??$found['meta_description']??''),'slug'=>trim($post['slug']??$found['slug']??tvs_slug($title)),'instagram_caption'=>trim($post['instagram_caption']??$found['instagram_caption']??''),'whatsapp_text'=>trim($post['whatsapp_text']??$found['whatsapp_text']??''),'human_review_override'=>$humanReview?1:0,'human_reviewed_at'=>$humanReview?date('c'):null,'approved_by'=>$humanReview?'human_editor':'editorial_pipeline','views'=>0,'shares'=>0,'published_at'=>date('c'),'created_at'=>date('c')];
+  $published=array_replace($found,$published);
+  $published['published_at']=$found['published_at']??'';
+  $published=tvs_editorial_publication_metadata($published,'radar',(string)$id,date('c'));
+  // The queue uses published_at as source time; preserve it before assigning local publication.
+  $sourceTs=tvs_editorial_source_date($found);
+  if($sourceTs && empty($found['source_published_at'])) $published['source_published_at']=gmdate(DATE_ATOM,$sourceTs);
+  $published['created_at']=$found['created_at']??$published['created_at'];
+  $published['origin_snapshot_sha']=hash('sha256',json_encode($found));
+  $result=tvs_editorial_persist_publication($newsFile,$queueFile,'radar',(string)$id,$published);
+  if(empty($result['ok'])){ $TVS_PUBLISH_ERROR='Falha ao persistir publicação; a pauta foi preservada.'; return false; }
+  if(empty($result['queue_cleaned'])) $TVS_PUBLISH_ERROR='Publicação salva; limpeza da fila pendente. Não publique novamente.';
+  return true;
 }
 
 function tvs_selected_ids_from_post(){

@@ -1,5 +1,6 @@
 <?php
 require_once dirname(__DIR__).'/includes/radar_source_rules.php';
+require_once dirname(__DIR__).'/includes/editorial_lifecycle.php';
 
 
 if (!function_exists('tvs_radar_editorial_category')) {
@@ -108,17 +109,8 @@ function tvs_radar_normalize_queue_by_rules(array $items): array
             return $scoreB <=> $scoreA;
         }
 
-        $dateA = strtotime(
-            $a['published_at']
-            ?? $a['created_at']
-            ?? '1970-01-01'
-        ) ?: 0;
-
-        $dateB = strtotime(
-            $b['published_at']
-            ?? $b['created_at']
-            ?? '1970-01-01'
-        ) ?: 0;
+        $dateA = tvs_editorial_source_date($a);
+        $dateB = tvs_editorial_source_date($b);
 
         return $dateB <=> $dateA;
     });
@@ -213,11 +205,7 @@ if (!function_exists('tvs_radar_queue_item_readiness')) {
             ?? ''
         ));
 
-        $date = trim((string)(
-            $item['published_at']
-            ?? $item['created_at']
-            ?? ''
-        ));
+        $date = tvs_editorial_source_date($item);
 
         if ($title === '' || mb_strlen($title, 'UTF-8') < 25) {
             $reasons[] = 'Título ausente ou curto';
@@ -291,7 +279,7 @@ if (!function_exists('tvs_radar_queue_item_readiness')) {
             $reasons[] = 'Texto jornalístico insuficiente';
         }
 
-        if ($date === '' || strtotime($date) === false) {
+        if ($date === 0) {
             $reasons[] = 'Data não confirmada';
         }
 
@@ -331,3 +319,4 @@ if (!function_exists('tvs_radar_split_queue_by_readiness')) {
         ];
     }
 }
+

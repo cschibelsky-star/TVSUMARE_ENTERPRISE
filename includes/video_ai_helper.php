@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__.'/script_generation.php';
 require_once __DIR__.'/outbound_guard.php';
 // TV Sumaré Enterprise 1.1-A — Assistente de Produção IA
 // Helper único para sugestões, roteiro, fila, HeyGen e publicação no TV Play.
@@ -186,7 +187,7 @@ if (!function_exists('tvp_generate_script')) {
     return 'A TV Sumaré acompanha os principais fatos de Sumaré e da região.';
   }
   function tvp_polish_script($script,$job){
-    $script=tvp_clean($script);
+    $script=tvs_script_require_text($script);
     // Roteiros são atemporais: o público pode assistir em qualquer horário.
     $script=preg_replace('/^(?:bom\s+dia|boa\s+tarde|boa\s+noite)[,\.!:\s-]*/iu','',$script);
     $bad=[
@@ -308,14 +309,13 @@ if (!function_exists('tvp_generate_script')) {
           : "Finalize de forma institucional, sem atribuir ao apresentador uma identidade que não corresponda ao perfil configurado."));
     $script='';
     $core=tvp_core_generate_text($prompt);
-    if(!empty($core['ok'])) $script=$core['text']??'';
+    try { $script=tvs_script_provider_text($core); } catch(TvsScriptException $e){ tvs_script_failure('tvplay_core',$e); }
     if($script==='' && trim((string)($GLOBALS['gemini_api_key']??''))!=='' && function_exists('tvs_gemini_generate_text')){
       $r=tvs_gemini_generate_text($GLOBALS['gemini_api_key'],$prompt,['temperature'=>0.18,'maxOutputTokens'=>1100],35);
-      if(!empty($r['ok'])) $script=$r['text']??'';
+      try { $script=tvs_script_provider_text($r); } catch(TvsScriptException $e){ tvs_script_failure('tvplay_gemini',$e); }
     }
-    $script=tvp_polish_script($script,$job);
-    if(tvp_strlen($script)<220) $script=tvp_local_script($job);
-    return tvp_polish_script($script,$job);
+    // Provider failure must not silently become a fabricated local success.
+    return tvs_script_require_text(tvp_polish_script(tvs_script_require_text($script),$job));
   }
 }
 

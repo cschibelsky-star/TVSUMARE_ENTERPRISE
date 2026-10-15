@@ -1,9 +1,11 @@
 <?php
+require_once dirname(__DIR__).'/includes/script_generation.php';
 require_once __DIR__.'/auth.php';
 require_login();
 require_once dirname(__DIR__).'/config.php';
 require_once __DIR__.'/openai.php';
 require_once __DIR__.'/monitor_lib.php';
+require_once dirname(__DIR__).'/includes/editorial_director.php';
 $activeAdmin='boletim_ia';
 
 function bia_h($v){ return htmlspecialchars((string)$v,ENT_QUOTES,'UTF-8'); }
@@ -35,7 +37,8 @@ function bia_openai_editorial($news,$format,$cfg){
   if(empty($r['ok'])) return ['ok'=>false,'presenter'=>$fallback,'script'=>'','error'=>$r['error']??'Falha OpenAI'];
   $raw=trim((string)($r['text']??'')); $raw=preg_replace('/^```(?:json)?\s*|\s*```$/i','',$raw); $j=json_decode($raw,true); if(!is_array($j) && preg_match('/\{.*\}/s',$raw,$m)) $j=json_decode($m[0],true);
   if(!is_array($j)) return ['ok'=>false,'presenter'=>$fallback,'script'=>'','error'=>'Resposta OpenAI sem JSON válido.'];
-  $theme=$j['theme']??''; if(!in_array($theme,['noticias','cidade','giro'],true)) $theme=$fallback['theme']; $reason=bia_clean($j['reason']??'Escolha editorial automática pela OpenAI.'); $script=trim((string)($j['script']??''));
+  $theme=$j['theme']??''; if(!in_array($theme,['noticias','cidade','giro'],true)) $theme=$fallback['theme']; $reason=bia_clean($j['reason']??'Escolha editorial automática pela OpenAI.'); $script=is_string($j['script']??null)?trim($j['script']):'';
+  try { $script=tvs_script_require_text($script); } catch(TvsScriptException $e){ return ['ok'=>false,'presenter'=>$fallback,'script'=>'','error'=>'Roteiro OpenAI inválido.']; }
   if($script==='') return ['ok'=>false,'presenter'=>bia_presenter_result($theme,$cfg,$reason,'openai'),'script'=>'','error'=>'OpenAI não retornou roteiro.'];
   return ['ok'=>true,'presenter'=>bia_presenter_result($theme,$cfg,$reason!==''?$reason:'Escolha editorial automática pela OpenAI.','openai'),'script'=>$script,'model'=>$r['model']??$openai_model];
 }
@@ -49,8 +52,10 @@ function bia_has_active_job($jobs,$newsId,$format){ foreach($jobs as $j){ if(emp
 function bia_visible_boletins($jobs,&$hidden=0){ $out=[]; $seen=[]; $hidden=0; foreach($jobs as $j){ if(empty($j['boletim'])) continue; $key=(string)($j['news_id']??'').'|'.(string)($j['boletim_format']??'noticia_1_minuto'); if(isset($seen[$key])){ $hidden++; continue; } $seen[$key]=1; $out[]=$j; } return $out; }
 function bia_create_job($selected,$format,$cfg){
   $meta=bia_format_meta($format); $editorial=bia_openai_editorial($selected,$format,$cfg); $presenter=$editorial['presenter'];
-  if(!empty($editorial['ok'])) $script=$editorial['script']; else { $base=bia_excerpt($selected['summary']??($selected['subtitle']??($selected['body']??'')),520); $script="TV Sumaré em um minuto. ".bia_clean($selected['title']??'Atualização regional').". {$base} Fonte: ".bia_clean($selected['source']??'fonte consultada').". Continue acompanhando a TV Sumaré."; }
-  return ['id'=>'job_boletim_'.date('YmdHis').'_'.bin2hex(random_bytes(2)),'news_id'=>$selected['id']??'','title'=>$meta['label'].' — '.bia_clean($selected['title']??'TV Sumaré'),'city'=>$selected['city']??'Sumaré','category'=>'Boletim TV Sumaré','source'=>$selected['source']??'Fonte consultada','image'=>$selected['image']??'assets/cat-cidade.svg','script'=>$script,'status'=>'roteiro_revisao','created_at'=>date('c'),'boletim'=>true,'boletim_format'=>$format,'boletim_format_label'=>$meta['label'],'boletim_theme'=>$presenter['theme'],'boletim_theme_label'=>$presenter['theme_label'],'avatar_selection_mode'=>$presenter['selection_mode'],'avatar_selection_reason'=>$presenter['selection_reason'],'editorial_engine'=>!empty($editorial['ok'])?'openai':'fallback_local','editorial_model'=>$editorial['model']??'','editorial_error'=>!empty($editorial['ok'])?'':($editorial['error']??''),'duration_target'=>$meta['target'],'orientation'=>'portrait','aspect_ratio'=>'9:16','social_ready'=>true,'distribution_targets'=>['instagram','tiktok'],'presenter_name'=>$presenter['name'],'presenter_tone'=>$presenter['tone'],'heygen_avatar_id'=>$presenter['avatar_id'],'heygen_voice_id'=>$presenter['voice_id'],'heygen_style_id'=>$presenter['style_id']];
+  $directorMode=tvs_director_classify_city($selected['city']??'');
+  if(empty($editorial['ok'])) throw new TvsScriptException(trim((string)($GLOBALS['openai_api_key']??''))===''?'provider_not_configured':'boletim_provider_failed');
+  $script=tvs_script_require_text($editorial['script']??null);
+  return ['id'=>'job_boletim_'.date('YmdHis').'_'.bin2hex(random_bytes(2)),'news_id'=>$selected['id']??'','title'=>$meta['label'].' — '.bia_clean($selected['title']??'TV Sumaré'),'city'=>$selected['city']??'Sumaré','category'=>'Boletim TV Sumaré','source'=>$selected['source']??'Fonte consultada','image'=>$selected['image']??'assets/cat-cidade.svg','script'=>$script,'status'=>'roteiro_revisao','created_at'=>date('c'),'boletim'=>true,'boletim_format'=>$format,'boletim_format_label'=>$meta['label'],'boletim_theme'=>$presenter['theme'],'boletim_theme_label'=>$presenter['theme_label'],'avatar_selection_mode'=>$presenter['selection_mode'],'avatar_selection_reason'=>$presenter['selection_reason'],'editorial_engine'=>!empty($editorial['ok'])?'openai':'fallback_local','editorial_model'=>$editorial['model']??'','editorial_error'=>!empty($editorial['ok'])?'':($editorial['error']??''),'duration_target'=>$meta['target'],'orientation'=>'portrait','aspect_ratio'=>'9:16','social_ready'=>true,'distribution_targets'=>['instagram','tiktok'],'director_mode'=>$directorMode,'presenter_name'=>$directorMode==='cristian'?'Cristian Schibelsky':'','presenter_tone'=>$presenter['tone'],'heygen_avatar_id'=>'','heygen_voice_id'=>'','heygen_style_id'=>$presenter['style_id']];
 }
 
 $news=bia_read('noticias.json'); usort($news,function($a,$b){ return strcmp((string)($b['published_at']??$b['created_at']??''),(string)($a['published_at']??$a['created_at']??'')); }); $news=array_slice($news,0,40);
@@ -68,10 +73,10 @@ if(($_SERVER['REQUEST_METHOD']??'GET')==='POST' && isset($_POST['create_boletim'
   if(!$selected){ $err='Selecione uma matéria publicada.'; }
   else {
     $candidates=[$selected]; foreach($news as $n){ if((string)($n['id']??'')===$newsId) continue; $candidates[]=$n; }
-    $created=0; $skipped=0;
-    foreach($candidates as $candidate){ if($created>=$qty) break; $cid=(string)($candidate['id']??''); if($cid==='' || bia_has_active_job($jobs,$cid,$format)){ $skipped++; continue; } array_unshift($jobs,bia_create_job($candidate,$format,$cfg)); $created++; }
-    if($created>0){ bia_write('videos_ia.json',$jobs); $msg=$created.' boletim(ns) criado(s) em revisão obrigatória.'.($skipped>0?' Duplicidades ativas foram ignoradas.':''); }
-    else $err='Já existe boletim ativo para esta matéria e formato. Revise ou conclua o existente antes de gerar outro.';
+    $created=0; $skipped=0; $failed=0;
+    foreach($candidates as $candidate){ if($created>=$qty) break; $cid=(string)($candidate['id']??''); if($cid==='' || bia_has_active_job($jobs,$cid,$format)){ $skipped++; continue; } try { $newJob=bia_create_job($candidate,$format,$cfg); tvs_script_store_job(bia_path('videos_ia.json'),$newJob); array_unshift($jobs,$newJob); $created++; } catch(Throwable $e){ $failed++; $err=tvs_script_failure('boletim',$e); } }
+    if($created>0){ $msg=$created.' boletim(ns) criado(s) em revisão obrigatória.'.($skipped>0?' Duplicidades ativas foram ignoradas.':''); }
+    elseif($failed===0) $err='Já existe boletim ativo para esta matéria e formato. Revise ou conclua o existente antes de gerar outro.';
   }
 }
 $hiddenDuplicates=0; $boletins=bia_visible_boletins($jobs,$hiddenDuplicates);
@@ -81,3 +86,4 @@ $hiddenDuplicates=0; $boletins=bia_visible_boletins($jobs,$hiddenDuplicates);
 <div class="box" style="margin-top:14px"><h2>Novo boletim vertical</h2><?php if(!$news): ?><p>Nenhuma matéria publicada disponível.</p><?php else: ?><form method="post" class="form"><?=tvs_csrf_field()?><div class="grid2"><div><label>Quantidade de boletins</label><input type="number" min="1" max="3" name="quantity" value="1"><small>Ao pedir mais de um, o sistema prioriza pautas diferentes e ignora duplicidades ativas.</small></div><div><label>Formato do boletim</label><select name="format"><option value="noticia_1_minuto">Notícia em 1 Minuto</option><option value="servico">Serviço TV Sumaré</option><option value="agenda">Agenda da Cidade</option><option value="giro_rapido">Giro Rápido</option></select></div></div><label>Matéria principal</label><select name="news_id" required><?php foreach($news as $n): ?><option value="<?=bia_h($n['id']??'')?>"><?=bia_h(($n['city']??'Região').' — '.($n['title']??'Sem título'))?></option><?php endforeach; ?></select><p><strong>Motor editorial:</strong> OpenAI • <strong>Saída:</strong> vertical 9:16 • revisão obrigatória • Instagram Reels + TikTok.</p><button class="btn orange" name="create_boletim" value="1">Criar boletim — IA escolhe roteiro e apresentador</button> <a class="btn" href="reporter-ia.php">Abrir Repórter IA</a></form><?php endif; ?></div>
 <div class="box" style="margin-top:14px"><h2>Boletins criados</h2><?php if(!$boletins): ?><p>Nenhum boletim criado nesta fila.</p><?php else: ?><?php foreach(array_slice($boletins,0,12) as $b): ?><div style="padding:12px 0;border-top:1px solid #e5e7eb"><strong><?=bia_h($b['title']??'Boletim')?></strong><br><small><?=bia_h(($b['presenter_name']??'Apresentador').' • '.($b['boletim_theme_label']??'').' • seleção: '.($b['avatar_selection_mode']??'manual').' • motor: '.($b['editorial_engine']??'legado').' • '.($b['aspect_ratio']??'9:16').' • status: '.($b['status']??''))?></small><?php if(!empty($b['avatar_selection_reason'])): ?><p><strong>Por que este avatar:</strong> <?=bia_h($b['avatar_selection_reason'])?></p><?php endif; ?><p><?=bia_h(bia_excerpt($b['script']??'',320))?></p></div><?php endforeach; ?><?php endif; ?></div>
 </main></div></body></html>
+
