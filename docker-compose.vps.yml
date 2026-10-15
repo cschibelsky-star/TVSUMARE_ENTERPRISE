@@ -5,6 +5,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    image: tvsumare-web-hml:sso-20261012
     container_name: tvsumare_web
     restart: unless-stopped
     init: true
