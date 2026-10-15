@@ -16,7 +16,8 @@ if(!is_file($offlineResolutionMarker)){
   $report=tvs_radar_resolve_google_backlog_offline(80);
   tvs_save_json_file($offlineResolutionMarker,$report);
   echo 'SOURCE_RESOLUTION_OFFLINE_V14 '.json_encode($report,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n";
-  exit(0);
+  // A primeira inicializacao nao deve abortar a descoberta continua.
+  // O marcador impede repetir a migracao no ciclo seguinte.
 }
 
 // Antes do Editor IA, corrige matérias já editadas que ficaram bloqueadas
