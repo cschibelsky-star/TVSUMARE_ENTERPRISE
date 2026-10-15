@@ -5037,8 +5037,17 @@ function tvs_radar_run_backlog_batch_v13($limit=20){
     if($id!=='') $discardedIds[$id]=true;
   }
 
-  $advanced=0; $stalled=0; $reasons=[];
+  $advanced=0; $stalled=0; $reasons=[]; $itemDiagnostics=[];
   foreach($ids as $id){
+    $current=$after[$id]??[];
+    $itemDiagnostics[]=[
+      'id'=>$id,
+      'previous_stage'=>(string)($before[$id]['stage']??''),
+      'current_stage'=>(string)($current['pipeline_stage']??(isset($queueIds[$id])?'fila_editorial':(isset($discardedIds[$id])?'descartada':'nao_localizada'))),
+      'reason'=>(string)($current['pipeline_reason']??$current['entry_audit_reason']??''),
+      'next_retry_at'=>(string)($current['enrichment_next_retry_at']??''),
+      'attempts'=>(int)($current['pipeline_attempts']??$before[$id]['attempts']??0)
+    ];
     if(isset($queueIds[$id])){
       $advanced++;
       $reasons['fila_editorial']=($reasons['fila_editorial']??0)+1;
@@ -5084,6 +5093,7 @@ function tvs_radar_run_backlog_batch_v13($limit=20){
     'generated'=>$generated,
     'advanced'=>$advanced,
     'stalled'=>$stalled,
+    'item_diagnostics'=>$itemDiagnostics,
     'errors'=>$errors,
     'first_item_id'=>(string)($metrics['first_item_id']??''),
     'last_item_id'=>(string)($metrics['last_item_id']??''),
