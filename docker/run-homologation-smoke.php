@@ -30,6 +30,11 @@ $redes=txt($root.'/admin/redes.php');
 $instagram=txt($root.'/admin/instagram.php');
 
 check($radar!=='' && has($radar,'Notícia rápida'), 'Radar aceita notícia rápida');
+$radarMobileCss=txt($root.'/admin/radar-mobile.css');
+check(has($radar,'radar-mobile.css?v=20261015-1') && has($radar,'class="radar-overview"'), 'Radar carrega estilo mobile isolado');
+check(has($radar,'<details class="settings-box radar-metrics-details"><summary>Diagnóstico do gargalo</summary>') && has($radar,'<summary>Último lote do backlog 1.3</summary>'), 'Radar recolhe diagnosticos sem esconder dados do servidor');
+check(has($radarMobileCss,'@media(max-width:700px)') && has($radarMobileCss,'.radar-command-bar') && has($radarMobileCss,'.cards .stat'), 'Radar possui cards e comandos compactos no celular');
+
 check($radar!=='' && has($radar,'Enriquecer com IA'), 'Radar possui caminho de enriquecimento');
 check($radar!=='' && has($radar,"if(\$wc<8)"), 'Radar não descarta automaticamente texto apenas por ser curto');
 check($log!=='' && (has($log,'Recuperar para revisão') || has($log,'recuperar') || has($log,'recover')), 'Log Editorial possui recuperação');
