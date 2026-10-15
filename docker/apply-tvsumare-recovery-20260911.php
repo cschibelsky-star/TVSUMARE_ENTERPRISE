@@ -7,6 +7,11 @@
 function recovery_patch_once(string $path,string $old,string $new,string $label): void {
     $code=file_get_contents($path);
     if($code===false){fwrite(STDERR,"{$label}: arquivo não encontrado\n");exit(1);}
+    if(in_array($label,['Drafts idempotência publicada','Drafts publicação compensatória'],true)
+       && strpos($code,"tvs_editorial_persist_publication(\$nf,\$df,'drafts',(string)\$id,\$published)")!==false
+       && strpos($code,"/includes/editorial_lifecycle.php")!==false){
+        echo "{$label}: protocolo editorial atômico preservado.\n"; return;
+    }
     if(strpos($code,$new)!==false){echo "{$label}: já aplicado.\n";return;}
     $count=substr_count($code,$old);
     if($count!==1){fwrite(STDERR,"{$label}: âncora count={$count}; abortando\n");exit(2);}
@@ -137,3 +142,4 @@ foreach([$drafts,$helpers] as $file){
 }
 
 echo "TVSUMARE_RECOVERY_20260911=APPLIED\n";
+

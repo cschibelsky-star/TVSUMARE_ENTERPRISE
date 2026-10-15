@@ -445,8 +445,14 @@ function tvs_read_json_file($path){
   return is_array($d)?$d:[];
 }
 function tvs_save_json_file($path,$data){
-  $dir=dirname($path); if(!is_dir($dir)) @mkdir($dir,0775,true);
-  file_put_contents($path,json_encode(array_values($data), JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES));
+  require_once __DIR__.'/includes/editorial_lifecycle.php';
+  $dir=dirname($path); if(!is_dir($dir) && !@mkdir($dir,0775,true)) return false;
+  $lock=@fopen($dir.'/.editorial-publish.lock','c');
+  if(!$lock) return false;
+  try {
+    if(!flock($lock,LOCK_EX)) return false;
+    return tvs_editorial_atomic_write($path,array_values($data));
+  } finally { flock($lock,LOCK_UN); fclose($lock); }
 }
 function tvs_get_sources(){
   $file=dirname(__DIR__).'/data/fontes.json';
@@ -653,3 +659,4 @@ if(!function_exists('tvs_quality_paragraphs')){
     return array_values(array_filter($out));
   }
 }
+

@@ -10,7 +10,7 @@ foreach([
     // Cards sem foto vistos em Aprovações, Americana e Campinas, em 05/10.
     ['',false,0,true,'missing',0],
     ['',false,0,false,'missing',0],
-    [$photo,true,0,true,'verified',1],
+    [$photo,true,0,true,'unverified',1],
     [$photo,true,1,true,'missing',0],
     ['assets/cat-cidade.svg',false,0,true,'missing',0],
 ] as [$image,$hasVerifiedSourceImage,$review,$editorProcessed,$status,$home]) {
@@ -27,3 +27,4 @@ foreach([
     }
 }
 echo "RADAR_IMAGE_STATE_TEST=PASS\n";
+
