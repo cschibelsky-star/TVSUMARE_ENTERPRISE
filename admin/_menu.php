@@ -5,12 +5,15 @@ function tvs_admin_link($key,$href,$label,$active){
   return '<a class="'.tvs_admin_active($key,$active).'" href="'.$href.'">'.$label.'</a>';
 }
 ?>
-<aside class="side">
+<aside class="side" data-nav-component>
+  <div class="admin-menu-header">
   <div class="logo">
     <img src="../assets/logo-tv-sumare.jpeg" alt="TV Sumaré">
     <div><b>TV SUMARÉ</b><br><small>Enterprise 2.0<br>by Vitrine AI Pro</small></div>
   </div>
-  <nav class="menu">
+  <button type="button" class="admin-menu-toggle" data-nav-toggle aria-controls="tvs-admin-nav" aria-expanded="true"><span class="nav-menu-icon" aria-hidden="true">☰</span><span data-nav-label>Menu</span></button>
+  </div>
+  <nav class="menu" id="tvs-admin-nav" aria-label="Navegação administrativa">
     <span class="menu-group">Operação</span>
     <?=tvs_admin_link('dashboard','index.php','Dashboard',$activeAdmin)?>
     <?=tvs_admin_link('status','status.php','Status do Sistema',$activeAdmin)?>
@@ -54,3 +57,5 @@ function tvs_admin_link($key,$href,$label,$active){
     <a href="logout.php">Sair</a>
   </nav>
 </aside>
+<link rel="stylesheet" href="admin-navigation.css?v=20261015-1">
+<script src="admin-navigation.js?v=20261015-1" defer></script>
