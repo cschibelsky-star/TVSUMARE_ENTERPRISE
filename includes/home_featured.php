@@ -41,7 +41,7 @@ $manualLink = tvs_premium_link($homeFeature['url']??'') ?: 'noticias.php';
       <button id="tvs-ad-toggle" class="tvs-ad-toggle" type="button" hidden>Pausar alternância</button>
     </div>
     <div id="tvs-premium-ad-media" class="tvs-premium-ad-media" aria-label="Anúncio em destaque">
-      <div class="tvs-premium-ad-empty"><strong>Sua marca em destaque</strong><span>Banners e vídeos comerciais de até 10 segundos</span></div>
+      <div class="tvs-premium-ad-empty"><strong>Sua marca em destaque</strong><span>Banners e vídeos comerciais de até 50 segundos</span></div>
     </div>
     <div class="tvs-premium-ad-footer">
       <strong id="tvs-premium-ad-title">Anuncie na TV Sumaré</strong>
@@ -50,5 +50,5 @@ $manualLink = tvs_premium_link($homeFeature['url']??'') ?: 'noticias.php';
   </aside>
 </section>
 <script type="application/json" id="tvs-premium-ad-data"><?=json_encode($featuredAds, JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE)?></script>
-<script defer src="assets/home-featured.js?v=20261016-1"></script>
+<script defer src="assets/home-featured.js?v=20261016-50s"></script>
 <link rel="stylesheet" href="assets/home-featured.css?v=20261016-1">
