@@ -1,0 +1,33 @@
+/* Editorial and commercial space share equal desktop width. Existing home design remains intact. */
+.tvs-premium-feature{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px;margin:20px 0 8px;align-items:stretch}
+.tvs-premium-editorial,.tvs-premium-ad{border-radius:19px;min-width:0;min-height:355px;overflow:hidden}
+.tvs-premium-editorial{padding:25px;display:flex;flex-direction:column;align-items:flex-start;background:linear-gradient(120deg,#152d6c,#103f91);color:#fff}
+.tvs-premium-kicker{font-weight:900;font-size:14px;letter-spacing:.045em}
+.tvs-premium-editorial h2{font-size:clamp(21px,2.3vw,29px);color:#fff;line-height:1.15;margin:12px 0}
+.tvs-premium-editorial p{font-size:14px;line-height:1.5;margin:6px 0;color:#e1edff}
+.tvs-premium-election-results{font-size:13px;line-height:1.35;margin:7px 0 15px;overflow-wrap:anywhere}
+.tvs-premium-election-results p{margin:4px 0}
+.tvs-premium-cta{display:inline-flex;align-items:center;justify-content:center;background:#fff;color:#102f64;border-radius:12px;font-size:13px;font-weight:850;padding:12px 15px;margin-top:auto;max-width:100%;text-align:center}
+.tvs-premium-cta:hover{background:#dbeafe}
+.tvs-premium-ad{background:#12233e;color:#fff;display:flex;flex-direction:column;border:1px solid #284770}
+.tvs-premium-ad-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 15px;font-size:11px;font-weight:900;letter-spacing:.07em;color:#f8d7ae}
+.tvs-ad-toggle{background:transparent;border:1px solid #758cae;border-radius:8px;color:#fff;font:inherit;font-size:10px;letter-spacing:0;cursor:pointer;padding:5px 9px}
+.tvs-premium-ad-media{background:#091629;flex:1;min-height:204px;display:flex;justify-content:center;align-items:center;overflow:hidden}
+.tvs-premium-ad-media img,.tvs-premium-ad-media video{display:block;width:100%;height:100%;max-height:280px;aspect-ratio:16/9;object-fit:contain;background:#091629}
+.tvs-premium-ad-empty{padding:20px;display:flex;flex-direction:column;align-items:center;gap:12px;text-align:center}
+.tvs-premium-ad-empty strong{font-size:22px;color:#fff}
+.tvs-premium-ad-empty span{font-size:13px;color:#cbd5e1}
+.tvs-premium-ad-footer{min-height:58px;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 15px}
+.tvs-premium-ad-footer strong{font-size:13px;line-height:1.2;overflow-wrap:anywhere}
+.tvs-premium-ad-footer a{font-size:12px;flex:0 0 auto;color:#fff;background:#ec7800;border-radius:9px;padding:9px 11px;font-weight:900}
+.tvs-premium-ad-footer a:hover{background:#d56800}
+@media(max-width:760px){
+ .tvs-premium-feature{grid-template-columns:1fr;gap:12px;margin-top:14px}
+ .tvs-premium-editorial,.tvs-premium-ad{min-height:0;border-radius:17px}
+ .tvs-premium-editorial{padding:20px;min-height:260px}
+ .tvs-premium-editorial h2{font-size:23px}
+ .tvs-premium-election-results{font-size:12px}
+ .tvs-premium-ad-media{min-height:195px}
+ .tvs-premium-ad-footer{flex-wrap:wrap}
+}
+@media(prefers-reduced-motion:reduce){.tvs-premium-feature *{scroll-behavior:auto}}
