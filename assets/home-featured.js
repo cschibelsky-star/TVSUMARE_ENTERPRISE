@@ -1,4 +1,4 @@
-/* One shuffled cycle shows every eligible campaign before repeating it. */
+/* Single video loops. Two or more campaigns play in shuffled rounds without immediate repetition. */
 (() => {
   const data = document.getElementById('tvs-premium-ad-data');
   const slot = document.getElementById('tvs-premium-ad-media');
@@ -8,84 +8,122 @@
   if (!data || !slot || !title || !link || !toggle) return;
   let ads = [];
   try { ads = JSON.parse(data.textContent || '[]'); } catch (_) { return; }
-  if (!Array.isArray(ads) || !ads.length) return;
-  const eligible = ads.filter(ad => ad && (ad.kind === 'video' || ad.kind === 'image') &&
-    typeof ad.src === 'string' && /^uploads\/anuncios\/[A-Za-z0-9_-]+\.(jpg|jpeg|png|webp|mp4)$/i.test(ad.src));
+  if (!Array.isArray(ads)) return;
+  const eligible = ads.filter(ad => ad && (ad.kind === 'video' || ad.kind === 'image')
+    && typeof ad.src === 'string'
+    && /^uploads\/anuncios\/[A-Za-z0-9_-]+\.(jpg|jpeg|png|webp|mp4)$/i.test(ad.src)
+    && ((ad.kind === 'video') === /\.mp4$/i.test(ad.src)));
   if (!eligible.length) return;
 
+  const failed = new Set();
   let bag = [];
   let previous = '';
   let timer = null;
   let paused = false;
-  const shuffle = (array) => {
+  let generation = 0;
+  const remaining = () => eligible.filter(ad => !failed.has(ad.id));
+  const shuffle = array => {
     for (let i = array.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [array[i], array[j]] = [array[j], array[i]];
     }
     return array;
   };
-  const nextAd = () => {
+  const pick = () => {
     if (!bag.length) {
-      bag = shuffle(eligible.slice());
+      bag = shuffle(remaining());
       if (bag.length > 1 && bag[0].id === previous) {
-        const swap = bag[0]; bag[0] = bag[1]; bag[1] = swap;
+        const first = bag[0]; bag[0] = bag[1]; bag[1] = first;
       }
     }
     return bag.shift();
   };
-  const clear = () => {
-    if (timer) window.clearTimeout(timer);
+  const stop = () => {
+    if (timer !== null) clearTimeout(timer);
     timer = null;
     const video = slot.querySelector('video');
     if (video) video.pause();
+    generation++;
+  };
+  const noMedia = () => {
+    slot.replaceChildren();
+    const notice = document.createElement('div');
+    notice.className = 'tvs-premium-ad-empty';
+    const strong = document.createElement('strong');
+    strong.textContent = 'Sua marca em destaque';
+    const subtitle = document.createElement('span');
+    subtitle.textContent = 'Espaço disponível para banners e vídeos comerciais';
+    notice.append(strong, subtitle);
+    slot.append(notice);
+    title.textContent = 'Anuncie na TV Sumaré';
+    link.href = 'anuncie.php';
+    link.textContent = 'Conheça os planos';
+    link.removeAttribute('target');
+    link.removeAttribute('rel');
+  };
+  const refreshToggle = () => {
+    toggle.hidden = remaining().length < 2;
+    toggle.textContent = paused ? 'Retomar alternância' : 'Pausar alternância';
   };
   const showNext = () => {
-    clear();
-    if (paused) return;
-    const ad = nextAd();
-    if (!ad) return;
+    stop();
+    if (paused || document.hidden) return;
+    const ad = pick();
+    if (!ad) { noMedia(); refreshToggle(); return; }
     previous = ad.id;
+    const thisGeneration = generation;
     const media = document.createElement(ad.kind === 'video' ? 'video' : 'img');
-    media.src = ad.src;
+    const onFailure = () => {
+      if (generation !== thisGeneration) return;
+      failed.add(ad.id);
+      bag = bag.filter(item => item.id !== ad.id);
+      stop();
+      refreshToggle();
+      if (remaining().length) timer = setTimeout(showNext, 250);
+      else noMedia();
+    };
+    media.addEventListener('error', onFailure, {once: true});
     if (ad.kind === 'video') {
       media.muted = true;
       media.playsInline = true;
       media.autoplay = true;
       media.controls = true;
-      media.loop = eligible.length === 1;
+      media.loop = remaining().length === 1;
       media.preload = 'metadata';
       media.addEventListener('loadedmetadata', () => {
-        if (Number.isFinite(media.duration) && media.duration > 10.05) {
-          clear(); media.remove(); title.textContent = 'Anúncio indisponível';
-          if (eligible.length > 1) timer = window.setTimeout(showNext, 300);
-        }
+        if (generation !== thisGeneration) return;
+        if (Number.isFinite(media.duration) && (media.duration <= 0 || media.duration > 10.05)) onFailure();
+      }, {once: true});
+      media.addEventListener('ended', () => {
+        if (generation === thisGeneration && remaining().length > 1) showNext();
       });
-      media.addEventListener('ended', () => { if (eligible.length > 1) showNext(); });
-      media.play().catch(() => { /* Native play controls stay available. */ });
     } else {
       media.alt = 'Publicidade: ' + String(ad.title || 'anunciante');
       media.loading = 'eager';
     }
+    media.src = ad.src;
     slot.replaceChildren(media);
     title.textContent = String(ad.title || 'Publicidade regional');
-    const href = typeof ad.href === 'string' && (/^https?:\/\//i.test(ad.href) || /^\/(?!\/)/.test(ad.href) || ad.href === 'anuncie.php')
+    const href = typeof ad.href === 'string'
+      && (/^https?:\/\//i.test(ad.href) || /^\/(?!\/)/.test(ad.href) || ad.href === 'anuncie.php')
       ? ad.href : 'anuncie.php';
     link.href = href;
     link.textContent = 'Conheça o anunciante';
     if (/^https?:\/\//i.test(href)) { link.target = '_blank'; link.rel = 'noopener noreferrer'; }
     else { link.removeAttribute('target'); link.removeAttribute('rel'); }
-    if (eligible.length > 1) timer = window.setTimeout(showNext, 10000);
+    refreshToggle();
+    if (remaining().length > 1) timer = setTimeout(showNext, 10000);
+    if (ad.kind === 'video') media.play().catch(() => { /* Native controls remain available. */ });
   };
-  if (eligible.length > 1) {
-    toggle.hidden = false;
-    toggle.addEventListener('click', () => {
-      paused = !paused;
-      toggle.textContent = paused ? 'Retomar alternância' : 'Pausar alternância';
-      if (paused) clear(); else showNext();
-    });
-    document.addEventListener('visibilitychange', () => {
-      if (document.hidden) clear(); else if (!paused) showNext();
-    });
-  }
+  toggle.addEventListener('click', () => {
+    paused = !paused;
+    refreshToggle();
+    if (paused) stop();
+    else showNext();
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) stop();
+    else if (!paused) showNext();
+  });
   showNext();
 })();
