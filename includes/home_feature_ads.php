@@ -39,7 +39,7 @@ function tvs_premium_ads(): array {
             'id' => substr((string)($row['id']??''),0,80),
             'kind' => $video !== '' ? 'video' : 'image',
             'src' => $video !== '' ? $video : $image,
-            'title' => mb_substr(trim((string)($row['company']??'Publicidade regional')),0,90),
+            'title' => substr(trim((string)($row['company']??'Publicidade regional')),0,180),
             'href' => tvs_premium_link($row['link']??'') ?: 'anuncie.php',
         ];
         if (count($ads) >= 40) break;
