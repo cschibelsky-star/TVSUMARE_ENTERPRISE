@@ -4737,6 +4737,7 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5,$options=[]
     'retroactive_stage'=>$retroactiveStage,
     'selected_count'=>$selectedCount,
     'processed_count'=>count($processedIds),
+    'processed_ids'=>$processedIds,
     'item_diagnostics'=>$itemDiagnostics,
     'changed_count'=>$changedCount,
     'unchanged_count'=>max(0,count($processedIds)-$changedCount),
@@ -5077,6 +5078,7 @@ function tvs_radar_run_backlog_batch_v13($limit=20){
   ]);
 
   $metrics=(array)($GLOBALS['TVS_RADAR_LAST_PROCESS_METRICS']??[]);
+  $attemptedLookup=array_fill_keys(array_map('strval',(array)($metrics['processed_ids']??[])),true);
   $afterRows=tvs_radar_discovery_read();
   $after=[];
   foreach($afterRows as $row){
@@ -5096,17 +5098,26 @@ function tvs_radar_run_backlog_batch_v13($limit=20){
     if($id!=='') $discardedIds[$id]=true;
   }
 
-  $advanced=0; $stalled=0; $reasons=[]; $itemDiagnostics=[];
+  $advanced=0; $stalled=0; $notAttempted=0; $reasons=[]; $itemDiagnostics=[];
   foreach($ids as $id){
     $current=$after[$id]??[];
+    $wasAttempted=isset($attemptedLookup[$id]);
     $itemDiagnostics[]=[
       'id'=>$id,
       'previous_stage'=>(string)($before[$id]['stage']??''),
       'current_stage'=>(string)($current['pipeline_stage']??(isset($queueIds[$id])?'fila_editorial':(isset($discardedIds[$id])?'descartada':'nao_localizada'))),
-      'reason'=>(string)($current['pipeline_reason']??$current['entry_audit_reason']??''),
+      'attempted'=>$wasAttempted?1:0,
+      'reason'=>$wasAttempted
+        ? (string)($current['pipeline_reason']??$current['entry_audit_reason']??'')
+        : 'Selecionada, mas não executada pelo processador neste lote.',
       'next_retry_at'=>(string)($current['enrichment_next_retry_at']??''),
       'attempts'=>(int)($current['pipeline_attempts']??$before[$id]['attempts']??0)
     ];
+    if(!$wasAttempted){
+      $notAttempted++;
+      $reasons['selecionada_nao_executada']=($reasons['selecionada_nao_executada']??0)+1;
+      continue;
+    }
     if(isset($queueIds[$id])){
       $advanced++;
       $reasons['fila_editorial']=($reasons['fila_editorial']??0)+1;
@@ -5136,14 +5147,12 @@ function tvs_radar_run_backlog_batch_v13($limit=20){
     $reasons['estado_nao_localizado']=($reasons['estado_nao_localizado']??0)+1;
   }
 
-  // A telemetria do lote deve refletir todos os IDs selecionados que receberam
-  // um desfecho observável (fila, descarte ou estado persistido), não apenas os IDs
-  // que passaram pelo contador interno do process_discovery.
+  // Seleção não equivale a execução: contabiliza apenas IDs realmente tentados.
   $selectedCount=count($ids);
   $handledCount=$advanced+$stalled;
-  $processed=$handledCount;
+  $processed=count($attemptedLookup);
   $persisted=$handledCount;
-  $errors=max(0,$selectedCount-$handledCount);
+  $errors=max(0,$processed-$handledCount);
   $result=[
     'allowed'=>1,
     'selected'=>$selectedCount,
@@ -5152,6 +5161,7 @@ function tvs_radar_run_backlog_batch_v13($limit=20){
     'generated'=>$generated,
     'advanced'=>$advanced,
     'stalled'=>$stalled,
+    'not_attempted'=>$notAttempted,
     'item_diagnostics'=>$itemDiagnostics,
     'errors'=>$errors,
     'first_item_id'=>(string)($metrics['first_item_id']??''),
@@ -5182,6 +5192,7 @@ function tvs_radar_run_backlog_batch_v13($limit=20){
     'error_count'=>$errors,
     'advanced_count'=>$advanced,
     'stalled_count'=>$stalled,
+    'not_attempted_count'=>$notAttempted,
     'reasons'=>$reasons,
     'first_item_id'=>(string)($metrics['first_item_id']??''),
     'last_item_id'=>(string)($metrics['last_item_id']??''),
