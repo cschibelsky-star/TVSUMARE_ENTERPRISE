@@ -17,6 +17,28 @@ $adminGroups=[
   ['title'=>'Auditoria e acesso','description'=>'Histórico e ferramentas','links'=>[['log_editorial','log-editorial.php','Log Editorial' ],['lixeira','lixeira.php','Lixeira' ] ]],
 ];
 ?>
+<?php if($activeAdmin!=='dashboard'):
+  $currentTitle='Área administrativa';
+  $currentSection='TV Sumaré Enterprise';
+  foreach($adminGroups as $group){
+    foreach($group['links'] as $link){
+      if($link[0]===$activeAdmin){
+        $currentTitle=$link[2];
+        $currentSection=$group['title'];
+        break 2;
+      }
+    }
+  }
+?>
+<header class="admin-module-header" aria-label="Navegação administrativa">
+  <a class="admin-module-back" href="index.php" aria-label="Voltar ao painel de cards">← Voltar ao painel</a>
+  <div class="admin-module-location">
+    <span class="admin-module-section"><?=htmlspecialchars($currentSection,ENT_QUOTES,'UTF-8')?></span>
+    <strong><?=htmlspecialchars($currentTitle,ENT_QUOTES,'UTF-8')?></strong>
+  </div>
+  <a class="admin-module-logo" href="index.php" aria-label="TV Sumaré — Painel">TV SUMARÉ</a>
+</header>
+<?php else: ?>
 <aside class="side admin-card-navigation" data-nav-component data-dashboard="<?=($activeAdmin==='dashboard'?'1':'0')?>">
   <div class="admin-menu-header">
     <a class="logo" href="index.php" aria-label="TV Sumaré — Dashboard">
@@ -44,5 +66,6 @@ $adminGroups=[
     <div class="admin-nav-card admin-nav-shortcuts"><strong>Atalhos</strong><div class="admin-nav-card-links"><a href="../videos.php" target="_blank" rel="noopener">Ver vídeos</a><a href="../index.php" target="_blank" rel="noopener">Ver portal</a><a href="logout.php">Sair</a></div></div>
   </nav>
 </aside>
-<link rel="stylesheet" href="admin-navigation.css?v=20261016-cards">
-<script src="admin-navigation.js?v=20261016-cards" defer></script>
+<?php endif; ?>
+<link rel="stylesheet" href="admin-navigation.css?v=20261016-home-only">
+<script src="admin-navigation.js?v=20261016-home-only" defer></script>

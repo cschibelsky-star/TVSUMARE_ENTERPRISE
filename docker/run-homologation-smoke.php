@@ -98,7 +98,10 @@ check(has($menu,'class="side admin-card-navigation"') && has($menu,'class="admin
 check(has($menu,"'title'=>'Operação'") && has($menu,"'title'=>'Redação'") && has($menu,"'title'=>'Central Editorial IA'") && has($menu,"'title'=>'Comercial'"), 'Cards agrupam as áreas administrativas');
 check(has($menu,'destaques.php') && has($menu,'fontes-status.php') && has($menu,'logout.php') && has($menu,'log-editorial.php'), 'Cards preservam destaques, fontes, auditoria e saída');
 check(has($navCss,'.admin-nav-card-links a.active') && has($navCss,'grid-template-columns:repeat(2,minmax(0,1fr))') && has($navCss,'.admin-card-navigation[data-nav-ready="1"]'), 'Cards possuem seleção ativa, mobile em duas colunas e menu recolhível');
-check(has($navJs,"setOpen(side.getAttribute('data-dashboard') === '1')") && has($navJs,'aria-expanded'), 'Dashboard inicia com cards visíveis e páginas internas usam expansão acessível');
+check(has($navJs,"setOpen(side.getAttribute('data-dashboard') === '1')") && has($navJs,'aria-expanded'), 'Dashboard inicia com cards visíveis e controle acessível');
+check(has($menu,'if($activeAdmin!==\'dashboard\')') && has($menu,'<?php else: ?>') && has($menu,'<?php endif; ?>'), 'Cards aparecem somente no dashboard, nunca nas páginas internas');
+check(has($menu,'class="admin-module-header"') && has($menu,'href="index.php" aria-label="Voltar ao painel de cards"'), 'Páginas internas exibem cabeçalho e botão de retorno');
+check(has($navCss,'.admin-module-header') && has($navCss,'.admin-module-back') && has($navCss,'@media(max-width:640px)'), 'Cabeçalho interno mantém responsividade');
 
 
 check($callback!=='' && has($callback,'heygen_last_callback_hash'), 'Callback HeyGen idempotente');
