@@ -52,6 +52,7 @@
       media.playsInline = true;
       media.autoplay = true;
       media.controls = true;
+      media.loop = eligible.length === 1;
       media.preload = 'metadata';
       media.addEventListener('loadedmetadata', () => {
         if (Number.isFinite(media.duration) && media.duration > 10.05) {
