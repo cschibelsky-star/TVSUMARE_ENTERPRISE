@@ -12,6 +12,7 @@ require_once dirname(__DIR__).'/config.php';
 require_once __DIR__.'/gemini.php';
 require_once __DIR__.'/monitor_lib.php';
 require_once __DIR__.'/radar_queue_rules.php';
+require_once dirname(__DIR__).'/includes/radar_source_registry.php';
 $activeAdmin='radar';
 if($TVS_RADAR_IS_CLI_CRON){
   $notice='';
@@ -385,6 +386,7 @@ function tvs_radar_can_direct_approve($m){
   // e passagem confirmada pelo Editor de Matéria IA.
   if(empty($m['ai_editor_processed'])) return false;
   if(!empty($m['sensitive_review_required'])) return false;
+  if(!empty($m['image_review_required']) || !tvs_is_valid_image_url($m['image']??'')) return false;
   if(function_exists('tvs_radar_queue_item_readiness')){
     $readiness=tvs_radar_queue_item_readiness($m);
     if(empty($readiness['ready'])) return false;
@@ -2127,6 +2129,9 @@ function tvs_radar_candidate_category($item){
     (string)($item['description']??'')
   );
 
+  // Acidentes e ocorrências policiais prevalecem sobre palavras incidentais.
+  if(preg_match('~\\b(motorista\\s+morre|colis[aã]o|acidente\\s+(?:fatal|de\\s+tr[aâ]nsito)|atropelamento|persegui[cç][aã]o\\s+policial|pol[ií]cia|pm\\s+apreende|apreens[aã]o\\s+de\\s+drogas|pris[aã]o|roubo|assalto|homic[ií]dio|arma\\s+de\\s+fogo)\\b~iu',$text)) return 'Segurança';
+
   // Contextos compostos têm prioridade sobre palavras isoladas.
   if(preg_match(
     '~\b(empreendedorismo|emprego|empregos|vagas?|pat|'
@@ -2773,7 +2778,7 @@ function tvs_radar_candidates_for_city($city){
   $volumeMode=tvs_radar_is_volume_mode();
   $fontes=tvs_read_json_file(dirname(__DIR__).'/data/fontes.json');
   if(!is_array($fontes)) $fontes=[];
-  $fontes=array_merge($fontes,tvs_radar_builtin_regional_sources($city));
+  $fontes=tvs_radar_merge_source_registry($fontes,array_merge(tvs_radar_builtin_regional_sources($city),tvs_radar_curated_sources_for_city($city)),$city);
   $items=[]; $officialCount=0;
 
   // Coletor dedicado do Liberal por editoria municipal. O portal publica
@@ -5347,6 +5352,10 @@ function tvs_publish_from_queue($id,$post){
   }
   $candidate['title']=$title;
   $candidate['body']=$body;
+  if(!tvs_is_valid_image_url($candidate['image']??'') || (!empty($candidate['image_review_required']) && trim((string)($candidate['image']??''))===trim((string)($found['image']??'')))){
+    $TVS_PUBLISH_ERROR='Publicação bloqueada: imagem jornalística válida e revisada é obrigatória.';
+    return false;
+  }
 
   if($humanReview){
     $critical=[];
