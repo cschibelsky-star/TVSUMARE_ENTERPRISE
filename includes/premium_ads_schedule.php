@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__.'/premium_ads_policy.php';
 /**
  * Advertisement scheduling uses Sao Paulo wall-clock time, consistent with
  * datetime-local inputs in the commercial admin and the PHP application.
@@ -29,7 +30,7 @@ function tvs_ad_display_status(array $ad): string {
     $end = tvs_ad_schedule_parse((string)($ad['end_at']??''));
     $video = tvs_premium_local_media($ad['video']??'', 'video');
     $image = tvs_premium_local_media($ad['banner']??'', 'image');
-    $validVideo = $video !== '' && (float)($ad['video_duration']??0)>0 && (float)($ad['video_duration']??0)<=10;
+    $validVideo = $video !== '' && tvs_premium_video_duration_valid($ad['video_duration']??0);
     if (!$validVideo && $image === '') return 'Mídia indisponível — reenviar arquivo';
     if ($start && $start > $now) return 'Agendado — inicia em '.$start->format('d/m/Y H:i');
     if ($end && $end < $now) return 'Encerrado — período finalizado';
