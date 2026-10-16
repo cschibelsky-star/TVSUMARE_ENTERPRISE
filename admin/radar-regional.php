@@ -2309,6 +2309,21 @@ function tvs_radar_obvious_false_positive($item,$city,&$reason=''){
   $url=trim((string)($item['url']??''));
   $all=$title.' '.$desc.' '.$url;
 
+  // Evita usar sorteios nacionais como pautas municipais sem fato local.
+  if(preg_match('/lotofacil|lotof[aá]cil|mega-sena|quina/iu',$title)
+    && preg_match('/resultado|numeros sorteados|n[uú]meros sorteados|dezenas sorteadas/iu',$title)
+    && !preg_match('/morador|apostador|ganhador|loterica|lot[eé]rica|premio|pr[eê]mio/iu',$title)){
+    $reason='Sorteio nacional sem fato municipal';
+    return true;
+  }
+
+  // Opiniao assinada nao e fato novo para o Radar automatico.
+  if(preg_match('/^(artigo|opini[aã]o|coluna|editorial)\s*:/iu',$title)
+    || preg_match('/[–—] por [A-Za-zÀ-ÿ]+(?: [A-Za-zÀ-ÿ]+){1,5}$/u',$title)){
+    $reason='Artigo de opiniao, nao noticia factual';
+    return true;
+  }
+
   // Publicidade, espaços de festas e conteúdo comercial disfarçado de pauta.
   if(preg_match(
     '~\b(buffet|sal[aã]o de festas|espa[cç]o para eventos|eventos privados|'
