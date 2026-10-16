@@ -26,6 +26,7 @@ function tvs_premium_ads(): array {
     $ads = [];
     foreach ($rows as $row) {
         if (!is_array($row) || ($row['status']??'') !== 'publicado') continue;
+        if (!in_array((string)($row['placement']??''), ['Home', 'Home Premium'], true)) continue;
         $begin = trim((string)($row['start_at']??''));
         $end = trim((string)($row['end_at']??''));
         if ($begin !== '' && (($ts = strtotime($begin)) === false || $ts > $now)) continue;
@@ -35,11 +36,13 @@ function tvs_premium_ads(): array {
         $image = tvs_premium_local_media($row['banner']??'', 'image');
         if ($video !== '' && ($duration <= 0 || $duration > 10)) $video = '';
         if ($video === '' && $image === '') continue;
+        $advertiser = trim((string)($row['company']??'Publicidade regional'));
+        if (preg_match('/^.{0,90}/us', $advertiser, $parts)) $advertiser = $parts[0];
         $ads[] = [
             'id' => substr((string)($row['id']??''),0,80),
             'kind' => $video !== '' ? 'video' : 'image',
             'src' => $video !== '' ? $video : $image,
-            'title' => substr(trim((string)($row['company']??'Publicidade regional')),0,180),
+            'title' => $advertiser,
             'href' => tvs_premium_link($row['link']??'') ?: 'anuncie.php',
         ];
         if (count($ads) >= 40) break;
