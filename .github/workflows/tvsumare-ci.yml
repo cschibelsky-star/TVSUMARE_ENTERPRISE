@@ -36,7 +36,9 @@ jobs:
         run: php tests/editorial_policy_v3_test.php
 
       - name: Testar seguranca de anuncios premium
-        run: php tests/home_featured_ads_test.php
+        run: |
+          php tests/home_featured_ads_test.php
+          php tests/premium_ads_schedule_test.php
 
       - name: Verificar JavaScript da rotacao
         run: node --check assets/home-featured.js
