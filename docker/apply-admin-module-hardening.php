@@ -7,7 +7,7 @@ function patch_once($path,$old,$new,$label){
     echo "{$label}: hardening já aplicado.\n";
     return;
   }
-  if($label==='Status CSRF' && $count===0 && strpos($code,'tvs_verify_csrf();')!==false){
+  if(in_array($label,['Status CSRF','Area Comercial CSRF'],true) && $count===0 && strpos($code,'tvs_verify_csrf();')!==false){
     echo "{$label}: hardening moderno já aplicado.\n";
     return;
   }
