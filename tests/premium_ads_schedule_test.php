@@ -12,7 +12,19 @@ assert_schedule(tvs_ad_schedule_validate('2026-02-30T09:00','')!=='','reject inv
 assert_schedule(tvs_ad_schedule_validate('2026-10-16T25:00','')!=='','reject invalid time');
 assert_schedule(tvs_ad_schedule_validate('2026-10-16 11:01','')!=='','reject non datetime-local input');
 assert_schedule(tvs_ad_display_status(['status'=>'aprovado'])==='aprovado','preserve approval status');
-assert_schedule(str_starts_with(tvs_ad_display_status(['status'=>'publicado','start_at'=>'2099-10-16T11:01']),'Agendado'),'future approved campaign is scheduled');
-assert_schedule(str_starts_with(tvs_ad_display_status(['status'=>'publicado','end_at'=>'2020-01-01T00:00']),'Encerrado'),'past campaign ends');
+assert_schedule(str_starts_with(tvs_ad_display_status(['status'=>'publicado','start_at'=>'2099-10-16T11:01']),'Mídia indisponível'),'schedule cannot hide missing media');
+// The fixture is isolated and removed after testing; no production campaign is created.
+$directory=dirname(__DIR__).'/uploads/anuncios';
+if(!is_dir($directory) && !mkdir($directory,0755,true) && !is_dir($directory)) exit(1);
+$name='premium_test_'.bin2hex(random_bytes(6)).'.png';
+$path=$directory.'/'.$name;
+$image=base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9iWRpW0AAAAASUVORK5CYII=',true);
+if($image===false || file_put_contents($path,$image)===false) exit(1);
+try {
+    $ad=['status'=>'publicado','banner'=>'uploads/anuncios/'.$name];
+    assert_schedule(str_starts_with(tvs_ad_display_status($ad+['start_at'=>'2099-10-16T11:01']),'Agendado'),'future approved campaign is scheduled');
+    assert_schedule(str_starts_with(tvs_ad_display_status($ad+['end_at'=>'2020-01-01T00:00']),'Encerrado'),'past campaign ends');
+    assert_schedule(str_starts_with(tvs_ad_display_status($ad),'Em exibição'),'valid current campaign is active');
+} finally { unlink($path); }
 assert_schedule(str_starts_with(tvs_ad_display_status(['status'=>'publicado']),'Mídia indisponível'),'missing media never marked playing');
 echo "PREMIUM_AD_SCHEDULE_TEST=PASS\n";
