@@ -138,6 +138,9 @@ check(has($monitor,'// Prioriza RSS direto: URL original') && has($monitor,'if(c
 check(has($radar,'radar_source_health.json') && has($radar,'$usableDirect') && has($radar,'$sourceMetrics'), 'Radar mede rendimento por fonte e decide complemento pela relevancia local');
 check(has($sourceStatus,'radar_source_health.json') && has($sourceStatus,'Sem medição') && has($discoveryCron,'SOURCE_REGISTRY_HML'), 'Painel e cron registram saude de fontes e bootstrap isolado');
 
+check(has($radar,'Sorteio nacional sem fato municipal') && has($radar,'Artigo de opiniao, nao noticia factual'), 'Radar filtra loteria nacional e opiniao antes da fila');
+check(has($radar,'tvs_radar_obvious_false_positive($it,$city,$falseReason)'), 'Filtro de falsos positivos permanece no caminho de descoberta');
+
 foreach($ok as $label) echo "OK: {$label}\n";
 if($fail){ foreach($fail as $label) fwrite(STDERR,"FAIL: {$label}\n"); fwrite(STDERR,'HOMOLOGATION_SMOKE=FAIL total='.count($fail)."\n"); exit(1); }
 echo 'HOMOLOGATION_SMOKE=PASS total='.count($ok)."\n";
