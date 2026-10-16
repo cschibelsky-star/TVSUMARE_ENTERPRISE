@@ -1,0 +1,122 @@
+<?php
+declare(strict_types=1);
+require_once __DIR__.'/election_projection.php';
+
+function tvs_election_states(): array { return ['ac'=>'Acre','al'=>'Alagoas','ap'=>'Amapá','am'=>'Amazonas','ba'=>'Bahia','ce'=>'Ceará','df'=>'Distrito Federal','es'=>'Espírito Santo','go'=>'Goiás','ma'=>'Maranhão','mt'=>'Mato Grosso','ms'=>'Mato Grosso do Sul','mg'=>'Minas Gerais','pa'=>'Pará','pb'=>'Paraíba','pr'=>'Paraná','pe'=>'Pernambuco','pi'=>'Piauí','rj'=>'Rio de Janeiro','rn'=>'Rio Grande do Norte','rs'=>'Rio Grande do Sul','ro'=>'Rondônia','rr'=>'Roraima','sc'=>'Santa Catarina','sp'=>'São Paulo','se'=>'Sergipe','to'=>'Tocantins']; }
+function tvs_election_specs(string $uf='sp'): array {
+    $states=tvs_election_states();
+    if (!isset($states[$uf])) throw new InvalidArgumentException('UF inválida.');
+    $name=$states[$uf];
+    return [
+        ['key'=>'presidente','title'=>'Presidente — Brasil','uf'=>'br','cargo'=>1,'election'=>6257],
+        ['key'=>'governador','title'=>'Governador — '.$name,'uf'=>$uf,'cargo'=>3,'election'=>6259],
+        ['key'=>'senador','title'=>'Senador — '.$name,'uf'=>$uf,'cargo'=>5,'election'=>6259],
+        ['key'=>'deputado-federal','title'=>'Deputado Federal — '.$name,'uf'=>$uf,'cargo'=>6,'election'=>6259],
+        ['key'=>'deputado-estadual','title'=>($uf==='df'?'Deputado Distrital':'Deputado Estadual').' — '.$name,'uf'=>$uf,'cargo'=>($uf==='df'?8:7),'election'=>6259],
+    ];
+}
+function tvs_election_number($value): float {
+    if (!is_scalar($value) || !preg_match('/^\d+(?:[.,]\d+)?$/D', (string)$value)) {
+        throw new RuntimeException('Número inválido no arquivo oficial.');
+    }
+    return (float)str_replace(',', '.', (string)$value);
+}
+function tvs_election_parse(array $raw, array $spec): array {
+    if (($raw['f']??'') !== 'o' || (int)($raw['ele']??0) !== $spec['election']
+        || (string)($raw['t']??'') !== '1' || ($raw['tpabr']??'') !== ($spec['uf']==='br'?'br':'uf')
+        || strtolower((string)($raw['cdabr']??'')) !== $spec['uf']) {
+        throw new RuntimeException('Arquivo de outra eleição, abrangência ou ambiente.');
+    }
+    if (($raw['and']??'n') === 'n') throw new RuntimeException('Totalização ainda não iniciada.');
+    if (($raw['dv']??'') !== 's') throw new RuntimeException('Divulgação ainda indisponível.');
+    $cargo = null;
+    foreach (($raw['carg']??[]) as $item) if ((int)($item['cd']??0)===$spec['cargo']) $cargo=$item;
+    if (!$cargo || !isset($raw['s']['pst'])) throw new RuntimeException('Estrutura oficial incompleta.');
+    $sections=tvs_election_number($raw['s']['pst']);
+    if ($sections>100) throw new RuntimeException('Percentual de seções inválido.');
+    $timestamp=DateTimeImmutable::createFromFormat('!d/m/Y H:i:s', ($raw['dg']??'').' '.($raw['hg']??''), new DateTimeZone('America/Sao_Paulo'));
+    if (!$timestamp || $timestamp->format('d/m/Y')!=='04/10/2026') throw new RuntimeException('Data oficial inesperada.');
+    $proportional=in_array($spec['cargo'],[6,7,8],true);
+    $electoralQuotient=$proportional && isset($cargo['qe']) ? tvs_election_number($cargo['qe']) : null;
+    $seats=isset($cargo['nv']) ? (int)tvs_election_number($cargo['nv']) : null;
+    $groups=[];
+    foreach(($cargo['agr']??[]) as $index=>$group){
+        $key=(string)($group['n']??$index);
+        $groups[$key]=['name'=>(string)($group['com']??$group['nm']??''),'seats'=>isset($group['vag'])?(int)tvs_election_number($group['vag']):null];
+    }
+    $candidates=[];
+    foreach (($cargo['agr']??[]) as $group) foreach (($group['par']??[]) as $party) foreach (($party['cand']??[]) as $candidate) {
+        if (!isset($candidate['nmu'],$candidate['n'],$candidate['vap'],$candidate['pvap'])) throw new RuntimeException('Candidatura incompleta.');
+        $percent=tvs_election_number($candidate['pvap']);
+        if ($percent>100) throw new RuntimeException('Percentual de candidatura inválido.');
+        $candidates[]=['name'=>(string)$candidate['nmu'],'number'=>(string)$candidate['n'],'party'=>(string)($party['sg']??''),'votes'=>tvs_election_number($candidate['vap']),'percent'=>$percent,'status'=>(string)($candidate['st']??''),'group_id'=>(string)($group['n']??array_search($group,$cargo['agr'],true)),'vote_validity'=>(string)($candidate['dvt']??'')];
+    }
+    if (!$candidates) throw new RuntimeException('Candidaturas ainda indisponíveis.');
+    usort($candidates,fn($a,$b)=>($b['votes']<=>$a['votes']) ?: strcmp($a['number'],$b['number']));
+    foreach($candidates as &$candidate){
+        $peers=array_values(array_filter($candidates,static fn($peer)=>$peer['group_id']===$candidate['group_id']));
+        $candidate['group_rank']=1+count(array_filter($peers,static fn($peer)=>$peer['votes']>$candidate['votes']));
+        $candidate['group_tied']=count(array_filter($peers,static fn($peer)=>$peer['votes']===$candidate['votes']))>1;
+        $candidate['group_name']=$groups[$candidate['group_id']]['name']??$candidate['party'];
+        $candidate['group_seats']=$groups[$candidate['group_id']]['seats']??null;
+    }
+    unset($candidate);
+    $projection=$proportional?tvs_election_projection($raw,$cargo):null;
+    if($proportional)foreach($candidates as &$candidate){
+        $entry=$projection['candidates'][$candidate['number']]??null;
+        $candidate['projection']=$entry??['status'=>'undefined','reason'=>$projection['reason']??'Dados insuficientes.'];
+        $candidate['projected_group_seats']=$projection['group_seats'][$candidate['group_id']]??null;
+    }
+    unset($candidate);
+    if($projection)unset($projection['candidates']);
+    return ['projection'=>$projection,'key'=>$spec['key'],'proportional'=>$proportional,'electoral_quotient'=>$electoralQuotient,'seats'=>$seats,'title'=>$spec['title'],'candidates'=>$candidates,'sections'=>$sections,'updated_at'=>$timestamp->format(DATE_ATOM),'final'=>($raw['tf']??'')==='s','source'=>'Tribunal Superior Eleitoral'];
+}
+function tvs_election_fetch(string $url): array {
+    if (!str_starts_with($url,'https://resultados.tse.jus.br/oficial/')) throw new RuntimeException('Fonte não permitida.');
+    $context=stream_context_create(['http'=>['timeout'=>5,'follow_location'=>0,'ignore_errors'=>true,'header'=>"Accept: application/json\r\nUser-Agent: TVSumare-Eleicoes/1.0\r\n"],'ssl'=>['verify_peer'=>true,'verify_peer_name'=>true]]);
+    $body=@file_get_contents($url,false,$context,0,2097153);
+    if (!is_string($body) || strlen($body)>2097152 || !preg_match('/^HTTP\/\S+ 200\b/', $http_response_header[0]??'')) throw new RuntimeException('Fonte oficial temporariamente indisponível.');
+    $decoded=json_decode($body,true,64,JSON_THROW_ON_ERROR);
+    if (!is_array($decoded)) throw new RuntimeException('Resposta oficial inválida.');
+    return $decoded;
+}
+function tvs_election_snapshot(string $uf='sp', bool $presidentOnly=false): array {
+    $directory=__DIR__.'/../data/elections-2026';
+    if (!is_dir($directory) && !@mkdir($directory,0750,true)) throw new RuntimeException('Cache indisponível.');
+    $results=[];
+    $specs=tvs_election_specs($uf);
+    if ($presidentOnly) $specs=array_slice($specs,0,1);
+    foreach ($specs as $spec) {
+        $cacheKey=$spec['uf']==='br'?$spec['key']:$spec['uf'].'-'.$spec['key'];
+        $path=$directory.'/'.$cacheKey.'.json';
+        $read=static function() use ($path) { $raw=@file_get_contents($path); return is_string($raw)?(json_decode($raw,true)?:[]):[]; };
+        $cache=$read();
+        $lock=@fopen($directory.'/'.$cacheKey.'.lock','c');
+        if ($lock && flock($lock,LOCK_EX|LOCK_NB)) {
+            $cache=$read();
+            if (time()-(int)($cache['checked_at']??0)>=30) {
+                $cache['checked_at']=time();
+                try {
+                    $url=sprintf('https://resultados.tse.jus.br/oficial/ele2026/%d/dados/%s/%s-c%04d-e%06d-u.json',$spec['election'],$spec['uf'],$spec['uf'],$spec['cargo'],$spec['election']);
+                    $parsed=tvs_election_parse(tvs_election_fetch($url),$spec);
+                    if (isset($cache['data']['updated_at']) && strtotime($parsed['updated_at'])<strtotime($cache['data']['updated_at'])) throw new RuntimeException('Arquivo anterior ao cache.');
+                    $cache['data']=$parsed; $cache['fetched_at']=time(); $cache['error']=false; $cache['reason']=null;
+                } catch (Throwable $error) { $cache['error']=true; $cache['reason']=$error->getMessage()==='Totalização ainda não iniciada.'?'waiting':'source_unavailable'; }
+                $temporary=tempnam($directory,'cache-');
+                if ($temporary!==false) {
+                    if (file_put_contents($temporary,json_encode($cache,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR))!==false) @rename($temporary,$path);
+                    if (is_file($temporary)) @unlink($temporary);
+                }
+            }
+            flock($lock,LOCK_UN);
+        }
+        if ($lock) fclose($lock);
+        $entry=$cache['data']??['title'=>$spec['title'],'candidates'=>[],'sections'=>null,'updated_at'=>null,'final'=>false];
+        $entry['unavailable']=empty($cache['data']);
+        $entry['reason']=$cache['reason']??null;
+        $entry['stale']=!empty($cache['error']) || time()-(int)($cache['fetched_at']??0)>120
+            || (!empty($entry['updated_at']) && !$entry['final'] && time()-strtotime($entry['updated_at'])>180);
+        $results[]=$entry;
+    }
+    return ['races'=>$results,'refresh_seconds'=>30];
+}

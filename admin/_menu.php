@@ -5,37 +5,46 @@ function tvs_admin_link($key,$href,$label,$active){
   return '<a class="'.tvs_admin_active($key,$active).'" href="'.$href.'">'.$label.'</a>';
 }
 ?>
-<aside class="side">
+<aside class="side" data-nav-component>
+  <div class="admin-menu-header">
   <div class="logo">
     <img src="../assets/logo-tv-sumare.jpeg" alt="TV Sumaré">
     <div><b>TV SUMARÉ</b><br><small>Enterprise 2.0<br>by Vitrine AI Pro</small></div>
   </div>
-  <nav class="menu">
+  <button type="button" class="admin-menu-toggle" data-nav-toggle aria-controls="tvs-admin-nav" aria-expanded="true"><span class="nav-menu-icon" aria-hidden="true">☰</span><span data-nav-label>Menu</span></button>
+  </div>
+  <nav class="menu" id="tvs-admin-nav" aria-label="Navegação administrativa">
     <span class="menu-group">Operação</span>
     <?=tvs_admin_link('dashboard','index.php','Dashboard',$activeAdmin)?>
     <?=tvs_admin_link('status','status.php','Status do Sistema',$activeAdmin)?>
     <?=tvs_admin_link('fontes_status','fontes-status.php','Saúde das Fontes',$activeAdmin)?>
+    <?=tvs_admin_link('metricas','metricas.php','Métricas de Acesso',$activeAdmin)?>
 
     <span class="menu-group">Redação</span>
     <?=tvs_admin_link('radar','radar-regional.php','Aprovações',$activeAdmin)?>
+    <?=tvs_admin_link('nova_noticia','nova-noticia.php','Notícia Rápida',$activeAdmin)?>
+    <?=tvs_admin_link('drafts','drafts.php','Revisões Pendentes',$activeAdmin)?>
+    <?=tvs_admin_link('validade','content-validity.php','Validade Editorial',$activeAdmin)?>
     <?=tvs_admin_link('noticias','noticias.php','Publicadas',$activeAdmin)?>
     <?=tvs_admin_link('lixeira','lixeira.php','Lixeira',$activeAdmin)?>
     <?=tvs_admin_link('log_editorial','log-editorial.php','Log Editorial',$activeAdmin)?>
 
-    <span class="menu-group">Inteligência Artificial</span>
-    <?=tvs_admin_link('editor_ia','editor-ia.php','Editor IA',$activeAdmin)?>
-    <?=tvs_admin_link('gemini','gemini.php','Gemini',$activeAdmin)?>
-    <?=tvs_admin_link('reporter_ia','reporter-ia.php','Repórter IA',$activeAdmin)?>
-    <?=tvs_admin_link('boletim_ia','boletim-ia.php','Boletim IA',$activeAdmin)?>
-    <?=tvs_admin_link('distribuicao_social','distribuicao-social.php','Distribuição Social',$activeAdmin)?>
-    <?=tvs_admin_link('tvplay','tvplay.php','TV Play IA',$activeAdmin)?>
+    <span class="menu-group">Central Editorial IA</span>
+    <?=tvs_admin_link('editor_ia','editor-ia.php','Editor IA · Notícias',$activeAdmin)?>
+    <?=tvs_admin_link('boletim_ia','boletim-ia.php','Estúdio IA · Boletins',$activeAdmin)?>
+    <?=tvs_admin_link('reporter_ia','reporter-ia.php','Estúdio IA · Reportagens',$activeAdmin)?>
+    <?=tvs_admin_link('revisao_videos','revisao-videos.php','Estúdio IA · Conferência',$activeAdmin)?>
+    <?=tvs_admin_link('distribuicao_social','distribuicao-social.php','Distribuição IA · Redes',$activeAdmin)?>
+    <?=tvs_admin_link('tvplay','tvplay.php','Distribuição IA · TV Play',$activeAdmin)?>
+    <details class="menu-advanced" <?=($activeAdmin==='apresentadores_ia'?'open':'')?>>
+      <summary>Configurações avançadas</summary>
+      <?=tvs_admin_link('apresentadores_ia','apresentadores-ia.php','Apresentadores IA',$activeAdmin)?>
+    </details>
 
     <span class="menu-group">Conteúdo</span>
     <?=tvs_admin_link('rss','rss-central.php','Central RSS',$activeAdmin)?>
     <?=tvs_admin_link('fontes','fontes.php','Fontes',$activeAdmin)?>
-    <?=tvs_admin_link('videos','videos.php','Vídeos',$activeAdmin)?>
     <?=tvs_admin_link('aovivo','aovivo.php','Ao Vivo',$activeAdmin)?>
-    <?=tvs_admin_link('colunas','colunas.php','Colunistas',$activeAdmin)?>
 
     <span class="menu-group">Negócios</span>
     <?=tvs_admin_link('guia','guia-comercial.php','Guia Comercial',$activeAdmin)?>
@@ -43,7 +52,10 @@ function tvs_admin_link($key,$href,$label,$active){
     <?=tvs_admin_link('monetizacao','monetizacao.php','Monetização',$activeAdmin)?>
 
     <span class="menu-group">Atalhos</span>
-    <a href="../index.php" target="_blank">Ver site</a>
+    <a href="../videos.php" target="_blank" rel="noopener">Ver vídeos</a>
+    <a href="../index.php" target="_blank" rel="noopener">Ver site</a>
     <a href="logout.php">Sair</a>
   </nav>
 </aside>
+<link rel="stylesheet" href="admin-navigation.css?v=20261015-1">
+<script src="admin-navigation.js?v=20261015-1" defer></script>

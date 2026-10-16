@@ -1,4 +1,7 @@
-<?php $active = $active ?? 'home'; ?>
+<?php
+require_once __DIR__.'/includes/access_metrics.php';
+$active = $active ?? 'home';
+?>
 <div class="top-strip"><div class="container top-strip__inner"><div>Hoje • Sumaré e Região</div><div class="quick-links"><a href="noticias.php">Últimas notícias</a><a class="subscribe-link" href="anuncie.php">Assine / Anuncie</a></div></div></div>
 <?php
 $uhFile = __DIR__ . '/data/ultimahora.json';

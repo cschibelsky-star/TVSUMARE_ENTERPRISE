@@ -3,17 +3,63 @@ declare(strict_types=1);
 
 function tvs_outbound_allowed_hosts(): array {
     $defaults = [
+        'api.openai.com',
         'generativelanguage.googleapis.com',
         'api.heygen.com',
         'api.anthropic.com',
         'news.google.com',
+        'api.feedbin.com',
+        'extract.feedbin.com',
         'agenciabrasil.ebc.com.br',
         'www.saopaulo.sp.gov.br',
         'portaldesumare.com.br',
         'sumare.sp.gov.br',
         'g1.globo.com',
+        'ge.globo.com',
+        'campinas.sp.gov.br',
+        'www.campinas.sp.gov.br',
+        'americana.sp.gov.br',
+        'www.americana.sp.gov.br',
+        'paulinia.sp.gov.br',
+        'www.paulinia.sp.gov.br',
+        'novaodessa.sp.gov.br',
+        'www.novaodessa.sp.gov.br',
+        'hortolandia.sp.gov.br',
+        'www.hortolandia.sp.gov.br',
+        'portalhortolandia.com.br',
+        'www.portalhortolandia.com.br',
+        'horacampinas.com.br',
+        'www.horacampinas.com.br',
+        'sbnoticias.com.br',
+        'www.sbnoticias.com.br',
+        'novomomento.com.br',
+        'www.novomomento.com.br',
+        'noticiasumare.com.br',
+        'www.noticiasumare.com.br',
+        'portalon.com.br',
+        'www.portalon.com.br',
+        'noticiafm.com',
+        'www.noticiafm.com',
+        'tribunaliberal.com.br',
+        'www.tribunaliberal.com.br',
+        'liberal.com.br',
+        'www.liberal.com.br',
+        'sumare.portaldacidade.com',
+        'tododia.com.br',
+        'www.tododia.com.br',
+        'hortonews.com.br',
+        'www.hortonews.com.br',
+        'portalporque.com.br',
+        'www.portalporque.com.br',
         'www.bing.com',
         'search.yahoo.com',
+        'www.youtube.com',
+        'i.ytimg.com',
+        'accounts.google.com',
+        'oauth2.googleapis.com',
+        'www.googleapis.com',
+        'marketing.hml.vitrineiapro.com.br',
+        'core.hml.vitrineiapro.com.br',
     ];
     $extra = array_filter(array_map(
         static fn($host) => strtolower(trim((string) $host)),
@@ -78,7 +124,9 @@ function tvs_outbound_curl_options($url, int $timeout = 10): ?array {
     if ($details === null) {
         return null;
     }
-    $timeout = max(2, min($timeout, 30));
+    // Uploads resumíveis de vídeo podem durar vários minutos. Chamadas normais
+    // continuam usando os timeouts curtos definidos por cada consumidor.
+    $timeout = max(2, min($timeout, 900));
     return [
         CURLOPT_PROTOCOLS => CURLPROTO_HTTPS,
         CURLOPT_REDIR_PROTOCOLS => CURLPROTO_HTTPS,

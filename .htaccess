@@ -11,6 +11,7 @@ Header always set Permissions-Policy "camera=(), microphone=(), geolocation=()"
 
 <IfModule mod_rewrite.c>
 RewriteEngine On
+RewriteRule ^eleicoes-2026/?$ eleicoes-2026.php [L]
 RewriteRule ^rss\.xml$ rss.php [L]
 RewriteRule ^sitemap\.xml$ sitemap.xml.php [L]
 RewriteRule ^sitemap-news\.xml$ news-sitemap.php [L]
