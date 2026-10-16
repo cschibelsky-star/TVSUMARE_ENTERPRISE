@@ -1,56 +1,30 @@
-/* TV SUMARÉ — navegação administrativa aprovada em 14/10/2026.
-   Camada isolada: preserva a identidade azul/laranja e todos os links do menu. */
-.side .admin-menu-header{display:block}
-.side .admin-menu-toggle{display:none}
-.side .menu-advanced{min-width:0;border-radius:11px;margin-top:3px}
-.side .menu-advanced summary{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:37px;padding:9px 11px;margin:2px 0 0;border-radius:11px;color:#cbd5e1;cursor:pointer;font-size:12.5px;font-weight:750;list-style:none}
-.side .menu-advanced summary::-webkit-details-marker{display:none}
-.side .menu-advanced summary:after{content:"▾";font-size:13px;transition:transform .18s ease}
-.side .menu-advanced[open] summary:after{transform:rotate(180deg)}
-.side .menu-advanced summary:hover,.side .menu-advanced summary:focus-visible{background:rgba(255,255,255,.1);color:#fff}
-.side .menu-advanced a{margin-left:10px;border-left:2px solid rgba(255,255,255,.16);border-radius:0 10px 10px 0}
-.side .menu a.active{background:rgba(255,122,0,.18);color:#fff;box-shadow:inset 3px 0 0 #ff7a00}
-.side .menu a:focus-visible,.side .admin-menu-toggle:focus-visible{outline:2px solid #ffb26f;outline-offset:2px}
-@media(min-width:1101px){
- .admin{grid-template-columns:258px minmax(0,1fr)}
- .side{padding:14px 12px}
- .side .logo{gap:9px;padding:10px;border-radius:15px;margin-bottom:10px}
- .side .logo img{width:52px;height:46px}
- .side .logo b{font-size:13px;letter-spacing:.06em}
- .side .logo small{font-size:10px}
- .side .menu{gap:2px}
- .side .menu-group{font-size:10px;margin:11px 8px 3px}
- .side .menu a{min-height:33px;padding:7px 10px;font-size:12.5px;font-weight:750;border-radius:10px}
- .side .menu-advanced summary{min-height:33px;padding:7px 10px}
- .main{min-width:0}
-}
-@media(max-width:1100px){
- .side{padding:12px 16px;height:auto;max-height:none;overflow:visible}
- .side .admin-menu-header{display:flex;align-items:center;justify-content:space-between;gap:12px}
- .side .logo{flex:1;min-width:0;max-width:350px;margin:0;padding:8px 10px;border-radius:14px}
- .side .logo img{width:48px;height:42px}
- .side .logo b{font-size:13px}
- .side .logo small{font-size:10px}
- .side .admin-menu-toggle{display:inline-flex;align-items:center;justify-content:center;gap:8px;flex:none;min-height:44px;min-width:104px;padding:10px 12px;border:1px solid rgba(255,255,255,.23);border-radius:12px;background:rgba(255,255,255,.11);color:#fff;font-size:13px;font-weight:800}
- .side .admin-menu-toggle .nav-menu-icon{font-size:20px;line-height:1}
- .side .menu{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 8px;max-height:min(68vh,610px);overflow-y:auto;overscroll-behavior:contain;padding:12px 0 4px;scrollbar-width:thin}
- .side[data-nav-ready="1"]:not(.nav-open) .menu{display:none}
- .side .menu-group{grid-column:1/-1;margin:12px 8px 2px}
- .side .menu a{min-height:44px;font-size:13px;padding:10px 12px}
- .side .menu-advanced{grid-column:1/-1}
- .side .menu-advanced summary{min-height:44px;font-size:13px;padding:10px 12px}
- .side .menu-advanced a{margin-top:4px}
- .main{min-width:0}
-}
-@media(max-width:640px){
- .side{padding:10px 12px}
- .side .logo{max-width:none}
- .side .logo img{width:42px;height:38px}
- .side .logo b{font-size:12px}
- .side .menu{grid-template-columns:1fr;max-height:min(68vh,570px)}
- .side .admin-menu-toggle{min-width:94px}
- .side .menu-group{margin-top:9px}
-}
-@media(prefers-reduced-motion:reduce){
- .side .menu-advanced summary:after{transition:none}
-}
+/* Navegação em cards — TV Sumaré Enterprise. Escopo isolado do menu. */
+.admin:has(> .admin-card-navigation){display:block}
+.admin-card-navigation.side{position:relative;top:auto;height:auto;max-height:none;overflow:visible;padding:18px clamp(14px,3vw,34px);background:transparent;color:#0f172a}
+.admin-card-navigation .admin-menu-header{display:flex;align-items:center;justify-content:space-between;gap:14px;max-width:1500px;margin:0 auto 16px}
+.admin-card-navigation .logo{display:flex;align-items:center;gap:12px;background:#fff;color:#061a4d;border:1px solid #dbe7f4;box-shadow:0 8px 28px rgba(15,23,42,.06);padding:10px 15px;border-radius:18px;margin:0}
+.admin-card-navigation .logo img{width:52px;height:46px}
+.admin-card-navigation .logo span{display:grid;gap:3px}
+.admin-card-navigation .logo b{font-size:14px}
+.admin-card-navigation .logo small{color:#64748b;font-size:11px}
+.admin-card-navigation .admin-menu-toggle{display:inline-flex;align-items:center;gap:8px;min-height:44px;border-radius:12px;background:#082b78;color:#fff;padding:10px 16px;font-size:13px;font-weight:800}
+.admin-card-navigation .admin-card-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;max-width:1500px;margin:0 auto}
+.admin-card-navigation .admin-nav-card{min-width:0;background:#fff;color:#0f172a;border:1px solid #dbe7f4;border-radius:22px;box-shadow:0 12px 32px rgba(15,23,42,.055);padding:0;overflow:hidden}
+.admin-card-navigation .admin-nav-card summary{position:relative;list-style:none;cursor:pointer;display:flex;flex-direction:column;gap:6px;padding:22px 46px 22px 22px;min-height:102px}
+.admin-card-navigation .admin-nav-card summary::-webkit-details-marker{display:none}
+.admin-card-navigation .admin-nav-card summary:after{content:'+';position:absolute;right:20px;top:21px;color:#ff7a00;font-size:26px;font-weight:700}
+.admin-card-navigation .admin-nav-card[open] summary:after{content:'−'}
+.admin-card-navigation .admin-nav-card-title{font-size:18px;font-weight:850;color:#061a4d;line-height:1.2}
+.admin-card-navigation .admin-nav-card-description{font-size:13px;color:#64748b;line-height:1.4}
+.admin-card-navigation .admin-nav-card-links{display:flex;flex-wrap:wrap;align-items:flex-start;gap:8px;padding:0 18px 18px}
+.admin-card-navigation .admin-nav-card-links a{display:inline-flex;align-items:center;min-height:36px;border-radius:10px;padding:9px 12px;background:#e8eefb;color:#082b78;font-size:12px;font-weight:750;line-height:1.2}
+.admin-card-navigation .admin-nav-card-links a:hover,.admin-card-navigation .admin-nav-card-links a:focus-visible{background:#d7e4ff;outline:2px solid #ff7a00;outline-offset:1px}
+.admin-card-navigation .admin-nav-card-links a.active{background:#ff7a00;color:#fff}
+.admin-card-navigation .admin-nav-shortcuts{padding:20px}
+.admin-card-navigation .admin-nav-shortcuts strong{display:block;margin-bottom:14px;font-size:18px;color:#061a4d}
+.admin-card-navigation .admin-nav-shortcuts .admin-nav-card-links{padding:0}
+.admin-card-navigation[data-nav-ready="1"]:not(.nav-open) .admin-card-grid{display:none}
+.admin:has(> .admin-card-navigation)>.main{max-width:1568px;margin:0 auto;padding-top:10px}
+@media(max-width:1100px){.admin-card-navigation .admin-card-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.admin-card-navigation .admin-menu-header{flex-direction:row}.admin-card-navigation.side{padding:14px}.admin:has(> .admin-card-navigation)>.main{padding:18px}}
+@media(max-width:640px){.admin-card-navigation .admin-card-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.admin-card-navigation .admin-nav-card summary{padding:15px 26px 14px 13px;min-height:108px}.admin-card-navigation .admin-nav-card summary:after{right:9px;top:13px;font-size:20px}.admin-card-navigation .admin-nav-card-title{font-size:14px}.admin-card-navigation .admin-nav-card-description{font-size:11px}.admin-card-navigation .admin-nav-card-links{padding:0 10px 12px;gap:5px}.admin-card-navigation .admin-nav-card-links a{font-size:11px;min-height:36px;padding:7px 9px}.admin-card-navigation .admin-nav-shortcuts{padding:13px}.admin-card-navigation .admin-nav-shortcuts strong{font-size:14px}.admin-card-navigation .logo img{width:40px;height:38px}.admin-card-navigation .logo{padding:8px}.admin-card-navigation .logo b{font-size:11px}.admin-card-navigation .logo small{font-size:9px}.admin-card-navigation .admin-menu-toggle{min-width:unset;font-size:11px;padding:9px}.admin-card-navigation .admin-menu-header{gap:8px}}
+@media(prefers-reduced-motion:reduce){.admin-card-navigation *{scroll-behavior:auto!important}}

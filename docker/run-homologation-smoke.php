@@ -94,6 +94,12 @@ check(has($menu,'data-nav-toggle') && has($menu,'aria-controls="tvs-admin-nav"')
 check(has($navCss,'@media(max-width:1100px)') && has($navCss,'@media(max-width:640px)') && has($navCss,'data-nav-ready'), 'Menu tem layout responsivo e fallback sem JavaScript');
 check(has($navJs,"event.key === 'Escape'") && has($navJs,"aria-expanded"), 'Menu mobile suporta Escape e estado acessivel');
 check(has($menu,'editor-ia.php') && has($menu,'boletim-ia.php') && has($menu,'reporter-ia.php') && has($menu,'revisao-videos.php') && has($menu,'distribuicao-social.php') && has($menu,'tvplay.php'), 'Menu preserva fluxo Editor, Estudio, Conferencia e Distribuicao');
+check(has($menu,'class="side admin-card-navigation"') && has($menu,'class="admin-nav-card"') && has($menu,'<summary><span class="admin-nav-card-title">'), 'Menu renderiza cards expansíveis em vez da sidebar extensa');
+check(has($menu,"'title'=>'Operação'") && has($menu,"'title'=>'Redação'") && has($menu,"'title'=>'Central Editorial IA'") && has($menu,"'title'=>'Comercial'"), 'Cards agrupam as áreas administrativas');
+check(has($menu,'destaques.php') && has($menu,'fontes-status.php') && has($menu,'logout.php') && has($menu,'log-editorial.php'), 'Cards preservam destaques, fontes, auditoria e saída');
+check(has($navCss,'.admin-nav-card-links a.active') && has($navCss,'grid-template-columns:repeat(2,minmax(0,1fr))') && has($navCss,'.admin-card-navigation[data-nav-ready="1"]'), 'Cards possuem seleção ativa, mobile em duas colunas e menu recolhível');
+check(has($navJs,"setOpen(side.getAttribute('data-dashboard') === '1')") && has($navJs,'aria-expanded'), 'Dashboard inicia com cards visíveis e páginas internas usam expansão acessível');
+
 
 check($callback!=='' && has($callback,'heygen_last_callback_hash'), 'Callback HeyGen idempotente');
 check($callback!=='' && has($callback,"['published','cancelled']"), 'Callback não regride estados terminais');
