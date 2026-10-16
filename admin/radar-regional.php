@@ -2779,7 +2779,7 @@ function tvs_radar_candidates_for_city($city){
   $fontes=tvs_read_json_file(dirname(__DIR__).'/data/fontes.json');
   if(!is_array($fontes)) $fontes=[];
   $fontes=tvs_radar_merge_source_registry($fontes,array_merge(tvs_radar_builtin_regional_sources($city),tvs_radar_curated_sources_for_city($city)),$city);
-  $items=[]; $officialCount=0;
+  $items=[]; $officialCount=0; $sourceMetrics=[];
 
   // Coletor dedicado do Liberal por editoria municipal. O portal publica
   // várias cidades na mesma home; usar a editoria correta evita que uma
@@ -2800,7 +2800,26 @@ function tvs_radar_candidates_for_city($city){
     // Isso estava fazendo notícias de Americana/Campinas entrarem como Sumaré e bloquearem as demais cidades por duplicidade.
     if($scity==='Região' && !($volumeMode && preg_match('/google|regional|portal|notícias|noticias/iu', (string)($src['type']??'').' '.(string)($src['name']??'')))) continue;
     if($scity && $scity!=='Região' && tvs_lower($scity)!==tvs_lower($city)) continue;
-    foreach(tvs_capture_source_items($src) as $it){
+    $started=microtime(true);
+    $captured=tvs_capture_source_items($src);
+    $cityHits=0; $dated=0; $wrappers=0;
+    foreach($captured as $entry){
+      if(tvs_radar_text_mentions_city(($entry['title']??'').' '.($entry['description']??''),$city)) $cityHits++;
+      if(trim((string)($entry['published_at']??''))!=='') $dated++;
+      if(tvs_radar_is_google_news_url($entry['url']??'')) $wrappers++;
+    }
+    $sourceMetrics[]=[
+      'name'=>(string)($src['name']??'Fonte'),
+      'city'=>$city,
+      'origin'=>(string)($src['origin']??'registered'),
+      'read'=>count($captured),
+      'city_mentions'=>$cityHits,
+      'dated'=>$dated,
+      'google_wrappers'=>$wrappers,
+      'duration_ms'=>(int)round((microtime(true)-$started)*1000),
+      'checked_at'=>date('c')
+    ];
+    foreach($captured as $it){
       $it['city']=$city;
       $it['source']=$src['name']??($it['source']??'Fonte cadastrada');
       $it['source_type']=$src['type']??'Fonte cadastrada';
@@ -2812,9 +2831,20 @@ function tvs_radar_candidates_for_city($city){
   // Google Notícias é fallback de descoberta, não fonte principal do Radar.
   // Em modo normal, só complementa quando as fontes diretas não entregam volume mínimo,
   // e entra com limite pequeno para não recriar um backlog de URLs intermediárias.
-  $directTarget=$volumeMode?30:12;
-  if(count($items)<$directTarget){
-    $googleLimit=max(0,$directTarget-count($items));
+  // Quantidade bruta inclui chamadas de outras cidades e pautas antigas.
+  // Só notícias diretas com menção à cidade e data confirmada contam
+  // para decidir se a busca complementar é necessária.
+  $usableDirect=0;
+  foreach($items as $direct){
+    if(tvs_radar_is_google_news_url($direct['url']??'')) continue;
+    if(!tvs_radar_text_mentions_city(($direct['title']??'').' '.($direct['description']??''),$city)) continue;
+    $date=(string)($direct['published_at']??'');
+    $ts=$date!==''?strtotime($date):false;
+    if($ts && $ts>=time()-7*86400 && $ts<=time()+86400) $usableDirect++;
+  }
+  $directTarget=$volumeMode?20:8;
+  if($usableDirect<$directTarget){
+    $googleLimit=min($volumeMode?5:3,max(0,$directTarget-$usableDirect));
     foreach(tvs_radar_google_news($city,$googleLimit) as $it){
       $it['priority']=$volumeMode?4:3;
       $items[]=$it;
@@ -2895,6 +2925,15 @@ function tvs_radar_candidates_for_city($city){
     $selected,
     $city
   );
+
+  // Diagnóstico de rendimento por fonte, sem consultas adicionais à rede.
+  $healthFile=dirname(__DIR__).'/data/radar_source_health.json';
+  $health=tvs_read_json_file($healthFile);
+  if(!is_array($health)) $health=[];
+  $health[$city]=['checked_at'=>date('c'),'sources'=>$sourceMetrics,
+    'raw_candidates'=>count($items),'direct_recent_city'=>$usableDirect,
+    'eligible_after_gates'=>count($unique),'selected'=>count($selected)];
+  tvs_save_json_file($healthFile,$health);
 
   // Google News já foi resolvido/hidratado antes dos gates. Candidatos
   // ainda não resolvidos permanecem rastreáveis para novas tentativas no pipeline.
