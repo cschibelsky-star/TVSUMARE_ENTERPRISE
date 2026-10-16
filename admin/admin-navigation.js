@@ -10,9 +10,9 @@
       function setOpen(open) {
         side.classList.toggle('nav-open', open);
         button.setAttribute('aria-expanded', String(open));
-        if (label) label.textContent = open ? 'Fechar menu' : 'Menu';
+        if (label) label.textContent = open ? 'Ocultar áreas' : 'Explorar áreas';
       }
-      setOpen(false);
+      setOpen(side.getAttribute('data-dashboard') === '1');
       side.setAttribute('data-nav-ready', '1');
       button.addEventListener('click', function () {
         setOpen(!side.classList.contains('nav-open'));
