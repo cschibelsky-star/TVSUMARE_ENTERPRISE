@@ -1,62 +1,48 @@
 <?php
-$activeAdmin = $activeAdmin ?? '';
-function tvs_admin_active($key,$active){ return $key===$active ? 'active' : ''; }
-function tvs_admin_link($key,$href,$label,$active){
-  return '<a class="'.tvs_admin_active($key,$active).'" href="'.$href.'">'.$label.'</a>';
+$activeAdmin=$activeAdmin??'';
+if(!function_exists('tvs_admin_active')) {
+  function tvs_admin_active($key,$active){return $key===$active?'active':'';}
 }
+if(!function_exists('tvs_admin_link')) {
+  function tvs_admin_link($key,$href,$label,$active){
+    return '<a class="'.tvs_admin_active($key,$active).'" href="'.$href.'"'.($key===$active?' aria-current="page"':'').'>'.htmlspecialchars($label,ENT_QUOTES,'UTF-8').'</a>';
+  }
+}
+$adminGroups=[
+  ['title'=>'Operação','description'=>'Visão geral, fontes e métricas','links'=>[['dashboard','index.php','Dashboard' ],['status','status.php','Status do Sistema' ],['fontes_status','fontes-status.php','Saúde das Fontes' ],['metricas','metricas.php','Métricas de Acesso' ] ]],
+  ['title'=>'Redação','description'=>'Aprovações e matérias','links'=>[['radar','radar-regional.php','Aprovações' ],['nova_noticia','nova-noticia.php','Notícia Rápida' ],['drafts','drafts.php','Revisões Pendentes' ],['validade','content-validity.php','Validade Editorial' ],['noticias','noticias.php','Publicadas' ] ]],
+  ['title'=>'Central Editorial IA','description'=>'Editor, estúdios e distribuição','links'=>[['editor_ia','editor-ia.php','Editor IA · Notícias' ],['boletim_ia','boletim-ia.php','Estúdio IA · Boletins' ],['reporter_ia','reporter-ia.php','Estúdio IA · Reportagens' ],['revisao_videos','revisao-videos.php','Estúdio IA · Conferência' ],['distribuicao_social','distribuicao-social.php','Distribuição IA · Redes' ],['tvplay','tvplay.php','Distribuição IA · TV Play' ],['apresentadores_ia','apresentadores-ia.php','Apresentadores IA' ] ]],
+  ['title'=>'Conteúdo','description'=>'Fontes, RSS e transmissão','links'=>[['rss','rss-central.php','Central RSS' ],['fontes','fontes.php','Fontes' ],['aovivo','aovivo.php','Ao Vivo' ] ]],
+  ['title'=>'Comercial','description'=>'Destaques e monetização','links'=>[['guia','guia-comercial.php','Guia Comercial' ],['destaques','destaques.php','Destaque da Home' ],['comercial','area-comercial.php','Área Comercial' ],['monetizacao','monetizacao.php','Monetização' ] ]],
+  ['title'=>'Auditoria e acesso','description'=>'Histórico e ferramentas','links'=>[['log_editorial','log-editorial.php','Log Editorial' ],['lixeira','lixeira.php','Lixeira' ] ]],
+];
 ?>
-<aside class="side" data-nav-component>
+<aside class="side admin-card-navigation" data-nav-component data-dashboard="<?=($activeAdmin==='dashboard'?'1':'0')?>">
   <div class="admin-menu-header">
-  <div class="logo">
-    <img src="../assets/logo-tv-sumare.jpeg" alt="TV Sumaré">
-    <div><b>TV SUMARÉ</b><br><small>Enterprise 2.0<br>by Vitrine AI Pro</small></div>
+    <a class="logo" href="index.php" aria-label="TV Sumaré — Dashboard">
+      <img src="../assets/logo-tv-sumare.jpeg" alt="">
+      <span><b>TV SUMARÉ</b><small>Enterprise 2.0 · by Vitrine AI Pro</small></span>
+    </a>
+    <button type="button" class="admin-menu-toggle" data-nav-toggle aria-controls="tvs-admin-nav" aria-expanded="<?=($activeAdmin==='dashboard'?'true':'false')?>">
+      <span class="nav-menu-icon" aria-hidden="true">☰</span><span data-nav-label><?=($activeAdmin==='dashboard'?'Ocultar áreas':'Explorar áreas')?></span>
+    </button>
   </div>
-  <button type="button" class="admin-menu-toggle" data-nav-toggle aria-controls="tvs-admin-nav" aria-expanded="true"><span class="nav-menu-icon" aria-hidden="true">☰</span><span data-nav-label>Menu</span></button>
-  </div>
-  <nav class="menu" id="tvs-admin-nav" aria-label="Navegação administrativa">
-    <span class="menu-group">Operação</span>
-    <?=tvs_admin_link('dashboard','index.php','Dashboard',$activeAdmin)?>
-    <?=tvs_admin_link('status','status.php','Status do Sistema',$activeAdmin)?>
-    <?=tvs_admin_link('fontes_status','fontes-status.php','Saúde das Fontes',$activeAdmin)?>
-    <?=tvs_admin_link('metricas','metricas.php','Métricas de Acesso',$activeAdmin)?>
-
-    <span class="menu-group">Redação</span>
-    <?=tvs_admin_link('radar','radar-regional.php','Aprovações',$activeAdmin)?>
-    <?=tvs_admin_link('nova_noticia','nova-noticia.php','Notícia Rápida',$activeAdmin)?>
-    <?=tvs_admin_link('drafts','drafts.php','Revisões Pendentes',$activeAdmin)?>
-    <?=tvs_admin_link('validade','content-validity.php','Validade Editorial',$activeAdmin)?>
-    <?=tvs_admin_link('noticias','noticias.php','Publicadas',$activeAdmin)?>
-    <?=tvs_admin_link('lixeira','lixeira.php','Lixeira',$activeAdmin)?>
-    <?=tvs_admin_link('log_editorial','log-editorial.php','Log Editorial',$activeAdmin)?>
-
-    <span class="menu-group">Central Editorial IA</span>
-    <?=tvs_admin_link('editor_ia','editor-ia.php','Editor IA · Notícias',$activeAdmin)?>
-    <?=tvs_admin_link('boletim_ia','boletim-ia.php','Estúdio IA · Boletins',$activeAdmin)?>
-    <?=tvs_admin_link('reporter_ia','reporter-ia.php','Estúdio IA · Reportagens',$activeAdmin)?>
-    <?=tvs_admin_link('revisao_videos','revisao-videos.php','Estúdio IA · Conferência',$activeAdmin)?>
-    <?=tvs_admin_link('distribuicao_social','distribuicao-social.php','Distribuição IA · Redes',$activeAdmin)?>
-    <?=tvs_admin_link('tvplay','tvplay.php','Distribuição IA · TV Play',$activeAdmin)?>
-    <details class="menu-advanced" <?=($activeAdmin==='apresentadores_ia'?'open':'')?>>
-      <summary>Configurações avançadas</summary>
-      <?=tvs_admin_link('apresentadores_ia','apresentadores-ia.php','Apresentadores IA',$activeAdmin)?>
-    </details>
-
-    <span class="menu-group">Conteúdo</span>
-    <?=tvs_admin_link('rss','rss-central.php','Central RSS',$activeAdmin)?>
-    <?=tvs_admin_link('fontes','fontes.php','Fontes',$activeAdmin)?>
-    <?=tvs_admin_link('aovivo','aovivo.php','Ao Vivo',$activeAdmin)?>
-
-    <span class="menu-group">Negócios</span>
-    <?=tvs_admin_link('guia','guia-comercial.php','Guia Comercial',$activeAdmin)?>
-    <?=tvs_admin_link('destaques','destaques.php','Destaque da Home',$activeAdmin)?>
-    <?=tvs_admin_link('comercial','area-comercial.php','Área Comercial',$activeAdmin)?>
-    <?=tvs_admin_link('monetizacao','monetizacao.php','Monetização',$activeAdmin)?>
-
-    <span class="menu-group">Atalhos</span>
-    <a href="../videos.php" target="_blank" rel="noopener">Ver vídeos</a>
-    <a href="../index.php" target="_blank" rel="noopener">Ver site</a>
-    <a href="logout.php">Sair</a>
+  <nav class="menu admin-card-grid" id="tvs-admin-nav" aria-label="Áreas do painel administrativo">
+    <?php foreach($adminGroups as $group):
+      $isActive=false;
+      foreach($group['links'] as $link){if($link[0]===$activeAdmin){$isActive=true;break;}}
+    ?>
+      <details class="admin-nav-card" <?=($isActive && $activeAdmin!=='dashboard'?'open':'')?>>
+        <summary><span class="admin-nav-card-title"><?=htmlspecialchars($group['title'],ENT_QUOTES,'UTF-8')?></span><span class="admin-nav-card-description"><?=htmlspecialchars($group['description'],ENT_QUOTES,'UTF-8')?></span></summary>
+        <div class="admin-nav-card-links">
+          <?php foreach($group['links'] as $link): ?>
+            <?=tvs_admin_link($link[0],$link[1],$link[2],$activeAdmin)?>
+          <?php endforeach; ?>
+        </div>
+      </details>
+    <?php endforeach; ?>
+    <div class="admin-nav-card admin-nav-shortcuts"><strong>Atalhos</strong><div class="admin-nav-card-links"><a href="../videos.php" target="_blank" rel="noopener">Ver vídeos</a><a href="../index.php" target="_blank" rel="noopener">Ver portal</a><a href="logout.php">Sair</a></div></div>
   </nav>
 </aside>
-<link rel="stylesheet" href="admin-navigation.css?v=20261015-1">
-<script src="admin-navigation.js?v=20261015-1" defer></script>
+<link rel="stylesheet" href="admin-navigation.css?v=20261016-cards">
+<script src="admin-navigation.js?v=20261016-cards" defer></script>
