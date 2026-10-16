@@ -35,6 +35,15 @@ jobs:
       - name: Teste da politica editorial V3
         run: php tests/editorial_policy_v3_test.php
 
+      - name: Testar seguranca de anuncios premium
+        run: |
+          php tests/home_featured_ads_test.php
+          php tests/premium_ads_schedule_test.php
+          php tests/premium_ads_duration_test.php
+
+      - name: Verificar JavaScript da rotacao
+        run: node --check assets/home-featured.js
+
       - name: Validar regras editoriais criticas
         shell: bash
         run: |

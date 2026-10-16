@@ -48,6 +48,7 @@ function tvs_admin_link($key,$href,$label,$active){
 
     <span class="menu-group">Negócios</span>
     <?=tvs_admin_link('guia','guia-comercial.php','Guia Comercial',$activeAdmin)?>
+    <?=tvs_admin_link('destaques','destaques.php','Destaque da Home',$activeAdmin)?>
     <?=tvs_admin_link('comercial','area-comercial.php','Área Comercial',$activeAdmin)?>
     <?=tvs_admin_link('monetizacao','monetizacao.php','Monetização',$activeAdmin)?>
 
