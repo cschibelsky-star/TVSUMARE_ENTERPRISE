@@ -92,7 +92,7 @@
       media.preload = 'metadata';
       media.addEventListener('loadedmetadata', () => {
         if (generation !== thisGeneration) return;
-        if (Number.isFinite(media.duration) && (media.duration <= 0 || media.duration > 10.05)) onFailure();
+        if (Number.isFinite(media.duration) && (media.duration <= 0 || media.duration > 50.05)) onFailure();
       }, {once: true});
       media.addEventListener('ended', () => {
         if (generation === thisGeneration && remaining().length > 1) showNext();
@@ -112,7 +112,7 @@
     if (/^https?:\/\//i.test(href)) { link.target = '_blank'; link.rel = 'noopener noreferrer'; }
     else { link.removeAttribute('target'); link.removeAttribute('rel'); }
     refreshToggle();
-    if (remaining().length > 1) timer = setTimeout(showNext, 10000);
+    if (remaining().length > 1) timer = setTimeout(showNext, ad.kind === 'video' ? 50500 : 10000);
     if (ad.kind === 'video') media.play().catch(() => { /* Native controls remain available. */ });
   };
   toggle.addEventListener('click', () => {
