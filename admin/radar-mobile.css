@@ -64,3 +64,12 @@
  .radar-overview .cards .stat{padding:9px!important}
  .radar-overview .radar-command-bar{grid-template-columns:1fr}
 }
+
+/* Compact desktop metric cards without changing editorial behavior. */
+@media(min-width:1101px){
+ .radar-overview .cards{align-items:stretch;gap:10px;margin:12px 0}
+ .radar-overview .cards .stat{padding:12px 14px!important;min-height:0;align-self:stretch}
+ .radar-overview .cards .stat span{font-size:11px!important;line-height:1.3}
+ .radar-overview .cards .stat b{font-size:30px!important;line-height:1.1;margin:5px 0}
+ .radar-overview .cards .stat small{font-size:11px!important;line-height:1.35;overflow-wrap:anywhere}
+}
