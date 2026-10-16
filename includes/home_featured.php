@@ -2,8 +2,9 @@
 require_once __DIR__.'/home_feature_ads.php';
 $homeFeature = tvs_json('data/home_destaques.json');
 $homeFeature = is_array($homeFeature) ? $homeFeature : [];
-$featureMode = in_array(($homeFeature['mode']??'eleicoes'), ['eleicoes','noticia','personalizado'], true)
-    ? $homeFeature['mode'] : 'eleicoes';
+$requestedFeatureMode = $homeFeature['mode'] ?? 'eleicoes';
+$featureMode = in_array($requestedFeatureMode, ['eleicoes','noticia','personalizado'], true)
+    ? $requestedFeatureMode : 'eleicoes';
 $featuredAds = tvs_premium_ads();
 $manualTitle = trim((string)($homeFeature['title']??''));
 $manualDescription = trim((string)($homeFeature['description']??''));
