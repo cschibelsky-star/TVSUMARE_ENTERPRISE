@@ -3,6 +3,7 @@ require_once __DIR__.'/auth.php';
 require_login();
 require_once dirname(__DIR__).'/includes/home_feature_ads.php';
 require_once dirname(__DIR__).'/includes/premium_ads_upload.php';
+require_once dirname(__DIR__).'/includes/premium_ads_schedule.php';
 $activeAdmin='comercial';
 $file=dirname(__DIR__).'/data/anuncios_pedidos.json';
 function tvs_ads_read($file){$rows=is_file($file)?json_decode((string)@file_get_contents($file),true):[];return is_array($rows)?array_values(array_filter($rows,'is_array')):[];}
@@ -21,7 +22,7 @@ if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'){
     $end=trim((string)($_POST['end_at']??''));
     if($company===''||strlen($company)>140)$error='Informe o nome do anunciante (até 140 caracteres).';
     elseif($link!=='' && tvs_premium_link($link)==='')$error='Informe URL http(s) válida ou caminho interno iniciado por /.';
-    elseif(($start!==''&&!strtotime($start))||($end!==''&&!strtotime($end))||($start!==''&&$end!==''&&strtotime($start)>strtotime($end)))$error='Confira início e fim da campanha.';
+    elseif(($scheduleError=tvs_ad_schedule_validate($start,$end))!=='')$error=$scheduleError;
     else{
       $upload=tvs_premium_upload($_FILES['media']??[]);
       if(!$upload['ok'])$error=$upload['error'];
@@ -44,7 +45,17 @@ if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'){
     foreach($orders as &$o){
       if((string)($o['id']??'')!==$id)continue;
       $found=true;
-      if($action==='upload'){
+      if($action==='edit_schedule'){
+        $start=trim((string)($_POST['start_at']??''));
+        $end=trim((string)($_POST['end_at']??''));
+        $scheduleError=tvs_ad_schedule_validate($start,$end);
+        if($scheduleError!==''){$error=$scheduleError;break;}
+        $o['start_at']=$start;
+        $o['end_at']=$end;
+        $o['schedule_updated_at']=date('c');
+        $o['schedule_updated_by']=(string)($_SESSION['tvs_admin_user']??'admin');
+        // Updating the schedule does not change the file, approval or publication status.
+      } elseif($action==='upload'){
         if(($o['status']??'')==='publicado'){$error='Pause esta campanha antes de trocar a mídia.';break;}
         $upload=tvs_premium_upload($_FILES['media']??[]);
         if(!$upload['ok']){$error=$upload['error'];break;}
@@ -100,11 +111,22 @@ $hasVideo=!empty($o['video']);
 $source=$hasVideo?($o['video']??''):($o['banner']??'');
 ?><article class="box" style="margin:14px 0">
 <h2><?=h($o['company']??'Empresa')?></h2>
-<p><b>Plano:</b> <?=h($o['plan']??'')?> • <b>Local:</b> <?=h($o['placement']??'')?> • <b>Status:</b> <?=h($o['status']??'recebido')?></p>
+<p><b>Plano:</b> <?=h($o['plan']??'')?> • <b>Local:</b> <?=h($o['placement']??'')?> • <b>Status operacional:</b> <strong><?=h(tvs_ad_display_status($o))?></strong></p>
 <?php if(!empty($o['responsible'])):?><p><b>Responsável:</b> <?=h($o['responsible'])?> • <b>WhatsApp:</b> <?=h($o['whatsapp']??'')?> • <b>E-mail:</b> <?=h($o['email']??'')?></p><?php endif;?>
 <?php if(!empty($o['message'])):?><p><?=h($o['message'])?></p><?php endif;?>
 <p><b>Arte:</b> <?=h($source?:'Não enviada')?><?=($hasVideo?' • duração: '.h($o['video_duration']??'não validada').'s':'')?> • <b>Comprovante:</b> <?=h($o['receipt']??'Não enviado')?></p>
-<?php if(!empty($o['start_at'])||!empty($o['end_at'])):?><p><b>Programação:</b> <?=h($o['start_at']??'Imediato')?> a <?=h($o['end_at']??'Sem fim')?></p><?php endif;?>
+<p><b>Programação:</b> <?=h(($o['start_at']??'')?:'Imediato')?> a <?=h(($o['end_at']??'')?:'Sem prazo de encerramento')?></p>
+<details style="margin:12px 0;padding:12px;border:1px solid #dce5ee;border-radius:12px">
+<summary style="cursor:pointer;font-weight:800;list-style:auto">✏️ Editar programação</summary>
+<form method="post" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:14px">
+<?=tvs_csrf_field()?>
+<input type="hidden" name="id" value="<?=h($o['id']??'')?>">
+<input type="hidden" name="action" value="edit_schedule">
+<label>Início da veiculação (vazio = imediato)<input type="datetime-local" name="start_at" value="<?=h(tvs_ad_schedule_datetime_input((string)($o['start_at']??'')))?>"></label>
+<label>Fim da veiculação (vazio = sem prazo)<input type="datetime-local" name="end_at" value="<?=h(tvs_ad_schedule_datetime_input((string)($o['end_at']??'')))?>"></label>
+<p class="muted" style="grid-column:1/-1;margin:0">Horário de Brasília (America/Sao_Paulo). Alterar o período não exige novo upload nem nova aprovação da mídia. O anúncio precisa estar publicado e com o arquivo disponível para aparecer.</p>
+<button type="submit" class="btn orange" style="grid-column:1/-1">Salvar programação</button>
+</form></details>
 <form method="post" class="actions"><?=tvs_csrf_field()?><input type="hidden" name="id" value="<?=h($o['id']??'')?>">
 <button class="btn secondary" name="action" value="paid">Marcar pago</button>
 <button class="btn" name="action" value="approve">Aprovar</button>
