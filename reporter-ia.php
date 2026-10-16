@@ -6,6 +6,7 @@ require_once dirname(__DIR__).'/config.php';
 require_once __DIR__.'/gemini.php';
 require_once __DIR__.'/monitor_lib.php';
 require_once dirname(__DIR__).'/includes/heygen_helper.php';
+require_once dirname(__DIR__).'/includes/voice_policy.php';
 $activeAdmin='reporter_ia';
 
 function rpia_h($s){ return htmlspecialchars((string)$s,ENT_QUOTES,'UTF-8'); }
@@ -95,9 +96,10 @@ function rpia_video_agent_prompt($job,$cfg){
   $city=tvs_clean_text($job['city']??'Região');
   $source=tvs_clean_text($job['source']??'fonte consultada');
   $brand="TV Sumaré, portal regional de notícias de Sumaré e Região Metropolitana de Campinas.";
+  $voicePolicy = tvs_voice_policy_prompt();
   return "Crie um vídeo jornalístico regional para a {$brand}\n\n".
     "Formato: {$orientation}. Duração alvo: 45 a 60 segundos. Tom: apresentador de telejornal regional, claro, confiável, objetivo e sem sensacionalismo.\n\n".
-    "Use o avatar e a voz configurados. Use identidade visual limpa, moderna, com cores institucionais azul escuro, branco e laranja quando possível. Inclua legendas e cards discretos de apoio.\n\n".
+    "{$voicePolicy}\n\nUse o avatar e a voz configurados. Use identidade visual limpa, moderna, com cores institucionais azul escuro, branco e laranja quando possível. Inclua legendas e cards discretos de apoio.\n\n".
     "Título da pauta: {$title}\nCidade/região: {$city}\nFonte: {$source}\n\n".
     "Texto falado obrigatório, sem inventar dados além deste roteiro:\n{$script}\n\n".
     "Regras editoriais: não cite que o conteúdo foi gerado por IA; não acrescente números, datas, nomes ou acusações que não estejam no roteiro; preserve o tom jornalístico; finalize reforçando que o público acompanhe a TV Sumaré.";
