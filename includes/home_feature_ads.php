@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__.'/premium_ads_policy.php';
 /**
  * Only explicitly published campaigns with a local, validated media file are eligible.
  * Customer details and receipts never leave the administrative data store.
@@ -34,7 +35,7 @@ function tvs_premium_ads(): array {
         $video = tvs_premium_local_media($row['video']??'', 'video');
         $duration = (float)($row['video_duration']??0);
         $image = tvs_premium_local_media($row['banner']??'', 'image');
-        if ($video !== '' && ($duration <= 0 || $duration > 10)) $video = '';
+        if ($video !== '' && !tvs_premium_video_duration_valid($duration)) $video = '';
         if ($video === '' && $image === '') continue;
         $advertiser = trim((string)($row['company']??'Publicidade regional'));
         if (preg_match('/^.{0,90}/us', $advertiser, $parts)) $advertiser = $parts[0];
