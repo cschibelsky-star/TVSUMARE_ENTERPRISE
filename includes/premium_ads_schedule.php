@@ -27,15 +27,13 @@ function tvs_ad_display_status(array $ad): string {
     $now = new DateTimeImmutable('now',new DateTimeZone('America/Sao_Paulo'));
     $start = tvs_ad_schedule_parse((string)($ad['start_at']??''));
     $end = tvs_ad_schedule_parse((string)($ad['end_at']??''));
-    if ($start && $start > $now) return 'Agendado — inicia em '.$start->format('d/m/Y H:i');
-    if ($end && $end < $now) return 'Encerrado — período finalizado';
     $video = tvs_premium_local_media($ad['video']??'', 'video');
     $image = tvs_premium_local_media($ad['banner']??'', 'image');
-    if ($video !== '' && (float)($ad['video_duration']??0)>0 && (float)($ad['video_duration']??0)<=10) {
-        return 'Em exibição — vídeo';
-    }
-    if ($image !== '') return 'Em exibição — banner';
-    return 'Mídia indisponível — reenviar arquivo';
+    $validVideo = $video !== '' && (float)($ad['video_duration']??0)>0 && (float)($ad['video_duration']??0)<=10;
+    if (!$validVideo && $image === '') return 'Mídia indisponível — reenviar arquivo';
+    if ($start && $start > $now) return 'Agendado — inicia em '.$start->format('d/m/Y H:i');
+    if ($end && $end < $now) return 'Encerrado — período finalizado';
+    return $validVideo ? 'Em exibição — vídeo' : 'Em exibição — banner';
 }
 function tvs_ad_schedule_datetime_input(string $raw): string {
     $date = tvs_ad_schedule_parse($raw);
