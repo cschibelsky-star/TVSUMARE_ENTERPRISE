@@ -71,10 +71,10 @@ if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'){
       } elseif($action==='publish') {
         $approved=(!empty($o['approved_at'])||($o['status']??'')==='aprovado');
         $validVideo=tvs_premium_local_media($o['video']??'','video')!==''&&
-          (float)($o['video_duration']??0)>0&&(float)($o['video_duration']??0)<=10;
+          tvs_premium_video_duration_valid($o['video_duration']??0);
         $validImage=tvs_premium_local_media($o['banner']??'','image')!=='';
         if(!$approved)$error='Aprove o material antes de publicar.';
-        elseif(!$validVideo&&!$validImage)$error='Envie mídia validada: imagem ou MP4 de até 10 segundos.';
+        elseif(!$validVideo&&!$validImage)$error='Envie mídia validada: imagem ou MP4 de até 50 segundos.';
         else $o['status']='publicado';
       } elseif($action==='pause'){
         if(($o['status']??'')==='publicado')$o['status']='pausado';
@@ -92,7 +92,7 @@ if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'){
   if($saved){header('Location: area-comercial.php?ok=1');exit;}
 }
 ?><!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Área Comercial | TV Sumaré</title><link rel="stylesheet" href="admin.css?v=41"></head><body><div class="admin"><?php include __DIR__.'/_menu.php'; ?><main class="main">
-<div class="top"><div><span class="eyebrow">Anunciantes</span><h1>Área Comercial</h1><p class="muted">Mídia premium: banners ou MP4 de no máximo 10 segundos. Publicação somente após aprovação.</p></div><a class="btn secondary" target="_blank" rel="noopener" href="../anuncie.php">Ver planos</a></div>
+<div class="top"><div><span class="eyebrow">Anunciantes</span><h1>Área Comercial</h1><p class="muted">Mídia premium: banners ou MP4 de no máximo 50 segundos. Publicação somente após aprovação.</p></div><a class="btn secondary" target="_blank" rel="noopener" href="../anuncie.php">Ver planos</a></div>
 <?php if(isset($_GET['ok'])):?><div class="notice">Operação registrada.</div><?php endif;?>
 <?php if($error):?><div class="notice error"><?=h($error)?></div><?php endif;?>
 <section class="box"><h2>Novo anúncio premium — Home 50%</h2><p class="muted">A ordem de exibição é aleatória e alterna entre campanhas publicadas. Vídeos são reproduzidos sem áudio automático; a duração é validada no servidor.</p>
@@ -102,7 +102,7 @@ if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'){
 <label>Link do anúncio<input type="text" name="link" placeholder="https://exemplo.com.br ou /guia.php"></label>
 <label>Início (opcional)<input type="datetime-local" name="start_at"></label>
 <label>Fim (opcional)<input type="datetime-local" name="end_at"></label>
-<label>Banner JPG/PNG/WEBP ou vídeo MP4 (até 10 segundos e 20 MB)<input type="file" name="media" accept="image/jpeg,image/png,image/webp,video/mp4,.mp4" required></label>
+<label>Banner JPG/PNG/WEBP ou vídeo MP4 (até 50 segundos e 20 MB)<input type="file" name="media" accept="image/jpeg,image/png,image/webp,video/mp4,.mp4" required></label>
 <button class="btn orange" type="submit">Cadastrar para aprovação</button>
 </form></section>
 <section class="box"><h2>Pedidos e campanhas</h2><?php if(!$orders):?><p>Nenhuma solicitação recebida.</p><?php endif;?>
