@@ -12,8 +12,8 @@ if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'){
   $title=trim(strip_tags((string)($_POST['title']??'')));
   $description=trim(strip_tags((string)($_POST['description']??'')));
   $url=trim((string)($_POST['url']??''));
-  if($mode==='personalizado' && ($title===''||mb_strlen($title)>110))$error='Título é obrigatório e deve ter até 110 caracteres.';
-  elseif(mb_strlen($description)>350)$error='Descrição deve ter no máximo 350 caracteres.';
+  if($mode==='personalizado' && ($title===''||strlen($title)>110))$error='Título é obrigatório e deve ter até 110 caracteres.';
+  elseif(strlen($description)>350)$error='Descrição deve ter no máximo 350 caracteres.';
   elseif($url!=='' && tvs_premium_link($url)==='')$error='Informe uma URL https:// válida ou um caminho interno iniciado por /.';
   if(!$error){
     $config=['mode'=>$mode,'title'=>$title,'description'=>$description,'url'=>$url,'updated_at'=>date('c')];
