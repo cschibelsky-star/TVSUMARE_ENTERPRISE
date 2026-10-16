@@ -39,6 +39,7 @@ jobs:
         run: |
           php tests/home_featured_ads_test.php
           php tests/premium_ads_schedule_test.php
+          php tests/premium_ads_duration_test.php
 
       - name: Verificar JavaScript da rotacao
         run: node --check assets/home-featured.js
