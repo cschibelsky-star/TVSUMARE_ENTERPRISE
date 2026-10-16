@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__.'/premium_ads_policy.php';
 /** Server-side media inspection. Never trust the file extension or the HTML duration. */
 function tvs_premium_upload(array $file): array {
     if (($file['error']??UPLOAD_ERR_NO_FILE)!==UPLOAD_ERR_OK ||
@@ -26,8 +27,8 @@ function tvs_premium_upload(array $file): array {
             return ['ok'=>false,'error'=>'Não foi possível validar o vídeo MP4.'];
         }
         $duration=(float)$raw;
-        if ($duration<=0 || $duration>10.00) {
-            return ['ok'=>false,'error'=>'Vídeo comercial deve ter no máximo 10 segundos.'];
+        if (!tvs_premium_video_duration_valid($duration)) {
+            return ['ok'=>false,'error'=>'Vídeo comercial deve ter no máximo 50 segundos.'];
         }
         $extension='mp4';
     } else {
