@@ -128,6 +128,19 @@ check(has($radar,'function tvs_radar_history_duplicate') && has($radar,'Duplicat
 check(has($radar,'layered_eligible') && has($radar,'content_usable') && has($radar,'editorial_interest'), 'Radar usa elegibilidade editorial em camadas antes do score');
 check(has($radar,'ponte|pontes|viaduto|viadutos') && has($radar,'ordem de servi'), 'Radar reconhece mobilidade/obras como interesse jornalístico');
 
+$registry=txt($root.'/includes/radar_source_registry.php');
+$monitor=txt($root.'/monitor_lib.php');
+$sourceStatus=txt($root.'/admin/fontes-status.php');
+$discoveryCron=txt($root.'/cron_radar.php');
+check(has($registry,'function tvs_radar_seed_hml_sources') && has($registry,"getenv('TVSUMARE_ENV')") && has($registry,'@fopen($file,'), 'Cadastro de fontes HML nao sobrescreve producao nem arquivos existentes');
+check(has($registry,'tvs_radar_curated_sources_for_city') && has($registry,'Novo Momento') && has($registry,'Portal Hortolândia'), 'Fontes regionais diretas disponiveis no fallback');
+check(has($monitor,'// Prioriza RSS direto: URL original') && has($monitor,'if(count($items)>=12)'), 'RSS direto priorizado e amostra ampliada');
+check(has($radar,'radar_source_health.json') && has($radar,'$usableDirect') && has($radar,'$sourceMetrics'), 'Radar mede rendimento por fonte e decide complemento pela relevancia local');
+check(has($sourceStatus,'radar_source_health.json') && has($sourceStatus,'Sem medição') && has($discoveryCron,'SOURCE_REGISTRY_HML'), 'Painel e cron registram saude de fontes e bootstrap isolado');
+
+check(has($radar,'Sorteio nacional sem fato municipal') && has($radar,'Artigo de opiniao, nao noticia factual'), 'Radar filtra loteria nacional e opiniao antes da fila');
+check(has($radar,'tvs_radar_obvious_false_positive($it,$city,$falseReason)'), 'Filtro de falsos positivos permanece no caminho de descoberta');
+
 foreach($ok as $label) echo "OK: {$label}\n";
 if($fail){ foreach($fail as $label) fwrite(STDERR,"FAIL: {$label}\n"); fwrite(STDERR,'HOMOLOGATION_SMOKE=FAIL total='.count($fail)."\n"); exit(1); }
 echo 'HOMOLOGATION_SMOKE=PASS total='.count($ok)."\n";

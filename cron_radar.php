@@ -11,6 +11,13 @@ require_once __DIR__.'/admin/monitor_lib.php';
 $_SERVER['REQUEST_METHOD']='CRON';
 require_once __DIR__.'/admin/radar-regional.php';
 
+// Se a homologação não tiver cadastro próprio, inicializa somente as fontes
+// regionais suplementares. Nunca importa ou sobrescreve dados de produção.
+$sourceBootstrap=function_exists('tvs_radar_seed_hml_sources')
+  ? tvs_radar_seed_hml_sources(__DIR__.'/data')
+  : ['status'=>'unavailable'];
+echo 'SOURCE_REGISTRY_HML '.json_encode($sourceBootstrap,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n";
+
 $offlineResolutionMarker=__DIR__.'/data/source_resolution_offline_v14_done.json';
 if(!is_file($offlineResolutionMarker)){
   $report=tvs_radar_resolve_google_backlog_offline(80);
