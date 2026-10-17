@@ -35,6 +35,11 @@ jobs:
       - name: Teste da politica editorial V3
         run: php tests/editorial_policy_v3_test.php
 
+      - name: Regressao da recuperacao fonte Editor IA backlog
+        run: |
+          php tests/radar_source_rules_test.php
+          php tests/radar_recovery_order_test.php
+
       - name: Validar regras editoriais criticas
         shell: bash
         run: |
