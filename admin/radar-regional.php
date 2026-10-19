@@ -5854,6 +5854,23 @@ $totalSensitive=count($sensitiveQueue);
 $totalImageReview=count($imageReviewQueue);
 $totalPipelineCurrent=$totalSourcePending+$totalEditorPending+$totalReady+$totalSensitive+$totalImageReview;
 $totalAuditTerminal=$totalSourceTerminal+$totalManualPipeline;
+$editorialAudit=[];
+foreach($queue as $auditItem){
+  if(!is_array($auditItem)) continue;
+  $currentCategory=trim((string)($auditItem['category']??'Cidade'));
+  $suggestedCategory=tvs_radar_editorial_category($auditItem);
+  $temporalReasons=tvs_radar_temporal_review_reasons($auditItem);
+  if($currentCategory===$suggestedCategory && !$temporalReasons) continue;
+  $editorialAudit[]=[
+    'id'=>(string)($auditItem['id']??''),
+    'title'=>(string)($auditItem['title']??''),
+    'city'=>(string)($auditItem['city']??''),
+    'current'=>$currentCategory,
+    'suggested'=>$suggestedCategory,
+    'temporal'=>$temporalReasons,
+  ];
+}
+
 $perCityGoal=max(1,min(40,(int)($radarCfg['per_city']??20)));
 $cityDiagnostics=[];
 foreach($cities as $cityName){
@@ -5897,6 +5914,7 @@ $backlogHistory=tvs_read_json_file(dirname(__DIR__).'/data/radar_backlog_batches
 $lastBacklogBatch=is_array($backlogHistory) && $backlogHistory ? end($backlogHistory) : [];
 ?><div class="notice">Pipeline ativo: <?=$totalPipelineCurrent?> pauta(s) — <?=$totalSourcePending?> em fonte/enriquecimento · <?=$totalEditorPending?> em processamento editorial · <?=$totalSensitive?> em revisão obrigatória · <?=$totalImageReview?> em revisão de imagem · <?=$totalReady?> pronta(s) para aprovação.<?php if($totalAuditTerminal>0): ?> Fora do backlog ativo: <?=$totalSourceTerminal?> fonte(s) esgotada(s) · <?=$totalManualPipeline?> em revisão manual do pipeline.<?php endif; ?></div><div class="cards"><div class="stat"><span>Prontas para aprovação</span><b><?=$totalReady?></b><small>Editor IA e validação concluídos, sem pendência adicional</small></div><div class="stat"><span>Fonte / enriquecimento ativo</span><b><?=$totalSourcePending?></b><small>resolver: <?=$sourceStageCounts['precisa_resolver_fonte']?> · aguardando fonte: <?=$sourceStageCounts['aguardando_fonte']?> · fonte resolvida: <?=$sourceStageCounts['fonte_resolvida']?> · enriquecendo: <?=$sourceStageCounts['enriquecimento_ativo']?> · aguardando enriquecimento: <?=$sourceStageCounts['aguardando_enriquecimento']?></small></div><div class="stat"><span>Processamento editorial</span><b><?=$totalEditorPending?></b><small><a href="drafts.php">ver matérias e motivos</a></small></div><div class="stat"><span>Revisão obrigatória</span><b><?=$totalSensitive?></b><small>pautas sensíveis ou de alto impacto</small></div><div class="stat"><span>Revisão de imagem</span><b><?=$totalImageReview?></b><small>texto pronto; imagem precisa ser confirmada</small></div></div>
 <details class="settings-box radar-metrics-details"><summary>Disponibilidade por cidade (meta configurada: <?=$perCityGoal?>)</summary><div style="overflow-x:auto;margin-top:12px"><table><thead><tr><th>Cidade</th><th>Prontas para aprovação</th><th>Meta configurada</th><th>Diferença</th></tr></thead><tbody><?php foreach($cityDiagnostics as $cityName=>$cityStats): ?><tr><td><?=h($cityName)?></td><td><?=(int)$cityStats['ready']?></td><td><?=(int)$cityStats['goal']?></td><td><?=(int)$cityStats['gap']?></td></tr><?php endforeach; ?></tbody></table></div><p class="muted">Este indicador compara apenas as pautas prontas da fila atual com a meta configurada; não mede a coleta diária nem garante o alcance da meta.</p></details>
+<details class="settings-box radar-metrics-details"><summary>Auditoria editorial da fila atual (<?=count($editorialAudit)?> alerta(s))</summary><p class="muted">Diagnóstico somente leitura: nenhuma categoria ou matéria é alterada automaticamente. Confirme a fonte, o contexto e a data antes de aprovar.</p><?php if($editorialAudit): ?><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;text-align:left"><thead><tr><th>Matéria</th><th>Cidade</th><th>Categoria atual</th><th>Sugestão</th><th>Validade temporal</th><th>Ação</th></tr></thead><tbody><?php foreach($editorialAudit as $auditRow): ?><tr style="border-top:1px solid #e5e7eb"><td><?=h($auditRow['title'])?></td><td><?=h($auditRow['city'])?></td><td><?=h($auditRow['current'])?></td><td><?=h($auditRow['suggested'])?></td><td><?=h(implode(' · ',$auditRow['temporal']))?></td><td><?php if($auditRow['id']!==''): ?><a class="btn secondary" href="?edit=<?=rawurlencode($auditRow['id'])?>">Revisar</a><?php endif; ?></td></tr><?php endforeach; ?></tbody></table></div><?php else: ?><p class="muted">Nenhuma divergência detectada pelas regras atuais.</p><?php endif; ?></details>
 <details class="settings-box radar-metrics-details"><summary>Diagnóstico do gargalo</summary><div style="margin-top:8px;display:flex;gap:7px;flex-wrap:wrap"><?php
 $factLabels=['sem_auditoria'=>'Ainda sem auditoria','fonte_nao_resolvida'=>'Fonte não resolvida','texto_insuficiente'=>'Conteúdo factual insuficiente','quatro_w_incompleto'=>'4W incompleto','fonte_nao_confiavel'=>'Fonte não confiável','fora_janela'=>'Fora da janela','sem_interesse_editorial'=>'Interesse editorial não detectado'];
 foreach($factBlocks as $key=>$count){ if($count>0): ?><span class="badge"><?=h($factLabels[$key])?>: <?=$count?></span><?php endif; }
