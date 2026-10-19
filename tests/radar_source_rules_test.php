@@ -53,3 +53,24 @@ foreach(['','2024-10-04'] as $date){if(tvs_radar_verify_legacy_source($verified,
 $verified['source_url']=$listing['source_url'];
 if(tvs_radar_verify_legacy_source($verified,$article,'2026-10-04')['ok'])throw new RuntimeException('Listagem verificada como artigo');
 echo "RADAR_LEGACY_SOURCE_PROOF_TEST=PASS\n";
+
+$categoryCases=[
+ ['title'=>'PAT de Sumaré divulga 40 vagas de emprego','category'=>'Educação','expected'=>'Empregos'],
+ ['title'=>'Passageira de acidente fatal em Sumaré relata avarias','category'=>'Esportes','expected'=>'Segurança'],
+ ['title'=>'Somma RH abre vaga para auxiliar de produção','category'=>'Educação','expected'=>'Empregos'],
+ ['title'=>'Campinas e Fuzhou firmam acordo para cooperação e investimentos','category'=>'Educação','expected'=>'Economia'],
+ ['title'=>'Campinas transfere ponto facultativo do Dia do Servidor','category'=>'Cultura','expected'=>'Cidade'],
+ ['title'=>'Escola promove campeonato de futebol estudantil','category'=>'Educação','expected'=>'Educação']
+];
+foreach($categoryCases as $case){
+ $actual=tvs_radar_editorial_category(['title'=>$case['title'],'category'=>$case['category']]);
+ if($actual!==$case['expected'])throw new RuntimeException('Classificação editorial: '.$case['title'].' => '.$actual);
+}
+$now=strtotime('2026-10-19 12:00:00 UTC');
+$event=['title'=>'Hortolândia recebe Corrida Kids Inclusiva neste domingo (18)','subtitle'=>'Evento reúne crianças','created_at'=>'2026-10-17'];
+if(!tvs_radar_temporal_review_reasons($event,$now))throw new RuntimeException('Evento vencido não foi marcado');
+$event['title']='Hortolândia recebeu Corrida Kids Inclusiva no domingo (18)';
+if(tvs_radar_temporal_review_reasons($event,$now))throw new RuntimeException('Notícia retrospectiva indevidamente bloqueada');
+$event['title']='Hortolândia recebe Corrida Kids Inclusiva no dia 21 de outubro';
+if(tvs_radar_temporal_review_reasons($event,$now))throw new RuntimeException('Evento futuro indevidamente bloqueado');
+echo "RADAR_EDITORIAL_GATES_TEST=PASS\n";
