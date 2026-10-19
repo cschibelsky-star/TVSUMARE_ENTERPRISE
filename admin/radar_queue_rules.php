@@ -3,71 +3,82 @@ require_once dirname(__DIR__).'/includes/radar_source_rules.php';
 
 
 if (!function_exists('tvs_radar_editorial_category')) {
+    /**
+     * Classificação conservadora pela manchete, não por palavras ocasionais
+     * no corpo (ex.: acidente citado numa reportagem esportiva).
+     * Sem evidência inequívoca, preserva a editoria atual.
+     */
     function tvs_radar_editorial_category(array $item): string
     {
-        $current = trim((string)($item['category'] ?? 'Cidade'));
+        $current = trim((string)($item['category'] ?? 'Cidade')) ?: 'Cidade';
+        $title = trim((string)($item['title'] ?? ''));
+        if ($title === '') return $current;
 
-        $text = mb_strtolower(
-            trim(
-                (string)($item['title'] ?? '')
-                .' '
-                .(string)($item['description'] ?? '')
-                .' '
-                .mb_substr((string)($item['body'] ?? ''), 0, 700, 'UTF-8')
-            ),
-            'UTF-8'
-        );
+        if (preg_match('~acidente|colis[aã]o|atropelamento|capotamento|roubo|assalto|pris[aã]o|apreens[aã]o|persegui[cç][aã]o policial~iu', $title)) return 'Segurança';
+        if (preg_match('~\\b(?:vagas?|empregos?)\\b|\\bPAT\\b|contrata[cç][aã]o|processo seletivo|oportunidades de trabalho~iu', $title)) return 'Empregos';
+        if (preg_match('~\\b(?:vereador(?:a|es)?|c[aâ]mara municipal|mo[cç][aã]o|requerimento parlamentar)\\b~iu', $title)) return 'Política';
+        if (preg_match('~investimentos?|networking|empreendedores?|neg[oó]cios|coopera[cç][aã]o empresarial|economia|ind[uú]stria|empretec~iu', $title)) return 'Economia';
+        if (preg_match('~ponto facultativo|decreto municipal|varri[cç][aã]o|transporte p[uú]blico|tr[aâ]nsito|interdi[cç][aã]o|pavimenta[cç][aã]o|avenida|chuvas?|temporal|alagamento~iu', $title)) return 'Cidade';
+        if (preg_match('~sa[uú]de|vacina[cç][aã]o|hospital|odontol[oó]gic|sa[uú]de bucal|c[aâ]ncer|dengue~iu', $title)) return 'Saúde';
+        if (preg_match('~cursos?|minicursos?|escola|alunos?|matr[ií]cula|educa[cç][aã]o|ensino|capacita[cç][aã]o|palestra educativa~iu', $title)) return 'Educação';
+        if (preg_match('~festival|show|m[uú]sica|teatro|cultura(?:l|is)?|artesanato|festa das na[cç][oõ]es|oficina de roteiro~iu', $title)) return 'Cultura';
+        if (preg_match('~campeonato|futebol|v[oô]lei|basquete|corrida|torneio|atletas?|competi[cç][aã]o|jogos regionais~iu', $title)) return 'Esportes';
+        return $current;
+    }
+}
 
-        /*
-         * A ordem é importante:
-         * cursos e matrículas precisam ser classificados antes de "vagas".
-         */
-        if (preg_match(
-            '~campeonato|futebol|v[oô]lei|basquete|corrida|'
-            .'torneio|jogos regionais|atleta|minicampo|competi[cç][aã]o~iu',
-            $text
-        )) {
-            return 'Esportes';
+if (!function_exists('tvs_radar_temporal_review_reasons')) {
+    /**
+     * Sinaliza anúncios de eventos/serviços com data explicitamente vencida.
+     * Não transforma notícias retrospectivas em eventos expirados.
+     * $now é injetável para testes determinísticos.
+     */
+    function tvs_radar_temporal_review_reasons(array $item, ?int $now = null): array
+    {
+        $now = $now ?? time();
+        $headline = trim((string)($item['title'] ?? '').' '.(string)($item['subtitle'] ?? '').' '.(string)($item['summary'] ?? ''));
+        if ($headline === '') return [];
+        if (!preg_match('~\\b(?:acontece|acontecer[aá]|ser[aá]\\s+(?:realizad[ao]|promovid[ao])|neste|pr[oó]xim[ao]|inscri[cç][oõ]es|programa[cç][aã]o|rodada decisiva|vai acontecer|vai realizar|oferecer[aá])\\b~iu', $headline)) return [];
+
+        $months = [
+            'janeiro'=>1,'fevereiro'=>2,'março'=>3,'marco'=>3,'abril'=>4,
+            'maio'=>5,'junho'=>6,'julho'=>7,'agosto'=>8,'setembro'=>9,
+            'outubro'=>10,'novembro'=>11,'dezembro'=>12
+        ];
+        $source = strtotime((string)($item['source_published_at'] ?? $item['published_at'] ?? $item['created_at'] ?? ''));
+        $base = $source ?: $now;
+        $baseYear = (int)date('Y', $base);
+        $baseMonth = (int)date('n', $base);
+        $dates = [];
+
+        if (preg_match_all('~\\b([0-3]?\\d)\\s+de\\s+(janeiro|fevereiro|mar[cç]o|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)(?:\\s+de\\s+(20\\d{2}))?\\b~iu', $headline, $matches, PREG_SET_ORDER)) {
+            foreach ($matches as $m) {
+                $month = $months[mb_strtolower($m[2], 'UTF-8')] ?? 0;
+                $year = !empty($m[3]) ? (int)$m[3] : $baseYear;
+                if (empty($m[3]) && $baseMonth >= 11 && $month <= 2) $year++;
+                if (checkdate($month, (int)$m[1], $year)) $dates[] = sprintf('%04d-%02d-%02d', $year, $month, (int)$m[1]);
+            }
         }
-
-        if (preg_match(
-            '~festival|show|m[uú]sica|teatro|circo|cultural|'
-            .'exposi[cç][aã]o|agenda cultural|gastron[oô]mico|'
-            .'apresenta[cç][aã]o musical~iu',
-            $text
-        )) {
-            return 'Cultura';
+        if (preg_match_all('~\\b([0-3]?\\d)[/\\-]([01]?\\d)(?:[/\\-](20\\d{2}))?\\b~u', $headline, $matches, PREG_SET_ORDER)) {
+            foreach ($matches as $m) {
+                $month = (int)$m[2];
+                $year = !empty($m[3]) ? (int)$m[3] : $baseYear;
+                if (empty($m[3]) && $baseMonth >= 11 && $month <= 2) $year++;
+                if (checkdate($month, (int)$m[1], $year)) $dates[] = sprintf('%04d-%02d-%02d', $year, $month, (int)$m[1]);
+            }
         }
-
-        if (preg_match(
-            '~curso|cursos|capacita[cç][aã]o|qualifica[cç][aã]o|'
-            .'escola|creche|aluno|alunos|matr[ií]cula|educa[cç][aã]o|'
-            .'ensino|oficina pedag[oó]gica|profissionalizante~iu',
-            $text
-        )) {
-            return 'Educação';
+        // Ex.: "neste domingo (18)" — o mês vem da data de origem.
+        if (preg_match_all('~\\b(?:segunda|ter[cç]a|quarta|quinta|sexta|s[aá]bado|domingo)(?:-feira)?\\s*\\(([0-3]?\\d)\\)~iu', $headline, $matches, PREG_SET_ORDER)) {
+            foreach ($matches as $m) {
+                if (checkdate($baseMonth, (int)$m[1], $baseYear)) $dates[] = sprintf('%04d-%02d-%02d', $baseYear, $baseMonth, (int)$m[1]);
+            }
         }
-
-        if (preg_match(
-            '~vaga de emprego|vagas de emprego|feir[aã]o de emprego|'
-            .'mercado de trabalho|contrata[cç][aã]o|empregador|'
-            .'posto de atendimento ao trabalhador|\bpat\b|'
-            .'auxiliar de log[ií]stica|processo seletivo para contratar~iu',
-            $text
-        )) {
-            return 'Empregos';
+        if (!$dates) return [];
+        $today = date('Y-m-d', $now);
+        foreach ($dates as $eventDate) {
+            if ($eventDate < $today) return ['Data de evento/serviço vencida ('.$eventDate.'); atualizar a abordagem antes de publicar'];
         }
-
-        if (preg_match(
-            '~tapa[- ]buraco|pavimenta[cç][aã]o|recape|asfalto|'
-            .'obra vi[aá]ria|sinaliza[cç][aã]o|revitaliza[cç][aã]o|'
-            .'pra[cç]a|transporte p[uú]blico|cad[uú]nico~iu',
-            $text
-        )) {
-            return 'Cidade';
-        }
-
-        return $current !== '' ? $current : 'Cidade';
+        return [];
     }
 }
 
@@ -294,6 +305,8 @@ if (!function_exists('tvs_radar_queue_item_readiness')) {
         if ($date === '' || strtotime($date) === false) {
             $reasons[] = 'Data não confirmada';
         }
+
+        $reasons = array_merge($reasons, tvs_radar_temporal_review_reasons($item));
 
         return [
             'ready' => count($reasons) === 0,
