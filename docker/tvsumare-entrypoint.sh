@@ -24,12 +24,11 @@ if [ -f /var/www/html/includes/video_ai_helper.php ]; then
 fi
 
 
-# Validação não destrutiva do volume de dados com as permissões do Apache.
-# Executa uma vez na inicialização e remove o arquivo temporário do teste.
-if su -s /bin/sh -c 'php -r '\''$dir="/var/www/html/data"; $probe=@tempnam($dir,".tvs-monitor-probe-"); if ($probe===false) {fwrite(STDERR,"MONITOR_DATA_WRITE=FAIL create\\n");exit(1);} $payload="tvs-monitor-volume-ok"; $ok=@file_put_contents($probe,$payload,LOCK_EX)===strlen($payload) && @file_get_contents($probe)===$payload; @unlink($probe); if (!$ok) {fwrite(STDERR,"MONITOR_DATA_WRITE=FAIL write-read\\n");exit(1);} echo "MONITOR_DATA_WRITE=PASS path=/var/www/html/data\\n";'\'' ' www-data; then
-  :
+# Verifica a escrita no volume persistente como o usuário do Apache.
+if su -s /bin/sh -c 'p=$(mktemp /var/www/html/data/.tvs-monitor-probe-XXXXXX) || exit 1; printf ok > "$p"; result=1; if [ "$(cat "$p")" = ok ]; then result=0; fi; rm -f "$p"; exit "$result"' www-data; then
+  echo "MONITOR_DATA_WRITE=PASS path=/var/www/html/data"
 else
-  echo "MONITOR_DATA_WRITE=FAIL check data volume permissions" >&2
+  echo "MONITOR_DATA_WRITE=FAIL path=/var/www/html/data" >&2
 fi
 
 exec docker-php-entrypoint "$@"
