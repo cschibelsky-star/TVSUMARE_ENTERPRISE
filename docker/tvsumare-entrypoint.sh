@@ -23,4 +23,12 @@ if [ -f /var/www/html/includes/video_ai_helper.php ]; then
   done
 fi
 
+
+# Verifica a escrita no volume persistente como o usuário do Apache.
+if su -s /bin/sh -c 'p=$(mktemp /var/www/html/data/.tvs-monitor-probe-XXXXXX) || exit 1; printf ok > "$p"; result=1; if [ "$(cat "$p")" = ok ]; then result=0; fi; rm -f "$p"; exit "$result"' www-data; then
+  echo "MONITOR_DATA_WRITE=PASS path=/var/www/html/data"
+else
+  echo "MONITOR_DATA_WRITE=FAIL path=/var/www/html/data" >&2
+fi
+
 exec docker-php-entrypoint "$@"

@@ -449,7 +449,7 @@ function tvs_save_json_file($path,$data){
   file_put_contents($path,json_encode(array_values($data), JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES));
 }
 function tvs_get_sources(){
-  $file=dirname(__DIR__).'/data/fontes.json';
+  $file=__DIR__.'/data/fontes.json';
   $sources=tvs_read_json_file($file);
   if(!$sources){
     $sources=[
@@ -563,7 +563,7 @@ function tvs_capture_source_items($src){
   return $out;
 }
 function tvs_update_breaking($items){
-  $file=dirname(__DIR__).'/data/ultimahora.json';
+  $file=__DIR__.'/data/ultimahora.json';
   $current=tvs_read_json_file($file); $seen=[]; $merged=[];
   foreach($items as $it){
     $url=$it['url']??''; if(!$url || isset($seen[$url])) continue; $seen[$url]=1;
