@@ -3219,11 +3219,9 @@ function tvs_radar_enrichment_due($cand){
   $ts=strtotime($next);
   if(!$ts || $ts<=time()) return true;
 
-  // Notícias frescas não podem ficar presas por janelas legadas de 2 horas.
-  // Se a última tentativa ocorreu há pelo menos 15 minutos, libera novo ciclo.
-  $updatedRaw=(string)($cand['pipeline_updated_at']??$cand['url_resolved_at']??$cand['enrichment_first_seen_at']??'');
-  $updated=$updatedRaw!=='' ? strtotime($updatedRaw) : false;
-  return $updated && (time()-$updated)>=900;
+  // O agendamento persistido e o TTL são a fonte de verdade.
+  // Não antecipar retry de 24h/7d só porque houve atualização há 15 minutos.
+  return false;
 }
 
 function tvs_radar_schedule_enrichment(&$cand,$reason=''){
@@ -4302,7 +4300,7 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5,$options=[]
 
   foreach($cycleCities as $city){
     if($generated>=$maxPerCycle) break;
-    if(($ready[$city]??0)>=$targetPerCity && !$forceRetry) continue;
+    if(($ready[$city]??0)>=$targetPerCity && !$forceRetry && empty($options['ignore_ready_quota'])) continue;
 
     $cityCandidates=[];
     foreach($discovery as $idx=>$cand){
@@ -4341,7 +4339,9 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5,$options=[]
         continue;
       }
 
-      if($candidateStage==='aguardando_fonte' && !$forceRetry) continue;
+      // Pautas com fonte resolvida podem retornar ao enriquecimento;
+      // Google News não resolvido permanece exclusivo do resolvedor de fontes.
+      if($candidateStage==='aguardando_fonte' && tvs_radar_is_google_news_url($candidateUrl)) continue;
       if($reprocessReason!=='' && ($cand['reprocess_reason']??'')===$reprocessReason && ($cand['editorial_rule_version']??'')===$ruleVersion) continue;
       if($onlyGoogleUnresolved && !tvs_radar_is_google_news_url($cand['url']??'')) continue;
       $candId=(string)($cand['id']??'');
@@ -4948,7 +4948,9 @@ function tvs_radar_backlog_candidate_eligible_v13($cand){
   // O resolvedor só considera a fonte definitivamente esgotada na 6ª tentativa.
   // O seletor do backlog precisa usar o mesmo limite para não abandonar a pauta
   // duas tentativas antes de ela atingir o estado final auditável.
-  if($isGoogle && (int)($cand['source_resolution_attempts']??0)>=6) return false;
+  // A fila de resolução possui retry e TTL próprios. Não gastar lote
+  // editorial tentando enriquecer URL agregadora ainda não resolvida.
+  if($isGoogle) return false;
 
   $package=(array)($cand['fact_package']??[]);
   if($package){
@@ -5021,6 +5023,18 @@ function tvs_radar_select_backlog_ids_v13($limit=20){
 }
 
 function tvs_radar_run_backlog_batch_v13($limit=20){
+  // Bloqueio não bloqueante contra duplo clique e lotes simultâneos.
+  // O arquivo fica exclusivamente no volume persistente da HML.
+  $batchLock=@fopen(dirname(__DIR__).'/data/radar_backlog_batch_v13.lock','c');
+  if(!$batchLock || !@flock($batchLock,LOCK_EX|LOCK_NB)){
+    if(is_resource($batchLock)) fclose($batchLock);
+    return [
+      'allowed'=>0,'selected'=>0,'processed'=>0,'persisted'=>0,
+      'generated'=>0,'advanced'=>0,'stalled'=>0,'skipped'=>0,'errors'=>0,
+      'status'=>'lote_em_andamento','reasons'=>['execucao_concorrente'=>1]
+    ];
+  }
+  try {
   // Antes de selecionar o backlog, drena filas recuperáveis respeitando retry/TTL.
   $sourceResolution=tvs_radar_process_due_source_resolution(min(12,max(4,(int)$limit)));
   $status=tvs_radar_status();
@@ -5065,7 +5079,8 @@ function tvs_radar_run_backlog_batch_v13($limit=20){
 
   $batchToken='backlog_v13_'.date('Ymd_His').'_'.substr(md5(uniqid('',true)),0,8);
   $generated=tvs_radar_process_discovery('normal',5,[
-    'force_retry'=>true,
+    'force_retry'=>false,
+    'ignore_ready_quota'=>true,
     'max_candidates'=>count($ids),
     'max_generated'=>count($ids),
     'only_ids'=>$ids,
@@ -5096,8 +5111,22 @@ function tvs_radar_run_backlog_batch_v13($limit=20){
     if($id!=='') $discardedIds[$id]=true;
   }
 
+  $actuallyProcessed=[];
+  foreach((array)($metrics['item_diagnostics']??[]) as $processedRow){
+    $processedId=(string)($processedRow['id']??'');
+    if($processedId!=='') $actuallyProcessed[$processedId]=true;
+  }
   $advanced=0; $stalled=0; $reasons=[]; $itemDiagnostics=[];
   foreach($ids as $id){
+    if(!isset($actuallyProcessed[$id])){
+      $itemDiagnostics[]=[
+        'id'=>$id,'previous_stage'=>(string)($before[$id]['stage']??''),
+        'current_stage'=>'nao_processada','reason'=>'Selecionada, mas não executada neste ciclo.',
+        'next_retry_at'=>'','attempts'=>(int)($before[$id]['attempts']??0)
+      ];
+      $reasons['nao_processada_no_lote']=($reasons['nao_processada_no_lote']??0)+1;
+      continue;
+    }
     $current=$after[$id]??[];
     $itemDiagnostics[]=[
       'id'=>$id,
@@ -5136,14 +5165,13 @@ function tvs_radar_run_backlog_batch_v13($limit=20){
     $reasons['estado_nao_localizado']=($reasons['estado_nao_localizado']??0)+1;
   }
 
-  // A telemetria do lote deve refletir todos os IDs selecionados que receberam
-  // um desfecho observável (fila, descarte ou estado persistido), não apenas os IDs
-  // que passaram pelo contador interno do process_discovery.
+  // Contabiliza apenas IDs realmente tentados no processamento.
+  // Selecionar não equivale a processar nem a persistir.
   $selectedCount=count($ids);
-  $handledCount=$advanced+$stalled;
-  $processed=$handledCount;
-  $persisted=$handledCount;
-  $errors=max(0,$selectedCount-$handledCount);
+  $processed=count($actuallyProcessed);
+  $persisted=min($processed,(int)($metrics['persisted_count']??0));
+  $skipped=max(0,$selectedCount-$processed);
+  $errors=max(0,(int)($metrics['error_count']??0));
   $result=[
     'allowed'=>1,
     'selected'=>$selectedCount,
@@ -5152,11 +5180,12 @@ function tvs_radar_run_backlog_batch_v13($limit=20){
     'generated'=>$generated,
     'advanced'=>$advanced,
     'stalled'=>$stalled,
+    'skipped'=>$skipped,
     'item_diagnostics'=>$itemDiagnostics,
     'errors'=>$errors,
     'first_item_id'=>(string)($metrics['first_item_id']??''),
     'last_item_id'=>(string)($metrics['last_item_id']??''),
-    'status'=>($processed===count($ids) && $errors===0 && $persisted===count($ids))
+    'status'=>($processed===$selectedCount && $errors===0 && $persisted===$processed)
       ? 'lote_concluido' : 'lote_parcial',
     'reasons'=>$reasons
   ];
@@ -5182,6 +5211,7 @@ function tvs_radar_run_backlog_batch_v13($limit=20){
     'error_count'=>$errors,
     'advanced_count'=>$advanced,
     'stalled_count'=>$stalled,
+    'skipped_count'=>$skipped,
     'reasons'=>$reasons,
     'first_item_id'=>(string)($metrics['first_item_id']??''),
     'last_item_id'=>(string)($metrics['last_item_id']??''),
@@ -5191,6 +5221,10 @@ function tvs_radar_run_backlog_batch_v13($limit=20){
   ]);
 
   return $result;
+  } finally {
+    @flock($batchLock,LOCK_UN);
+    fclose($batchLock);
+  }
 }
 
 // Compatibilidade temporária para chamadas antigas; sem gate de piloto.
@@ -5625,7 +5659,9 @@ if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'){
     $notice='O piloto retroativo foi encerrado. O Radar 1.3 processa diretamente as pautas auditadas pendentes em lotes controlados.';
   } elseif($action==='process_backlog_batch'){
     $batch=tvs_radar_run_backlog_batch_v13(20);
-    if(($batch['status']??'')==='sem_pautas_elegiveis'){
+    if(($batch['status']??'')==='lote_em_andamento'){
+      $notice='Já existe um lote do backlog em execução. Aguarde a conclusão antes de tentar novamente.';
+    } elseif(($batch['status']??'')==='sem_pautas_elegiveis'){
       $notice='Backlog 1.3: não há pautas elegíveis para processamento neste momento. Itens em espera respeitam retry/TTL e não são forçados.';
     } else {
       $reasonText='';
@@ -5638,6 +5674,7 @@ if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'){
         .(int)($batch['persisted']??0).' persistida(s); '
         .(int)($batch['advanced']??0).' avançaram; '
         .(int)($batch['stalled']??0).' permaneceram no mesmo estado; '
+        .(int)($batch['skipped']??0).' não executadas neste ciclo; '
         .(int)($batch['generated']??0).' chegaram à fila editorial; '
         .(int)($batch['errors']??0).' erro(s).'.$reasonText
         .' Nenhuma publicação automática foi executada.';
@@ -5926,6 +5963,7 @@ foreach($editorBlocks as $label=>$count){ if($count>0): ?><span class="badge" st
 <span class="badge">Processadas: <?=(int)($lastBacklogBatch['processed']??0)?></span>
 <span class="badge">Avançaram: <?=(int)($lastBacklogBatch['advanced']??0)?></span>
 <span class="badge">Sem transição: <?=(int)($lastBacklogBatch['stalled']??0)?></span>
+<span class="badge">Não executadas: <?=(int)($lastBacklogBatch['skipped']??0)?></span>
 <span class="badge">Erros: <?=(int)($lastBacklogBatch['errors']??0)?></span></div>
 <small class="muted">Lote <?=h((string)($lastBacklogBatch['executed_at']??''))?> · <?=h((string)($lastBacklogBatch['status']??''))?>. Independente da telemetria da coleta normal.</small>
 <?php $diagRows=(array)($lastBacklogBatch['item_diagnostics']??[]); if($diagRows): ?>
