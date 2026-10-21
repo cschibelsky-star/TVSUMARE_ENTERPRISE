@@ -4288,7 +4288,7 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5,$options=[]
   $reprocessReason=(string)($options['reprocess_reason']??'');
   $maxPerCycle=tvs_radar_is_volume_mode($mode)?12:6;
   if(!empty($options['max_generated'])) $maxPerCycle=max(1,(int)$options['max_generated']);
-  $maxTriesPerCity=tvs_radar_is_volume_mode($mode)?8:6;
+  $maxTriesPerCity=!empty($options['backlog_v13']) ? max(1,min(20,(int)($options['max_candidates']??20))) : (tvs_radar_is_volume_mode($mode)?8:6);
   $cursor=tvs_radar_cursor_state();
   $startCity=(int)($cursor['city_start']??0);
   $cityCount=count($cities);
@@ -5081,8 +5081,9 @@ function tvs_radar_run_backlog_batch_v13($limit=20){
   $generated=tvs_radar_process_discovery('normal',5,[
     'force_retry'=>false,
     'ignore_ready_quota'=>true,
-    'max_candidates'=>count($ids),
-    'max_generated'=>count($ids),
+    'max_candidates'=>min(20,count($ids)),
+    'max_generated'=>min(20,count($ids)),
+    'backlog_v13'=>true,
     'only_ids'=>$ids,
     'editorial_rule_version'=>'1.3',
     'reprocess_reason'=>$batchToken,
@@ -5168,8 +5169,8 @@ function tvs_radar_run_backlog_batch_v13($limit=20){
   // Contabiliza apenas IDs realmente tentados no processamento.
   // Selecionar não equivale a processar nem a persistir.
   $selectedCount=count($ids);
-  $processed=count($actuallyProcessed);
-  $persisted=min($processed,(int)($metrics['persisted_count']??0));
+  $processed=count(array_intersect_key($actuallyProcessed,array_fill_keys($ids,true)));
+  $persisted=min($processed,max(0,(int)($metrics['persisted_count']??0)));
   $skipped=max(0,$selectedCount-$processed);
   $errors=max(0,(int)($metrics['error_count']??0));
   $result=[
