@@ -25,6 +25,27 @@ check_case(count(tvs_radar_select_backlog_ids_v13(20))===20,'Limite indevido por
 for($i=0;$i<25;$i++) $GLOBALS['fixture_discovery'][$i]['next_retry']=time()+3600;
 check_case(count(tvs_radar_select_backlog_ids_v13(20))===5,'Retry futuro nao respeitado');
 check_case(count(tvs_radar_select_backlog_ids_v13(3))===3,'Limite menor nao respeitado');
+// Validacao isolada: substitui candidatos inelegiveis sem gastar as 20 vagas.
+$GLOBALS['fixture_discovery']=[];
+for($i=0;$i<44;$i++){
+  $GLOBALS['fixture_discovery'][]=[
+    'id'=>'fixture-'.$i,'city'=>'Campinas','eligible'=>($i%2===0),
+    'next_retry'=>($i===0?time()+3600:0),
+    'url'=>'https://example.org/fixture/'.$i
+  ];
+}
+$eligibleIds=tvs_radar_select_backlog_ids_v13(20);
+check_case(count($eligibleIds)===20,'Nao repoe candidatos inelegiveis ate completar 20');
+check_case(!in_array('fixture-0',$eligibleIds,true),'Item com retry futuro foi selecionado');
+foreach($eligibleIds as $id){
+  $index=(int)substr($id,8);
+  check_case($index%2===0,'Item inelegivel entrou no lote: '.$id);
+}
+check_case(count(tvs_radar_select_backlog_ids_v13(100))===21,'Selecao excedeu o total elegivel');
+// A selecao e pura: nem o fixture original nem os registros sao alterados.
+$before=serialize($GLOBALS['fixture_discovery']);
+tvs_radar_select_backlog_ids_v13(20);
+check_case(serialize($GLOBALS['fixture_discovery'])===$before,'Simulacao alterou os dados de origem');
 check_case(str_contains($source,"'backlog_v13'=>true"),'Flag de backlog ausente');
 check_case(str_contains($source,"'ignore_ready_quota'=>true"),'Cota de prontas indevidamente aplicada ao backlog');
 check_case(str_contains($source,'array_intersect_key($actuallyProcessed,array_fill_keys($ids,true))'),'Metrica de IDs efetivos ausente');
