@@ -27,5 +27,5 @@ check_case(count(tvs_radar_select_backlog_ids_v13(20))===5,'Retry futuro nao res
 check_case(count(tvs_radar_select_backlog_ids_v13(3))===3,'Limite menor nao respeitado');
 check_case(str_contains($source,"'backlog_v13'=>true"),'Flag de backlog ausente');
 check_case(str_contains($source,"'ignore_ready_quota'=>true"),'Cota de prontas indevidamente aplicada ao backlog');
-check_case(str_contains($source,"array_intersect_key($actuallyProcessed,array_fill_keys($ids,true))"),'Metrica de IDs efetivos ausente');
+check_case(str_contains($source,'array_intersect_key($actuallyProcessed,array_fill_keys($ids,true))'),'Metrica de IDs efetivos ausente');
 echo "RADAR_BACKLOG_BATCH_V13_TEST=PASS\n";
