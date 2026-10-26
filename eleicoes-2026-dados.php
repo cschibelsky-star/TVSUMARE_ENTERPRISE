@@ -6,5 +6,6 @@ header('Cache-Control: no-store');
 $uf=is_string($_GET['uf']??null)?strtolower($_GET['uf']):'sp';
 if (!isset(tvs_election_states()[$uf])) { http_response_code(400); echo '{"error":"UF inválida."}'; exit; }
 $presidentOnly=($_GET['visao']??'')==='presidente';
-try { echo json_encode(tvs_election_snapshot($uf,$presidentOnly),JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR); }
+$turn=($_GET['turno']??'2')==='1'?1:2;
+try { echo json_encode(tvs_election_snapshot($uf,$presidentOnly,$turn),JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR); }
 catch (Throwable $error) { http_response_code(503); echo '{"error":"Resultados temporariamente indisponíveis."}'; }

@@ -3,10 +3,14 @@ declare(strict_types=1);
 require_once __DIR__.'/election_projection.php';
 
 function tvs_election_states(): array { return ['ac'=>'Acre','al'=>'Alagoas','ap'=>'Amapá','am'=>'Amazonas','ba'=>'Bahia','ce'=>'Ceará','df'=>'Distrito Federal','es'=>'Espírito Santo','go'=>'Goiás','ma'=>'Maranhão','mt'=>'Mato Grosso','ms'=>'Mato Grosso do Sul','mg'=>'Minas Gerais','pa'=>'Pará','pb'=>'Paraíba','pr'=>'Paraná','pe'=>'Pernambuco','pi'=>'Piauí','rj'=>'Rio de Janeiro','rn'=>'Rio Grande do Norte','rs'=>'Rio Grande do Sul','ro'=>'Rondônia','rr'=>'Roraima','sc'=>'Santa Catarina','sp'=>'São Paulo','se'=>'Sergipe','to'=>'Tocantins']; }
-function tvs_election_specs(string $uf='sp'): array {
+function tvs_election_specs(string $uf='sp', int $turn=1): array {
     $states=tvs_election_states();
     if (!isset($states[$uf])) throw new InvalidArgumentException('UF inválida.');
     $name=$states[$uf];
+    if ($turn===2) return [
+        ['key'=>'presidente','title'=>'Presidente — Brasil (2º turno)','uf'=>'br','cargo'=>1,'election'=>6258],
+        ['key'=>'governador','title'=>'Governador — '.$name.' (2º turno)','uf'=>$uf,'cargo'=>3,'election'=>6260],
+    ];
     return [
         ['key'=>'presidente','title'=>'Presidente — Brasil','uf'=>'br','cargo'=>1,'election'=>6257],
         ['key'=>'governador','title'=>'Governador — '.$name,'uf'=>$uf,'cargo'=>3,'election'=>6259],
@@ -23,7 +27,7 @@ function tvs_election_number($value): float {
 }
 function tvs_election_parse(array $raw, array $spec): array {
     if (($raw['f']??'') !== 'o' || (int)($raw['ele']??0) !== $spec['election']
-        || (string)($raw['t']??'') !== '1' || ($raw['tpabr']??'') !== ($spec['uf']==='br'?'br':'uf')
+        || (string)($raw['t']??'') !== ($spec['election']===6258 || $spec['election']===6260 ? '2' : '1') || ($raw['tpabr']??'') !== ($spec['uf']==='br'?'br':'uf')
         || strtolower((string)($raw['cdabr']??'')) !== $spec['uf']) {
         throw new RuntimeException('Arquivo de outra eleição, abrangência ou ambiente.');
     }
@@ -35,7 +39,7 @@ function tvs_election_parse(array $raw, array $spec): array {
     $sections=tvs_election_number($raw['s']['pst']);
     if ($sections>100) throw new RuntimeException('Percentual de seções inválido.');
     $timestamp=DateTimeImmutable::createFromFormat('!d/m/Y H:i:s', ($raw['dg']??'').' '.($raw['hg']??''), new DateTimeZone('America/Sao_Paulo'));
-    if (!$timestamp || $timestamp->format('d/m/Y')!=='04/10/2026') throw new RuntimeException('Data oficial inesperada.');
+    if (!$timestamp || $timestamp->format('d/m/Y')!==($spec['election']===6258 || $spec['election']===6260 ? '25/10/2026' : '04/10/2026')) throw new RuntimeException('Data oficial inesperada.');
     $proportional=in_array($spec['cargo'],[6,7,8],true);
     $electoralQuotient=$proportional && isset($cargo['qe']) ? tvs_election_number($cargo['qe']) : null;
     $seats=isset($cargo['nv']) ? (int)tvs_election_number($cargo['nv']) : null;
@@ -80,14 +84,14 @@ function tvs_election_fetch(string $url): array {
     if (!is_array($decoded)) throw new RuntimeException('Resposta oficial inválida.');
     return $decoded;
 }
-function tvs_election_snapshot(string $uf='sp', bool $presidentOnly=false): array {
+function tvs_election_snapshot(string $uf='sp', bool $presidentOnly=false, int $turn=1): array {
     $directory=__DIR__.'/../data/elections-2026';
     if (!is_dir($directory) && !@mkdir($directory,0750,true)) throw new RuntimeException('Cache indisponível.');
     $results=[];
-    $specs=tvs_election_specs($uf);
+    $specs=tvs_election_specs($uf,$turn);
     if ($presidentOnly) $specs=array_slice($specs,0,1);
     foreach ($specs as $spec) {
-        $cacheKey=$spec['uf']==='br'?$spec['key']:$spec['uf'].'-'.$spec['key'];
+        $cacheKey=($turn===2?'turno2-':'').($spec['uf']==='br'?$spec['key']:$spec['uf'].'-'.$spec['key']);
         $path=$directory.'/'.$cacheKey.'.json';
         $read=static function() use ($path) { $raw=@file_get_contents($path); return is_string($raw)?(json_decode($raw,true)?:[]):[]; };
         $cache=$read();
