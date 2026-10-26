@@ -5008,13 +5008,18 @@ function tvs_radar_select_backlog_ids_v13($limit=20){
   unset($items);
 
   $ids=[];
+  $seenIds=[];
   while(count($ids)<$limit){
     $progress=false;
     foreach($cities as $city){
       if(count($ids)>=$limit) break;
       if(empty($byCity[$city])) continue;
       $row=array_shift($byCity[$city]);
-      if(!empty($row['id'])) $ids[]=$row['id'];
+      $candidateId=(string)($row['id']??'');
+      if($candidateId!=='' && !isset($seenIds[$candidateId])){
+        $seenIds[$candidateId]=true;
+        $ids[]=$candidateId;
+      }
       $progress=true;
     }
     if(!$progress) break;
