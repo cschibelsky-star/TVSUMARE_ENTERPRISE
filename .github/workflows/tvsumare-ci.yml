@@ -32,6 +32,9 @@ jobs:
           done < <(find . -type f -name '*.php' -print0)
           echo "PHP_LINT=PASS"
 
+      - name: Testar selecao do backlog Radar 1.3
+        run: php tests/radar_backlog_batch_v13_test.php
+
       - name: Teste da politica editorial V3
         run: php tests/editorial_policy_v3_test.php
 
