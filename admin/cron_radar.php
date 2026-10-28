@@ -111,7 +111,7 @@ if(!is_file($offlineResolutionMarker)){
  * diretamente sobre pautas auditadas, elegíveis e com retry/TTL disponível.
  * Nenhuma etapa publica automaticamente.
  */
-$batch=tvs_radar_run_backlog_batch_v13(20);
+$batch=tvs_radar_run_backlog_batch_v13(40);
 echo 'RADAR_V13_BACKLOG_BATCH '.json_encode($batch,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n";
 @file_put_contents(
   $cronLogFile,

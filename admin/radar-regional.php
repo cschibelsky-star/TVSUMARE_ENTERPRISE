@@ -4327,14 +4327,16 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5,$options=[]
       $candidateStage=(string)($cand['pipeline_stage']??'');
       if(in_array($candidateStage,['fonte_esgotada','revisao_manual_pipeline','expirada_sem_enriquecimento'],true)) continue;
 
-      // Barreira pré-enriquecimento: um Google News ainda não resolvido que já
-      // passou por seis ciclos não pode chegar novamente ao PIPELINE_TRY.
+      // Barreira pré-enriquecimento: no máximo três tentativas de pipeline
+      // para fontes Google News não resolvidas. Preserva a pauta e seu histórico.
       $candidateUrl=trim((string)($cand['url']??$cand['source_url']??''));
-      if(tvs_radar_is_google_news_url($candidateUrl) && (int)($cand['pipeline_attempts']??0)>=6){
+      if(tvs_radar_is_google_news_url($candidateUrl) && (int)($cand['pipeline_attempts']??0)>=3){
         $cand['pipeline_stage']='fonte_esgotada';
-        $cand['pipeline_reason']='Fonte original esgotou seis ciclos de resolução; removida do processamento automático antes do enriquecimento.';
+        $cand['pipeline_reason']='Limite de três tentativas do pipeline atingido; descarte lógico da fila automática, com histórico preservado.';
         $cand['enrichment_next_retry_at']='';
         $cand['pipeline_updated_at']=date('c');
+        $cand['pipeline_discarded_at']=$cand['pipeline_updated_at'];
+        $cand['pipeline_discard_reason']='max_attempts_3';
         $discovery[$idx]=$cand;
         continue;
       }
