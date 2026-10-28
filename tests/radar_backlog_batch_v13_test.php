@@ -18,6 +18,8 @@ foreach($cities as $city){
 $ids=tvs_radar_select_backlog_ids_v13(20);
 check_case(count($ids)===20,'Lote deveria selecionar 20 pautas elegiveis');
 check_case(count(array_unique($ids))===20,'IDs duplicados no lote');
+$GLOBALS['fixture_discovery'][]=$GLOBALS['fixture_discovery'][0];
+check_case(count(array_unique(tvs_radar_select_backlog_ids_v13(20)))===20,'ID repetido na origem nao foi deduplicado');
 foreach($cities as $city) check_case(count(array_filter($ids,fn($id)=>str_starts_with($id,$city.'-')))>0,'Cidade ignorada: '.$city);
 $GLOBALS['fixture_discovery']=[];
 for($i=0;$i<30;$i++) $GLOBALS['fixture_discovery'][]=['id'=>'Campinas-'.$i,'city'=>'Campinas','eligible'=>true,'url'=>'https://example.org/item/'.$i];
