@@ -4327,19 +4327,9 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5,$options=[]
       $candidateStage=(string)($cand['pipeline_stage']??'');
       if(in_array($candidateStage,['fonte_esgotada','revisao_manual_pipeline','expirada_sem_enriquecimento'],true)) continue;
 
-      // Descarte logico auditavel apos tres tentativas de fonte nao resolvida.
-      $candidateUrl=trim((string)($cand['url']??$cand['source_url']??''));
-      if(tvs_radar_is_google_news_url($candidateUrl) && (int)($cand['pipeline_attempts']??0)>=3){
-        $cand['pipeline_stage']='fonte_esgotada';
-        $cand['pipeline_reason']='Fonte nao resolvida apos tres tentativas; preservada para auditoria e revisao manual.';
-        $cand['enrichment_next_retry_at']='';
-        $cand['pipeline_updated_at']=date('c');
-        $cand['pipeline_discarded_at']=$cand['pipeline_updated_at'];
-        $cand['pipeline_discard_reason']='max_attempts_3';
-        $discovery[$idx]=$cand;
-        continue;
-      }
-
+      // A resolução de fontes possui contador, retry e TTL próprios.
+      // Não descartar pautas pelo contador genérico pipeline_attempts:
+      // ele inclui tentativas de outras etapas do fluxo editorial.
       // Pautas com fonte resolvida podem retornar ao enriquecimento;
       // Google News não resolvido permanece exclusivo do resolvedor de fontes.
       if($candidateStage==='aguardando_fonte' && tvs_radar_is_google_news_url($candidateUrl)) continue;
