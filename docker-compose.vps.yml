@@ -73,7 +73,7 @@ services:
     stop_grace_period: 20s
 
   web_prod:
-    image: sha256:a26ba9098c8e44b24bfbc62f708593ae8d74a82290eaed16956fdffea5e030a3
+    image: sha256:006a356406c11aedbcc104aa0eba2cf98c1fa3ca8bfd0d34f86cffbcca9171cc
     pull_policy: never
     container_name: tvsumare_web_prod
     restart: unless-stopped
