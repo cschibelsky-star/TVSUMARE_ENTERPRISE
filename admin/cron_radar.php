@@ -91,6 +91,25 @@ register_shutdown_function(function() use ($cronLogFile,$cronStarted){
 $_SERVER['REQUEST_METHOD']='CRON';
 require_once __DIR__.'/radar-regional.php';
 
+// Modo isolado do backlog para agendamento de cinco minutos na HML.
+if(PHP_SAPI==='cli' && getenv('TVS_RADAR_BACKLOG_ONLY')==='1'){
+  $lock=@fopen(dirname(__DIR__).'/data/radar_backlog_v13.lock','c');
+  if(!$lock || !@flock($lock,LOCK_EX|LOCK_NB)){
+    @file_put_contents($cronLogFile,date('c')." RADAR_BACKLOG_SKIP reason=overlap\n",FILE_APPEND|LOCK_EX);
+    exit(0);
+  }
+  try{
+    $batch=tvs_radar_run_backlog_batch_v13(40);
+    $line=date('c').' RADAR_BACKLOG_5MIN '.json_encode($batch,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n";
+    @file_put_contents($cronLogFile,$line,FILE_APPEND|LOCK_EX);
+    echo $line;
+  }finally{
+    @flock($lock,LOCK_UN);
+    @fclose($lock);
+  }
+  exit(0);
+}
+
 /*
  * RADAR 1.2 — resolvedor offline do backlog Google News.
  * Executa somente resolução/validação de fonte; não chama Repórter IA, Editor IA
@@ -111,7 +130,7 @@ if(!is_file($offlineResolutionMarker)){
  * diretamente sobre pautas auditadas, elegíveis e com retry/TTL disponível.
  * Nenhuma etapa publica automaticamente.
  */
-$batch=tvs_radar_run_backlog_batch_v13(20);
+$batch=tvs_radar_run_backlog_batch_v13(40);
 echo 'RADAR_V13_BACKLOG_BATCH '.json_encode($batch,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n";
 @file_put_contents(
   $cronLogFile,
