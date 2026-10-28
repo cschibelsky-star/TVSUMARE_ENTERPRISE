@@ -13,7 +13,7 @@ require_once __DIR__.'/monitor_lib.php';
  * exclusivamente pelo módulo de validade editorial.
  */
 $recoveryMarker=dirname(__DIR__).'/data/recovery_20260924_done.json';
-if(!is_file($recoveryMarker)){
+if(getenv('TVS_RADAR_BACKLOG_ONLY')!=='1' && !is_file($recoveryMarker)){
   $dataDir=dirname(__DIR__).'/data';
   $stamp=date('Ymd_His');
   $backupDir=$dataDir.'/recovery_backup_'.$stamp;
