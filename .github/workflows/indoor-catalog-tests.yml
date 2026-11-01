@@ -1,0 +1,25 @@
+name: Indoor catalog isolated PHP checks
+
+on:
+  pull_request:
+    paths:
+      - 'includes/indoor_catalog_export.php'
+      - 'tests/indoor_catalog_export_test.php'
+      - '.github/workflows/indoor-catalog-tests.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  catalog:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run isolated TV Sumare Indoor catalog tests
+        run: |
+          php -v
+          php -l includes/indoor_catalog_export.php
+          php -l tests/indoor_catalog_export_test.php
+          php tests/indoor_catalog_export_test.php
