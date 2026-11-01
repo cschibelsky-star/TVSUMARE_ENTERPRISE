@@ -5,6 +5,7 @@ on:
     paths:
       - 'includes/indoor_catalog_export.php'
       - 'tests/indoor_catalog_export_test.php'
+      - 'includes/indoor/**'
       - '.github/workflows/indoor-catalog-tests.yml'
   workflow_dispatch:
 
@@ -23,3 +24,6 @@ jobs:
           php -l includes/indoor_catalog_export.php
           php -l tests/indoor_catalog_export_test.php
           php tests/indoor_catalog_export_test.php
+          php -l includes/indoor/IndoorServiceAuth.php
+          php -l includes/indoor/tests/service_auth_test.php
+          php includes/indoor/tests/service_auth_test.php
