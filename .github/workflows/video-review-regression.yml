@@ -1,0 +1,22 @@
+name: TV Play partial publication regression
+on:
+  push:
+    branches:
+      - fix/home-regular-production-20261026
+    paths:
+      - 'admin/revisao-videos.php'
+      - 'tests/video_review_partial_publish_test.php'
+      - '.github/workflows/video-review-regression.yml'
+  workflow_dispatch:
+jobs:
+  partial-publication:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: PHP syntax checks
+        run: |
+          php -l admin/revisao-videos.php
+          php -l tests/video_review_partial_publish_test.php
+      - name: Mocked TV Play and YouTube failure scenarios
+        run: php tests/video_review_partial_publish_test.php
