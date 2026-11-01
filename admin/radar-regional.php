@@ -4332,7 +4332,7 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5,$options=[]
       // ele inclui tentativas de outras etapas do fluxo editorial.
       // Pautas com fonte resolvida podem retornar ao enriquecimento;
       // Google News não resolvido permanece exclusivo do resolvedor de fontes.
-      if($candidateStage==='aguardando_fonte' && tvs_radar_is_google_news_url($candidateUrl)) continue;
+      if($candidateStage==='aguardando_fonte' && tvs_radar_is_google_news_url((string)($cand['url']??''))) continue;
       if($reprocessReason!=='' && ($cand['reprocess_reason']??'')===$reprocessReason && ($cand['editorial_rule_version']??'')===$ruleVersion) continue;
       if($onlyGoogleUnresolved && !tvs_radar_is_google_news_url($cand['url']??'')) continue;
       $candId=(string)($cand['id']??'');
