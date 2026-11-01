@@ -143,6 +143,45 @@ services:
         hard: 4096
     stop_grace_period: 20s
 
+  radar_scheduler_prod_candidate:
+    profiles: ["radar-prod-candidate"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tvsumare_radar_prod_candidate
+    restart: "no"
+    init: true
+    read_only: true
+    env_file:
+      - ../.env.runtime
+    command: ["/bin/sh", "-c", "exec su -s /bin/sh www-data -c 'php /var/www/html/cron_radar.php'"]
+    environment:
+      TVSUMARE_ENV: production
+      TVSUMARE_SITE_NAME: TV Sumare
+    volumes:
+      - /srv/tvsumare/shared/data:/var/www/html/data:rw,z
+      - /srv/tvsumare/shared/uploads:/var/www/html/uploads:rw,z
+      - /srv/tvsumare/shared/logs:/var/www/html/logs:rw,z
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777
+    networks:
+      - tvsumare_internal
+      - tvsumare_egress
+      - vitrine_net
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
+    pids_limit: 64
+    mem_limit: 256m
+    cpus: 0.5
+
   radar_scheduler:
     build:
       context: .
