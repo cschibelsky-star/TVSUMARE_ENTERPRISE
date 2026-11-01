@@ -154,7 +154,7 @@ services:
     read_only: true
     env_file:
       - ../.env.runtime
-    command: ["/bin/sh", "-c", "exec su -s /bin/sh www-data -c 'php /var/www/html/cron_radar.php'"]
+    command: ["/bin/sh", "-c", "exec su -s /bin/sh www-data -c 'timeout --signal=TERM --kill-after=30s 900s php /var/www/html/cron_radar.php'"]
     environment:
       TVSUMARE_ENV: production
       TVSUMARE_SITE_NAME: TV Sumare
