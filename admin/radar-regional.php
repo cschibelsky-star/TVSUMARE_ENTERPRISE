@@ -5434,6 +5434,29 @@ function tvs_publish_from_queue($id,$post){
   foreach($queue as $item){ if(($item['id']??'')===$id) $found=$item; else $newq[]=$item; }
   if(!$found){ $TVS_PUBLISH_ERROR='Matéria não encontrada na fila.'; return false; }
 
+  // Revalidar a atualidade no instante da publicação (inclusive aprovação em lote).
+  // Sem remoção da fila: a matéria continua disponível para revisão e auditoria.
+  $deadline=(string)($found['deadline_at']??$found['registration_end_at']??$found['event_end_at']??'');
+  if($deadline!==''){
+    $deadlineTs=strtotime($deadline);
+    if($deadlineTs===false || $deadlineTs<time()){
+      $TVS_PUBLISH_ERROR='Publicação bloqueada: prazo ou evento encerrado.';
+      return false;
+    }
+  }
+  $sourceDate=(string)($found['source_date']??$found['source_published_at']??$found['published_at']??$found['pubDate']??$found['date']??'');
+  if($sourceDate!==''){
+    $sourceTs=strtotime($sourceDate);
+    if($sourceTs===false || $sourceTs>time()+300){
+      $TVS_PUBLISH_ERROR='Publicação bloqueada: data de origem inválida.';
+      return false;
+    }
+    if(time()-$sourceTs>172800 && empty($found['verified_new_fact'])){
+      $TVS_PUBLISH_ERROR='Publicação bloqueada: pauta com mais de 48 horas sem fato novo verificado.';
+      return false;
+    }
+  }
+
   $humanReview=!empty($post['human_review']);
   if(empty($found['ai_editor_processed'])){
     $TVS_PUBLISH_ERROR='A matéria ainda não passou pelo Editor IA.';
