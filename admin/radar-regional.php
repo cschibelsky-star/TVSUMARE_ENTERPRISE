@@ -4306,6 +4306,19 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5,$options=[]
     foreach($discovery as $idx=>$cand){
       $requested=(string)($cand['radar_requested_city']??$cand['city']??'');
       if($requested!==$city) continue;
+      // Fonte datada há mais de 48h exige fato novo verificado antes de
+      // voltar à seleção automática; sem data, mantém revisão existente.
+      $sourceDate=(string)($cand['source_date']??$cand['source_published_at']??$cand['published_at']??'');
+      if($sourceDate!==''){
+        $sourceTs=strtotime($sourceDate);
+        if($sourceTs!==false && $sourceTs<=time() && time()-$sourceTs>172800 && empty($cand['verified_new_fact'])) continue;
+      }
+      // Bloqueio conservador: prazo explicitamente encerrado não volta à fila automática.
+      $deadline=(string)($cand['deadline_at']??$cand['registration_end_at']??$cand['event_end_at']??'');
+      if($deadline!==''){
+        $deadlineTs=strtotime($deadline);
+        if($deadlineTs===false || $deadlineTs<time()) continue;
+      }
       // Proteção anti-loop: pautas com histórico extremo de tentativas não podem
       // continuar consumindo o ciclo normal indefinidamente.
       if((int)($cand['pipeline_attempts']??0)>100){
@@ -4358,9 +4371,10 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5,$options=[]
     }
 
     usort($cityCandidates,function($a,$b){
-      if($a['diversity_penalty']!==$b['diversity_penalty']) return $a['diversity_penalty']<=>$b['diversity_penalty'];
-      if($a['resolution_penalty']!==$b['resolution_penalty']) return $a['resolution_penalty']<=>$b['resolution_penalty'];
+      // A qualidade factual tem prioridade sobre a distribuição por editoria.
       if($a['sf_score']!==$b['sf_score']) return $b['sf_score']<=>$a['sf_score'];
+      if($a['resolution_penalty']!==$b['resolution_penalty']) return $a['resolution_penalty']<=>$b['resolution_penalty'];
+      if($a['diversity_penalty']!==$b['diversity_penalty']) return $a['diversity_penalty']<=>$b['diversity_penalty'];
       if($a['attempts']!==$b['attempts']) return $a['attempts']<=>$b['attempts'];
       return strcmp($a['updated'],$b['updated']);
     });
@@ -5414,11 +5428,63 @@ function tvs_radar_update_queue($perCity=15,$mode='normal'){
   return $generated;
 }
 function tvs_publish_from_queue($id,$post){
+  // Serializa a verificacao do teto diario, a deduplicacao e a gravacao.
+  // O lock e compartilhado pelos caminhos de aprovacao individual e em lote.
+  global $newsFile, $TVS_PUBLISH_ERROR;
+  $lockPath=dirname($newsFile).'/.radar_publication.lock';
+  $handle=@fopen($lockPath,'c');
+  if($handle===false){
+    $TVS_PUBLISH_ERROR='Publicação bloqueada: não foi possível abrir o controle de concorrência.';
+    return false;
+  }
+  try {
+    if(!flock($handle,LOCK_EX)){
+      $TVS_PUBLISH_ERROR='Publicação bloqueada: controle de concorrência indisponível.';
+      return false;
+    }
+    return tvs_publish_from_queue_locked($id,$post);
+  } finally {
+    flock($handle,LOCK_UN);
+    fclose($handle);
+  }
+}
+function tvs_publish_from_queue_locked($id,$post){
   global $newsFile, $TVS_PUBLISH_ERROR;
   $TVS_PUBLISH_ERROR='';
   $queue=tvs_queue_read(); $found=null; $newq=[];
   foreach($queue as $item){ if(($item['id']??'')===$id) $found=$item; else $newq[]=$item; }
   if(!$found){ $TVS_PUBLISH_ERROR='Matéria não encontrada na fila.'; return false; }
+
+  // Revalidar a atualidade no instante da publicação (inclusive aprovação em lote).
+  // Sem remoção da fila: a matéria continua disponível para revisão e auditoria.
+  $deadline=(string)($found['deadline_at']??$found['registration_end_at']??$found['event_end_at']??'');
+  if($deadline!==''){
+    $deadlineTs=strtotime($deadline);
+    if($deadlineTs===false || $deadlineTs<time()){
+      $TVS_PUBLISH_ERROR='Publicação bloqueada: prazo ou evento encerrado.';
+      return false;
+    }
+  }
+  $sourceDate=(string)($found['source_date']??$found['source_published_at']??$found['published_at']??$found['pubDate']??$found['date']??'');
+  if($sourceDate===''){
+    $TVS_PUBLISH_ERROR='Publicação bloqueada: data original da fonte não confirmada; encaminhar para revisão.';
+    return false;
+  }
+  if($sourceDate!==''){
+    $sourceTs=strtotime($sourceDate);
+    if($sourceTs===false || $sourceTs>time()+300){
+      $TVS_PUBLISH_ERROR='Publicação bloqueada: data de origem inválida.';
+      return false;
+    }
+    if(time()-$sourceTs>172800 && empty($found['verified_new_fact'])){
+      $TVS_PUBLISH_ERROR='Publicação bloqueada: pauta com mais de 48 horas sem fato novo verificado.';
+      return false;
+    }
+    if(time()-$sourceTs>86400 && empty($found['current_relevance_verified']) && empty($found['verified_new_fact'])){
+      $TVS_PUBLISH_ERROR='Publicação bloqueada: matéria entre 24 e 48 horas exige relevância atual verificada.';
+      return false;
+    }
+  }
 
   $humanReview=!empty($post['human_review']);
   if(empty($found['ai_editor_processed'])){
@@ -5477,6 +5543,26 @@ function tvs_publish_from_queue($id,$post){
     return false;
   }
   $news=tvs_read_json_file($newsFile); if(!is_array($news)) $news=[];
+  // Limite editorial diario por cidade; nao limita o processamento do backlog.
+  $dailyCaps=['Sumaré'=>5,'Hortolândia'=>2,'Paulínia'=>2,'Nova Odessa'=>2,'Americana'=>2,'Campinas'=>2];
+  $publicationCity=trim((string)($candidate['city']??''));
+  if(isset($dailyCaps[$publicationCity])){
+    $today=(new DateTimeImmutable('now',new DateTimeZone('America/Sao_Paulo')))->format('Y-m-d');
+    $publishedToday=0;
+    foreach($news as $published){
+      if(!is_array($published) || trim((string)($published['city']??''))!==$publicationCity) continue;
+      $publishedAt=trim((string)($published['published_at']??''));
+      if($publishedAt==='') continue;
+      try {
+        $publishedDay=(new DateTimeImmutable($publishedAt))->setTimezone(new DateTimeZone('America/Sao_Paulo'))->format('Y-m-d');
+      } catch(Throwable $e) { continue; }
+      if($publishedDay===$today) $publishedToday++;
+    }
+    if($publishedToday >= $dailyCaps[$publicationCity]){
+      $TVS_PUBLISH_ERROR='Publicação bloqueada: limite editorial diário atingido para '.$publicationCity.'.';
+      return false;
+    }
+  }
   if(tvs_radar_history_duplicate($candidate,$news)){
     $TVS_PUBLISH_ERROR='Publicação bloqueada: esta pauta já consta no histórico de notícias publicadas.';
     return false;
