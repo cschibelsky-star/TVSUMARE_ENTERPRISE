@@ -4306,6 +4306,19 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5,$options=[]
     foreach($discovery as $idx=>$cand){
       $requested=(string)($cand['radar_requested_city']??$cand['city']??'');
       if($requested!==$city) continue;
+      // Fonte datada há mais de 48h exige fato novo verificado antes de
+      // voltar à seleção automática; sem data, mantém revisão existente.
+      $sourceDate=(string)($cand['source_date']??$cand['source_published_at']??$cand['published_at']??'');
+      if($sourceDate!==''){
+        $sourceTs=strtotime($sourceDate);
+        if($sourceTs!==false && $sourceTs<=time() && time()-$sourceTs>172800 && empty($cand['verified_new_fact'])) continue;
+      }
+      // Bloqueio conservador: prazo explicitamente encerrado não volta à fila automática.
+      $deadline=(string)($cand['deadline_at']??$cand['registration_end_at']??$cand['event_end_at']??'');
+      if($deadline!==''){
+        $deadlineTs=strtotime($deadline);
+        if($deadlineTs===false || $deadlineTs<time()) continue;
+      }
       // Proteção anti-loop: pautas com histórico extremo de tentativas não podem
       // continuar consumindo o ciclo normal indefinidamente.
       if((int)($cand['pipeline_attempts']??0)>100){
@@ -4327,21 +4340,12 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5,$options=[]
       $candidateStage=(string)($cand['pipeline_stage']??'');
       if(in_array($candidateStage,['fonte_esgotada','revisao_manual_pipeline','expirada_sem_enriquecimento'],true)) continue;
 
-      // Barreira pré-enriquecimento: um Google News ainda não resolvido que já
-      // passou por seis ciclos não pode chegar novamente ao PIPELINE_TRY.
-      $candidateUrl=trim((string)($cand['url']??$cand['source_url']??''));
-      if(tvs_radar_is_google_news_url($candidateUrl) && (int)($cand['pipeline_attempts']??0)>=6){
-        $cand['pipeline_stage']='fonte_esgotada';
-        $cand['pipeline_reason']='Fonte original esgotou seis ciclos de resolução; removida do processamento automático antes do enriquecimento.';
-        $cand['enrichment_next_retry_at']='';
-        $cand['pipeline_updated_at']=date('c');
-        $discovery[$idx]=$cand;
-        continue;
-      }
-
+      // A resolução de fontes possui contador, retry e TTL próprios.
+      // Não descartar pautas pelo contador genérico pipeline_attempts:
+      // ele inclui tentativas de outras etapas do fluxo editorial.
       // Pautas com fonte resolvida podem retornar ao enriquecimento;
       // Google News não resolvido permanece exclusivo do resolvedor de fontes.
-      if($candidateStage==='aguardando_fonte' && tvs_radar_is_google_news_url($candidateUrl)) continue;
+      if($candidateStage==='aguardando_fonte' && tvs_radar_is_google_news_url((string)($cand['url']??''))) continue;
       if($reprocessReason!=='' && ($cand['reprocess_reason']??'')===$reprocessReason && ($cand['editorial_rule_version']??'')===$ruleVersion) continue;
       if($onlyGoogleUnresolved && !tvs_radar_is_google_news_url($cand['url']??'')) continue;
       $candId=(string)($cand['id']??'');
@@ -4367,9 +4371,10 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5,$options=[]
     }
 
     usort($cityCandidates,function($a,$b){
-      if($a['diversity_penalty']!==$b['diversity_penalty']) return $a['diversity_penalty']<=>$b['diversity_penalty'];
-      if($a['resolution_penalty']!==$b['resolution_penalty']) return $a['resolution_penalty']<=>$b['resolution_penalty'];
+      // A qualidade factual tem prioridade sobre a distribuição por editoria.
       if($a['sf_score']!==$b['sf_score']) return $b['sf_score']<=>$a['sf_score'];
+      if($a['resolution_penalty']!==$b['resolution_penalty']) return $a['resolution_penalty']<=>$b['resolution_penalty'];
+      if($a['diversity_penalty']!==$b['diversity_penalty']) return $a['diversity_penalty']<=>$b['diversity_penalty'];
       if($a['attempts']!==$b['attempts']) return $a['attempts']<=>$b['attempts'];
       return strcmp($a['updated'],$b['updated']);
     });
@@ -4939,10 +4944,24 @@ function tvs_radar_backlog_candidate_eligible_v13($cand){
 
   $stage=(string)($cand['pipeline_stage']??'pauta_encontrada');
   if(in_array($stage,[
-    'pronta_para_redacao','revisao_manual_pipeline','expirada_sem_enriquecimento'
+    'pronta_para_redacao','revisao_manual_pipeline','expirada_sem_enriquecimento',
+    'fonte_esgotada'
   ],true)) return false;
 
   if(!tvs_radar_enrichment_due($cand)) return false;
+
+  // Mesmos bloqueios temporais e de prazo aplicados no executor.
+  // Filtrar antes evita contar como selecionadas pautas que nao serao tentadas.
+  $sourceDate=(string)($cand['source_date']??$cand['source_published_at']??$cand['published_at']??'');
+  if($sourceDate!==''){
+    $sourceTs=strtotime($sourceDate);
+    if($sourceTs!==false && $sourceTs<=time() && time()-$sourceTs>172800 && empty($cand['verified_new_fact'])) return false;
+  }
+  $deadline=(string)($cand['deadline_at']??$cand['registration_end_at']??$cand['event_end_at']??'');
+  if($deadline!==''){
+    $deadlineTs=strtotime($deadline);
+    if($deadlineTs===false || $deadlineTs<time()) return false;
+  }
 
   $isGoogle=tvs_radar_is_google_news_url($cand['url']??$cand['source_url']??'');
   // O resolvedor só considera a fonte definitivamente esgotada na 6ª tentativa.
@@ -5127,7 +5146,7 @@ function tvs_radar_run_backlog_batch_v13($limit=20){
     if(!isset($actuallyProcessed[$id])){
       $itemDiagnostics[]=[
         'id'=>$id,'previous_stage'=>(string)($before[$id]['stage']??''),
-        'current_stage'=>'nao_processada','reason'=>'Selecionada, mas não executada neste ciclo.',
+        'current_stage'=>'nao_processada','reason'=>'Selecionada para o lote, mas não executada: verificar elegibilidade por cidade, data da fonte, prazo, auditoria, retry/TTL e limite de execução no diagnóstico do pipeline.',
         'next_retry_at'=>'','attempts'=>(int)($before[$id]['attempts']??0)
       ];
       $reasons['nao_processada_no_lote']=($reasons['nao_processada_no_lote']??0)+1;
@@ -5422,11 +5441,63 @@ function tvs_radar_update_queue($perCity=15,$mode='normal'){
   return $generated;
 }
 function tvs_publish_from_queue($id,$post){
+  // Serializa a verificacao do teto diario, a deduplicacao e a gravacao.
+  // O lock e compartilhado pelos caminhos de aprovacao individual e em lote.
+  global $newsFile, $TVS_PUBLISH_ERROR;
+  $lockPath=dirname($newsFile).'/.radar_publication.lock';
+  $handle=@fopen($lockPath,'c');
+  if($handle===false){
+    $TVS_PUBLISH_ERROR='Publicação bloqueada: não foi possível abrir o controle de concorrência.';
+    return false;
+  }
+  try {
+    if(!flock($handle,LOCK_EX)){
+      $TVS_PUBLISH_ERROR='Publicação bloqueada: controle de concorrência indisponível.';
+      return false;
+    }
+    return tvs_publish_from_queue_locked($id,$post);
+  } finally {
+    flock($handle,LOCK_UN);
+    fclose($handle);
+  }
+}
+function tvs_publish_from_queue_locked($id,$post){
   global $newsFile, $TVS_PUBLISH_ERROR;
   $TVS_PUBLISH_ERROR='';
   $queue=tvs_queue_read(); $found=null; $newq=[];
   foreach($queue as $item){ if(($item['id']??'')===$id) $found=$item; else $newq[]=$item; }
   if(!$found){ $TVS_PUBLISH_ERROR='Matéria não encontrada na fila.'; return false; }
+
+  // Revalidar a atualidade no instante da publicação (inclusive aprovação em lote).
+  // Sem remoção da fila: a matéria continua disponível para revisão e auditoria.
+  $deadline=(string)($found['deadline_at']??$found['registration_end_at']??$found['event_end_at']??'');
+  if($deadline!==''){
+    $deadlineTs=strtotime($deadline);
+    if($deadlineTs===false || $deadlineTs<time()){
+      $TVS_PUBLISH_ERROR='Publicação bloqueada: prazo ou evento encerrado.';
+      return false;
+    }
+  }
+  $sourceDate=(string)($found['source_date']??$found['source_published_at']??$found['published_at']??$found['pubDate']??$found['date']??'');
+  if($sourceDate===''){
+    $TVS_PUBLISH_ERROR='Publicação bloqueada: data original da fonte não confirmada; encaminhar para revisão.';
+    return false;
+  }
+  if($sourceDate!==''){
+    $sourceTs=strtotime($sourceDate);
+    if($sourceTs===false || $sourceTs>time()+300){
+      $TVS_PUBLISH_ERROR='Publicação bloqueada: data de origem inválida.';
+      return false;
+    }
+    if(time()-$sourceTs>172800 && empty($found['verified_new_fact'])){
+      $TVS_PUBLISH_ERROR='Publicação bloqueada: pauta com mais de 48 horas sem fato novo verificado.';
+      return false;
+    }
+    if(time()-$sourceTs>86400 && empty($found['current_relevance_verified']) && empty($found['verified_new_fact'])){
+      $TVS_PUBLISH_ERROR='Publicação bloqueada: matéria entre 24 e 48 horas exige relevância atual verificada.';
+      return false;
+    }
+  }
 
   $humanReview=!empty($post['human_review']);
   if(empty($found['ai_editor_processed'])){
@@ -5485,6 +5556,26 @@ function tvs_publish_from_queue($id,$post){
     return false;
   }
   $news=tvs_read_json_file($newsFile); if(!is_array($news)) $news=[];
+  // Limite editorial diario por cidade; nao limita o processamento do backlog.
+  $dailyCaps=['Sumaré'=>5,'Hortolândia'=>2,'Paulínia'=>2,'Nova Odessa'=>2,'Americana'=>2,'Campinas'=>2];
+  $publicationCity=trim((string)($candidate['city']??''));
+  if(isset($dailyCaps[$publicationCity])){
+    $today=(new DateTimeImmutable('now',new DateTimeZone('America/Sao_Paulo')))->format('Y-m-d');
+    $publishedToday=0;
+    foreach($news as $published){
+      if(!is_array($published) || trim((string)($published['city']??''))!==$publicationCity) continue;
+      $publishedAt=trim((string)($published['published_at']??''));
+      if($publishedAt==='') continue;
+      try {
+        $publishedDay=(new DateTimeImmutable($publishedAt))->setTimezone(new DateTimeZone('America/Sao_Paulo'))->format('Y-m-d');
+      } catch(Throwable $e) { continue; }
+      if($publishedDay===$today) $publishedToday++;
+    }
+    if($publishedToday >= $dailyCaps[$publicationCity]){
+      $TVS_PUBLISH_ERROR='Publicação bloqueada: limite editorial diário atingido para '.$publicationCity.'.';
+      return false;
+    }
+  }
   if(tvs_radar_history_duplicate($candidate,$news)){
     $TVS_PUBLISH_ERROR='Publicação bloqueada: esta pauta já consta no histórico de notícias publicadas.';
     return false;
@@ -5833,7 +5924,7 @@ $editReadiness=$editItem && function_exists('tvs_radar_queue_item_readiness')
 $editCanApprove=$editItem && !empty($editItem['ai_editor_processed']) && !empty($editReadiness['ready']);
 ?>
 <!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Matérias para Aprovação | TV Sumaré</title><link rel="stylesheet" href="admin.css?v=132"><link rel="stylesheet" href="radar-mobile.css?v=20261015-1"><style>.queue-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}.matter{background:#fff;border:1px solid #e5e7eb;border-radius:18px;padding:14px;box-shadow:0 8px 22px rgba(15,23,42,.06)}.matter img{width:100%;height:150px;object-fit:cover;border-radius:14px;background:#eef2ff}.matter h3{margin:10px 0 6px;font-size:18px}.matter p{color:#475569;font-size:14px}.badge{display:inline-flex;border-radius:999px;background:#eef2ff;color:#1d4ed8;padding:5px 9px;font-size:12px;font-weight:800;margin:6px 5px 6px 0}.city-block{margin:24px 0}.matter-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.edit-form{background:#fff;border-radius:18px;padding:18px;border:1px solid #e5e7eb}.edit-form input,.edit-form textarea,.edit-form select{width:100%;padding:11px;border:1px solid #cbd5e1;border-radius:12px;margin:5px 0 12px}.edit-form textarea{min-height:320px}.muted{color:#64748b}.settings-box{background:#fff;border:1px solid #e5e7eb;border-radius:18px;padding:14px;margin:14px 0}.settings-inline{display:flex;gap:12px;align-items:end;flex-wrap:wrap}.settings-inline label{display:flex;flex-direction:column;font-size:13px;color:#334155}.settings-inline input[type=number]{width:110px;padding:10px;border:1px solid #cbd5e1;border-radius:12px}.settings-inline .check{flex-direction:row;gap:8px;align-items:center}.top-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.bulk-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.bulk-row .check,.bulk-check{display:flex;align-items:center;gap:7px;font-weight:800;color:#334155}.bulk-check{margin-bottom:8px}.bulk-check input{width:18px;height:18px}@media(max-width:1000px){.queue-grid{grid-template-columns:1fr}.matter img{height:190px}}</style></head><body class="radar-overview"><div class="admin"><?php include __DIR__.'/_menu.php'; ?><main class="main"><div class="top"><div><span class="eyebrow">Centro de Redação • Radar 1.3</span><h1>Matérias para Aprovação</h1><p class="muted">O Radar abastece a redação com mais opções. Você aprova o que achar relevante para a TV Sumaré.</p></div><div class="top-actions"><form method="post" action="radar-regional.php" class="radar-action-form"><?=tvs_csrf_field()?><input type="hidden" name="action" value="update_radar"><button class="btn orange" type="submit" data-busy-label="Atualizando Radar…">Atualizar Agora</button></form><form method="post" action="radar-regional.php" class="radar-action-form"><?=tvs_csrf_field()?><input type="hidden" name="action" value="update_radar_volume"><button class="btn secondary" type="submit" data-busy-label="Ativando volume…">Modo Volume Máximo</button></form></div></div>
-<div class="settings-box"><form method="post" action="radar-regional.php" class="settings-inline radar-action-form"><?=tvs_csrf_field()?><input type="hidden" name="action" value="save_settings"><label class="check"><input type="checkbox" name="auto_daily" value="1" <?=!empty($radarCfg['auto_daily'])?'checked':''?>> Atualização automática diária</label><label>Meta de matérias por cidade<input type="number" min="1" max="40" name="per_city" value="<?=h($radarCfg['per_city']??20)?>"></label><button class="btn secondary" type="submit">Salvar configuração</button><span class="muted">Última execução da coleta: <?=!empty($radarStatus['last_run'])?h(date('d/m/Y H:i',strtotime($radarStatus['last_run']))):'ainda não executada'?> <?=!empty($radarStatus['last_mode'])?'• '.h($radarStatus['last_mode']):''?></span></form><div class="radar-command-bar" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px"><form method="post" action="radar-regional.php" class="radar-action-form"><?=tvs_csrf_field()?><input type="hidden" name="action" value="simulate_backlog"><button class="btn secondary" type="submit" data-busy-label="Simulando…">Simular backlog</button></form><form method="post" action="radar-regional.php" class="radar-action-form"><?=tvs_csrf_field()?><input type="hidden" name="action" value="process_backlog_batch"><button class="btn secondary" type="submit" data-busy-label="Processando lote…">Processar próximo lote de 20</button></form><form method="post" action="radar-regional.php" class="radar-action-form"><?=tvs_csrf_field()?><input type="hidden" name="action" value="clean_invalid"><button class="btn secondary" type="submit" data-busy-label="Limpando…">Limpar matérias inválidas</button></form><span class="muted">Radar 1.3: backlog contínuo em lotes de 20 sobre pautas auditadas e elegíveis. Sem gate de piloto e sem publicação automática.</span></div><div id="radar-command-status" class="muted" style="margin-top:8px" aria-live="polite"></div></div>
+<div class="settings-box"><form method="post" action="radar-regional.php" class="settings-inline radar-action-form"><?=tvs_csrf_field()?><input type="hidden" name="action" value="save_settings"><label class="check"><input type="checkbox" name="auto_daily" value="1" <?=!empty($radarCfg['auto_daily'])?'checked':''?>> Atualização automática diária</label><label>Meta de coleta por cidade (não é limite de publicação)<input type="number" min="1" max="40" name="per_city" value="<?=h($radarCfg['per_city']??20)?>"></label><button class="btn secondary" type="submit">Salvar configuração</button><span class="muted">Última execução da coleta: <?=!empty($radarStatus['last_run'])?h(date('d/m/Y H:i',strtotime($radarStatus['last_run']))):'ainda não executada'?> <?=!empty($radarStatus['last_mode'])?'• '.h($radarStatus['last_mode']):''?></span></form><div class="radar-command-bar" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px"><form method="post" action="radar-regional.php" class="radar-action-form"><?=tvs_csrf_field()?><input type="hidden" name="action" value="simulate_backlog"><button class="btn secondary" type="submit" data-busy-label="Simulando…">Simular backlog</button></form><form method="post" action="radar-regional.php" class="radar-action-form"><?=tvs_csrf_field()?><input type="hidden" name="action" value="process_backlog_batch"><button class="btn secondary" type="submit" data-busy-label="Processando lote…">Processar próximo lote de 20</button></form><form method="post" action="radar-regional.php" class="radar-action-form"><?=tvs_csrf_field()?><input type="hidden" name="action" value="clean_invalid"><button class="btn secondary" type="submit" data-busy-label="Limpando…">Limpar matérias inválidas</button></form><span class="muted">Radar 1.3: backlog contínuo em lotes de 20 sobre pautas auditadas e elegíveis. Sem gate de piloto e sem publicação automática.</span></div><div id="radar-command-status" class="muted" style="margin-top:8px" aria-live="polite"></div></div>
 <details style="margin-top:10px"><summary class="muted" style="cursor:pointer">Diagnóstico técnico do Radar</summary><?php if(!empty($radarStatus['last_source_resolution_run'])): ?><div class="notice" style="background:#eff6ff;border-color:#bfdbfe;color:#1e3a8a">Resolvedor automático de fontes: último ciclo <?=h(date('d/m/Y H:i',strtotime($radarStatus['last_source_resolution_run'])))?> · <?= (int)($radarStatus['last_source_resolution_processed']??0) ?> processada(s) · <?= (int)($radarStatus['last_source_resolution_resolved']??0) ?> resolvida(s) · <?= (int)($radarStatus['last_source_resolution_remaining_due']??0) ?> ainda vencida(s) para nova tentativa. A fila roda automaticamente a cada ciclo do Radar.</div><?php endif; ?>
 </details>
 <?php if($notice): ?><div class="notice"><?=h($notice)?></div><?php endif; ?><?php if($error): ?><div class="notice error"><?=h($error)?></div><?php endif; ?>
@@ -5957,7 +6048,7 @@ $lastRunTelemetry=is_array($runTelemetry) && $runTelemetry ? end($runTelemetry) 
 $backlogHistory=tvs_read_json_file(dirname(__DIR__).'/data/radar_backlog_batches_v13.json');
 $lastBacklogBatch=is_array($backlogHistory) && $backlogHistory ? end($backlogHistory) : [];
 ?><div class="notice">Pipeline ativo: <?=$totalPipelineCurrent?> pauta(s) — <?=$totalSourcePending?> em fonte/enriquecimento · <?=$totalEditorPending?> em processamento editorial · <?=$totalSensitive?> em revisão obrigatória · <?=$totalImageReview?> em revisão de imagem · <?=$totalReady?> pronta(s) para aprovação.<?php if($totalAuditTerminal>0): ?> Fora do backlog ativo: <?=$totalSourceTerminal?> fonte(s) esgotada(s) · <?=$totalManualPipeline?> em revisão manual do pipeline.<?php endif; ?></div><div class="cards"><div class="stat"><span>Prontas para aprovação</span><b><?=$totalReady?></b><small>Editor IA e validação concluídos, sem pendência adicional</small></div><div class="stat"><span>Fonte / enriquecimento ativo</span><b><?=$totalSourcePending?></b><small>resolver: <?=$sourceStageCounts['precisa_resolver_fonte']?> · aguardando fonte: <?=$sourceStageCounts['aguardando_fonte']?> · fonte resolvida: <?=$sourceStageCounts['fonte_resolvida']?> · enriquecendo: <?=$sourceStageCounts['enriquecimento_ativo']?> · aguardando enriquecimento: <?=$sourceStageCounts['aguardando_enriquecimento']?></small></div><div class="stat"><span>Processamento editorial</span><b><?=$totalEditorPending?></b><small><a href="drafts.php">ver matérias e motivos</a></small></div><div class="stat"><span>Revisão obrigatória</span><b><?=$totalSensitive?></b><small>pautas sensíveis ou de alto impacto</small></div><div class="stat"><span>Revisão de imagem</span><b><?=$totalImageReview?></b><small>texto pronto; imagem precisa ser confirmada</small></div></div>
-<details class="settings-box radar-metrics-details"><summary>Disponibilidade por cidade (meta configurada: <?=$perCityGoal?>)</summary><div style="overflow-x:auto;margin-top:12px"><table><thead><tr><th>Cidade</th><th>Prontas para aprovação</th><th>Meta configurada</th><th>Diferença</th></tr></thead><tbody><?php foreach($cityDiagnostics as $cityName=>$cityStats): ?><tr><td><?=h($cityName)?></td><td><?=(int)$cityStats['ready']?></td><td><?=(int)$cityStats['goal']?></td><td><?=(int)$cityStats['gap']?></td></tr><?php endforeach; ?></tbody></table></div><p class="muted">Este indicador compara apenas as pautas prontas da fila atual com a meta configurada; não mede a coleta diária nem garante o alcance da meta.</p></details>
+<details class="settings-box radar-metrics-details"><summary>Disponibilidade na fila por cidade (meta de coleta: <?=$perCityGoal?>)</summary><div style="overflow-x:auto;margin-top:12px"><table><thead><tr><th>Cidade</th><th>Prontas para aprovação</th><th>Meta de coleta</th><th>Diferença na fila</th></tr></thead><tbody><?php foreach($cityDiagnostics as $cityName=>$cityStats): ?><tr><td><?=h($cityName)?></td><td><?=(int)$cityStats['ready']?></td><td><?=(int)$cityStats['goal']?></td><td><?=(int)$cityStats['gap']?></td></tr><?php endforeach; ?></tbody></table></div><p class="muted">Este indicador compara a fila atual com a meta de coleta configurada; não representa cota de publicação. O limite editorial diário é de até 5 matérias para Sumaré e até 2 para cada cidade vizinha, sujeito à aprovação humana e à qualidade da pauta.</p></details>
 <details class="settings-box radar-metrics-details"><summary>Auditoria editorial da fila atual (<?=count($editorialAudit)?> alerta(s))</summary><p class="muted">Diagnóstico somente leitura: nenhuma categoria ou matéria é alterada automaticamente. Confirme a fonte, o contexto e a data antes de aprovar.</p><?php if($editorialAudit): ?><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;text-align:left"><thead><tr><th>Matéria</th><th>Cidade</th><th>Categoria atual</th><th>Sugestão</th><th>Validade temporal</th><th>Ação</th></tr></thead><tbody><?php foreach($editorialAudit as $auditRow): ?><tr style="border-top:1px solid #e5e7eb"><td><?=h($auditRow['title'])?></td><td><?=h($auditRow['city'])?></td><td><?=h($auditRow['current'])?></td><td><?=h($auditRow['suggested'])?></td><td><?=h(implode(' · ',$auditRow['temporal']))?></td><td><?php if($auditRow['id']!==''): ?><a class="btn secondary" href="?edit=<?=rawurlencode($auditRow['id'])?>">Revisar</a><?php endif; ?></td></tr><?php endforeach; ?></tbody></table></div><?php else: ?><p class="muted">Nenhuma divergência detectada pelas regras atuais.</p><?php endif; ?></details>
 <details class="settings-box radar-metrics-details"><summary>Diagnóstico do gargalo</summary><div style="margin-top:8px;display:flex;gap:7px;flex-wrap:wrap"><?php
 $factLabels=['sem_auditoria'=>'Ainda sem auditoria','fonte_nao_resolvida'=>'Fonte não resolvida','texto_insuficiente'=>'Conteúdo factual insuficiente','quatro_w_incompleto'=>'4W incompleto','fonte_nao_confiavel'=>'Fonte não confiável','fora_janela'=>'Fora da janela','sem_interesse_editorial'=>'Interesse editorial não detectado'];
@@ -6024,13 +6115,35 @@ document.addEventListener('DOMContentLoaded',function(){
         commandStatus.textContent='Comando enviado: '+actionName+'. Aguarde a conclusão e o recarregamento da página.';
       }
 
-      // Garante envio nativo mesmo quando o navegador/tema interfere no clique.
+      // O envio permanece nativo. Se a navegacao nao concluir, nao deixar
+      // o botao travado indefinidamente nem reenviar a operacao automaticamente.
       window.setTimeout(function(){
-        if(!form.dataset.nativeSubmitted){
-          form.dataset.nativeSubmitted='1';
+        if(form.dataset.submitting!=='1') return;
+        form.dataset.submitting='0';
+        if(btn){
+          btn.disabled=false;
+          btn.removeAttribute('aria-busy');
+          btn.textContent=btn.dataset.originalLabel||btn.textContent;
         }
-      },0);
+        if(commandStatus){
+          commandStatus.textContent='A pagina nao confirmou a conclusao do comando '+actionName+'. Confira a telemetria antes de tentar novamente; o processamento pode continuar no servidor.';
+        }
+      },90000);
     });
+  });
+  // Restauracao do cache de navegacao (especialmente no Android).
+  window.addEventListener('pageshow',function(ev){
+    if(!ev.persisted) return;
+    document.querySelectorAll('form.radar-action-form').forEach(function(form){
+      form.dataset.submitting='0';
+      var btn=form.querySelector('button[type="submit"]');
+      if(btn && btn.dataset.originalLabel){
+        btn.textContent=btn.dataset.originalLabel;
+        btn.disabled=false;
+        btn.removeAttribute('aria-busy');
+      }
+    });
+    if(commandStatus) commandStatus.textContent='Pagina restaurada. Confira a telemetria para verificar o resultado dos comandos anteriores.';
   });
 });
 </script></body></html>

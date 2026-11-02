@@ -137,8 +137,16 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
     if(!in_array((string)($job['status']??''),['revisao_video','video_aprovado'],true)) rv_redirect(['job_id'=>$jobId,'err'=>'O vídeo ainda não está pronto para revisão.']);
     $r1=tvp_publish_video($job);
     if(empty($r1['ok'])) rv_redirect(['job_id'=>$jobId,'err'=>$r1['error']??'Falha ao publicar no TV Play.']);
+    // Persistir a publicação no TV Play antes da chamada externa ao YouTube.
+    // Assim, uma falha do segundo canal não perde o sucesso do primeiro.
+    $jobs[$idx]['status']='publicado';
+    $jobs[$idx]['video_review_status']='aprovado';
+    $jobs[$idx]['reviewed_at']=date('c');
+    $jobs[$idx]['published_at']=date('c');
+    $jobs[$idx]['updated_at']=date('c');
+    tvp_save_video_jobs($jobs);
     $r2=tvs_youtube_upload_branded($job);
-    if(empty($r2['ok'])) rv_redirect(['job_id'=>$jobId,'err'=>'TV Play publicado, mas YouTube falhou: '.($r2['error']??'erro desconhecido')]);
+    if(empty($r2['ok'])) rv_redirect(['job_id'=>$jobId,'err'=>'TV Play publicado e registrado, mas YouTube falhou: '.($r2['error']??'erro desconhecido')]);
     $jobs[$idx]['youtube_video_id']=$r2['youtube_video_id']??'';
     $jobs[$idx]['youtube_url']=$r2['url']??'';
     $jobs[$idx]['youtube_status']='publicado';

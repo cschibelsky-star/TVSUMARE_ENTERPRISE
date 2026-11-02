@@ -1,5 +1,9 @@
 # TV Sumare — Release e Promocao
 
+## Referência da Home publicada
+
+A referência de código e imagem documentada no PR #43 e o gate de preservação da Home ao atualizar o Radar estão em [RELEASE_REFERENCE_20261028.md](RELEASE_REFERENCE_20261028.md). Consultar esse registro antes de selecionar uma candidata. O alinhamento do cadastro operacional não é comprovado por esta alteração documental.
+
 ## Regra principal
 
 Nenhum release deve sair de uma arvore Git suja. GitHub e a fonte de verdade do codigo.

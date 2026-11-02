@@ -2,9 +2,8 @@
 require_once __DIR__.'/home_feature_ads.php';
 $homeFeature = tvs_json('data/home_destaques.json');
 $homeFeature = is_array($homeFeature) ? $homeFeature : [];
-$requestedFeatureMode = $homeFeature['mode'] ?? 'eleicoes';
-$featureMode = in_array($requestedFeatureMode, ['eleicoes','noticia','personalizado'], true)
-    ? $requestedFeatureMode : 'eleicoes';
+// Capa regular: matérias e publicidade.
+$featureMode = 'noticia';
 $featuredAds = tvs_premium_ads();
 $manualTitle = trim((string)($homeFeature['title']??''));
 $manualDescription = trim((string)($homeFeature['description']??''));
@@ -12,13 +11,7 @@ $manualLink = tvs_premium_link($homeFeature['url']??'') ?: 'noticias.php';
 ?>
 <section class="tvs-premium-feature" aria-label="Destaques e publicidade">
   <article class="tvs-premium-editorial" aria-label="Destaque editorial">
-    <?php if ($featureMode === 'eleicoes'): ?>
-      <span class="tvs-premium-kicker">ELEIÇÕES 2026</span>
-      <h2>Acompanhe a apuração oficial</h2>
-      <p>Presidente — Brasil • Governador, Senador e deputados por estado — Fonte: TSE</p>
-      <div id="president-home" role="status" class="tvs-premium-election-results">Consultando a apuração nacional…</div>
-      <a class="tvs-premium-cta" href="/eleicoes-2026">Ver resultados e horário de atualização</a>
-    <?php elseif ($featureMode === 'personalizado' && $manualTitle !== ''): ?>
+    <?php if ($featureMode === 'personalizado' && $manualTitle !== ''): ?>
       <span class="tvs-premium-kicker">DESTAQUE ESPECIAL</span>
       <h2><?=tvs_h($manualTitle)?></h2>
       <p><?=tvs_h($manualDescription)?></p>
