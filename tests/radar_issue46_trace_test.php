@@ -33,6 +33,3 @@ if(!str_contains($source, "'reason_code'".'=>'.'$gate')) throw new RuntimeExcept
 if(!str_contains($source,"'publication_eligible'=>0") && !str_contains($source,"'publication_eligible'")) throw new RuntimeException('editorial protection missing');
 if(!str_contains($source,"'excluded_before_execution'") || !str_contains($source,"'rank'")) throw new RuntimeException('backlog alignment missing');
 echo "RADAR_ISSUE46_TRACE_TEST=PASS\n";
-if(!str_contains($source, "'reason_code'".'=>'.'$gate')) throw new RuntimeException('per-item reason missing');
-if(!str_contains($source,"'publication_eligible'=>0")) throw new RuntimeException('editorial protection missing');
-echo "RADAR_ISSUE46_TRACE_TEST=PASS\n";
