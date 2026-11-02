@@ -4930,7 +4930,8 @@ function tvs_radar_backlog_candidate_eligible_v13($cand){
 
   $stage=(string)($cand['pipeline_stage']??'pauta_encontrada');
   if(in_array($stage,[
-    'pronta_para_redacao','revisao_manual_pipeline','expirada_sem_enriquecimento'
+    'pronta_para_redacao','revisao_manual_pipeline','expirada_sem_enriquecimento',
+    'fonte_esgotada'
   ],true)) return false;
 
   if(!tvs_radar_enrichment_due($cand)) return false;

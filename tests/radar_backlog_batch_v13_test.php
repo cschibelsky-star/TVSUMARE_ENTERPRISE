@@ -48,6 +48,7 @@ check_case(count(tvs_radar_select_backlog_ids_v13(100))===21,'Selecao excedeu o 
 $before=serialize($GLOBALS['fixture_discovery']);
 tvs_radar_select_backlog_ids_v13(20);
 check_case(serialize($GLOBALS['fixture_discovery'])===$before,'Simulacao alterou os dados de origem');
+check_case(str_contains($source,"'fonte_esgotada'"),'Etapa de fonte esgotada deve ser excluida da selecao');
 check_case(str_contains($source,"'backlog_v13'=>true"),'Flag de backlog ausente');
 check_case(str_contains($source,"'ignore_ready_quota'=>true"),'Cota de prontas indevidamente aplicada ao backlog');
 check_case(str_contains($source,'array_intersect_key($actuallyProcessed,array_fill_keys($ids,true))'),'Metrica de IDs efetivos ausente');
