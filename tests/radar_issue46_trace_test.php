@@ -57,4 +57,7 @@ if(!str_contains($source,"'publication_eligible'")) throw new RuntimeException('
 $continueBacklog="if(empty(\$options['backlog_v13'])) break;";
 if(!str_contains($source,$continueBacklog)) throw new RuntimeException('Backlog still stops at first ready story per city');
 if(!str_contains($source,"continue; // próxima pauta selecionada")) throw new RuntimeException('Backlog re-enters fallback on already queued story');
+if(!str_contains($source,"isset($_GET['radar_batch_status'])")) throw new RuntimeException('Missing read-only batch status endpoint');
+if(!str_contains($source,"LOCK_SH|LOCK_NB")) throw new RuntimeException('Batch status endpoint must inspect active lock nonblocking');
+if(!str_contains($source,"window.setInterval(inspectBacklogStatus,10000)")) throw new RuntimeException('Missing client status polling');
 echo "RADAR_ISSUE46_SELECTOR_GATE_TEST=PASS\n";
