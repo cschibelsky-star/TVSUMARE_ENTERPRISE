@@ -4646,6 +4646,7 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5,$options=[]
         // faz as outras pautas dessa cidade aparecerem como não executadas.
         // Continuar até o orçamento do lote, sem alterar a cota de publicação.
         if(empty($options['backlog_v13'])) break;
+        continue; // próxima pauta selecionada, sem reprocessar a já enfileirada
       }
 
       // Se a própria geração já classificou a pauta como descarte terminal,
