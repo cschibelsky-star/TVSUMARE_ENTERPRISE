@@ -5445,6 +5445,10 @@ function tvs_publish_from_queue($id,$post){
     }
   }
   $sourceDate=(string)($found['source_date']??$found['source_published_at']??$found['published_at']??$found['pubDate']??$found['date']??'');
+  if($sourceDate===''){
+    $TVS_PUBLISH_ERROR='Publicação bloqueada: data original da fonte não confirmada; encaminhar para revisão.';
+    return false;
+  }
   if($sourceDate!==''){
     $sourceTs=strtotime($sourceDate);
     if($sourceTs===false || $sourceTs>time()+300){
