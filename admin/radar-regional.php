@@ -4950,6 +4950,19 @@ function tvs_radar_backlog_candidate_eligible_v13($cand){
 
   if(!tvs_radar_enrichment_due($cand)) return false;
 
+  // Mesmos bloqueios temporais e de prazo aplicados no executor.
+  // Filtrar antes evita contar como selecionadas pautas que nao serao tentadas.
+  $sourceDate=(string)($cand['source_date']??$cand['source_published_at']??$cand['published_at']??'');
+  if($sourceDate!==''){
+    $sourceTs=strtotime($sourceDate);
+    if($sourceTs!==false && $sourceTs<=time() && time()-$sourceTs>172800 && empty($cand['verified_new_fact'])) return false;
+  }
+  $deadline=(string)($cand['deadline_at']??$cand['registration_end_at']??$cand['event_end_at']??'');
+  if($deadline!==''){
+    $deadlineTs=strtotime($deadline);
+    if($deadlineTs===false || $deadlineTs<time()) return false;
+  }
+
   $isGoogle=tvs_radar_is_google_news_url($cand['url']??$cand['source_url']??'');
   // O resolvedor só considera a fonte definitivamente esgotada na 6ª tentativa.
   // O seletor do backlog precisa usar o mesmo limite para não abandonar a pauta
