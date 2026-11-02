@@ -6102,13 +6102,35 @@ document.addEventListener('DOMContentLoaded',function(){
         commandStatus.textContent='Comando enviado: '+actionName+'. Aguarde a conclusão e o recarregamento da página.';
       }
 
-      // Garante envio nativo mesmo quando o navegador/tema interfere no clique.
+      // O envio permanece nativo. Se a navegacao nao concluir, nao deixar
+      // o botao travado indefinidamente nem reenviar a operacao automaticamente.
       window.setTimeout(function(){
-        if(!form.dataset.nativeSubmitted){
-          form.dataset.nativeSubmitted='1';
+        if(form.dataset.submitting!=='1') return;
+        form.dataset.submitting='0';
+        if(btn){
+          btn.disabled=false;
+          btn.removeAttribute('aria-busy');
+          btn.textContent=btn.dataset.originalLabel||btn.textContent;
         }
-      },0);
+        if(commandStatus){
+          commandStatus.textContent='A pagina nao confirmou a conclusao do comando '+actionName+'. Confira a telemetria antes de tentar novamente; o processamento pode continuar no servidor.';
+        }
+      },90000);
     });
+  });
+  // Restauracao do cache de navegacao (especialmente no Android).
+  window.addEventListener('pageshow',function(ev){
+    if(!ev.persisted) return;
+    document.querySelectorAll('form.radar-action-form').forEach(function(form){
+      form.dataset.submitting='0';
+      var btn=form.querySelector('button[type="submit"]');
+      if(btn && btn.dataset.originalLabel){
+        btn.textContent=btn.dataset.originalLabel;
+        btn.disabled=false;
+        btn.removeAttribute('aria-busy');
+      }
+    });
+    if(commandStatus) commandStatus.textContent='Pagina restaurada. Confira a telemetria para verificar o resultado dos comandos anteriores.';
   });
 });
 </script></body></html>
