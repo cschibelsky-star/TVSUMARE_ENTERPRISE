@@ -5522,6 +5522,26 @@ function tvs_publish_from_queue($id,$post){
     return false;
   }
   $news=tvs_read_json_file($newsFile); if(!is_array($news)) $news=[];
+  // Limite editorial diario por cidade; nao limita o processamento do backlog.
+  $dailyCaps=['Sumaré'=>5,'Hortolândia'=>2,'Paulínia'=>2,'Nova Odessa'=>2,'Americana'=>2,'Campinas'=>2];
+  $publicationCity=trim((string)($candidate['city']??''));
+  if(isset($dailyCaps[$publicationCity])){
+    $today=(new DateTimeImmutable('now',new DateTimeZone('America/Sao_Paulo')))->format('Y-m-d');
+    $publishedToday=0;
+    foreach($news as $published){
+      if(!is_array($published) || trim((string)($published['city']??''))!==$publicationCity) continue;
+      $publishedAt=trim((string)($published['published_at']??''));
+      if($publishedAt==='') continue;
+      try {
+        $publishedDay=(new DateTimeImmutable($publishedAt))->setTimezone(new DateTimeZone('America/Sao_Paulo'))->format('Y-m-d');
+      } catch(Throwable $e) { continue; }
+      if($publishedDay===$today) $publishedToday++;
+    }
+    if($publishedToday >= $dailyCaps[$publicationCity]){
+      $TVS_PUBLISH_ERROR='Publicação bloqueada: limite editorial diário atingido para '.$publicationCity.'.';
+      return false;
+    }
+  }
   if(tvs_radar_history_duplicate($candidate,$news)){
     $TVS_PUBLISH_ERROR='Publicação bloqueada: esta pauta já consta no histórico de notícias publicadas.';
     return false;
