@@ -5260,9 +5260,17 @@ function tvs_radar_run_backlog_batch_v13($limit=20,$sharedLock=null){
   // Selecionar não equivale a processar nem a persistir.
   $selectedCount=count($ids);
   $processed=count(array_intersect_key($actuallyProcessed,array_fill_keys($ids,true)));
-  $persisted=min($processed,max(0,(int)($metrics['persisted_count']??0)));
+  // Persistencia/erros do backlog sao exclusivos dos IDs selecionados.
+  // A telemetria interna pode incluir tentativas auxiliares fora do lote.
+  $persisted=0;
+  foreach($ids as $id){
+    if(!isset($actuallyProcessed[$id])) continue;
+    if(isset($after[$id]) || isset($queueIds[$id]) || isset($discardedIds[$id])) $persisted++;
+  }
   $skipped=max(0,$selectedCount-$processed);
-  $errors=max(0,(int)($metrics['error_count']??0));
+  $errors=max(0,$processed-$persisted);
+  $rawErrors=max(0,(int)($metrics['error_count']??0));
+  $auxiliaryAttempts=max(0,count($actuallyProcessed)-$processed);
   $result=[
     'allowed'=>1,
     'selected'=>$selectedCount,
@@ -5274,6 +5282,9 @@ function tvs_radar_run_backlog_batch_v13($limit=20,$sharedLock=null){
     'skipped'=>$skipped,
     'item_diagnostics'=>$itemDiagnostics,
     'errors'=>$errors,
+    'internal_error_count'=>$rawErrors,
+    'auxiliary_attempts'=>$auxiliaryAttempts,
+    'selection_note'=>$selectedCount<$limit ? 'Menos de '.(int)$limit.' pautas elegíveis no momento da seleção; retry/TTL e regras editoriais preservados.' : '',
     'first_item_id'=>(string)($metrics['first_item_id']??''),
     'last_item_id'=>(string)($metrics['last_item_id']??''),
     'status'=>($processed===$selectedCount && $errors===0 && $persisted===$processed)
@@ -5300,6 +5311,9 @@ function tvs_radar_run_backlog_batch_v13($limit=20,$sharedLock=null){
     'changed_count'=>$advanced,
     'unchanged_count'=>$stalled,
     'error_count'=>$errors,
+    'internal_error_count'=>$rawErrors,
+    'auxiliary_attempts'=>$auxiliaryAttempts,
+    'selection_note'=>(string)($result['selection_note']??''),
     'advanced_count'=>$advanced,
     'stalled_count'=>$stalled,
     'skipped_count'=>$skipped,
@@ -5755,7 +5769,7 @@ function tvs_radar_execute_full_cycle_v13(){
   $file=dirname(__DIR__).'/data/radar_manual_cycle_v13.json';
   $run='radar_integrado_'.date('Ymd_His').'_'.substr(md5(uniqid('',true)),0,8);
   $state=['run_id'=>$run,'started_at'=>date('c'),'finished_at'=>'',
-    'phase'=>'coletando','status'=>'executando','collected'=>0,'batch'=>[]];
+    'phase'=>'coletando','status'=>'executando','collected'=>0,'discovered'=>0,'batch'=>[]];
   try {
     tvs_save_json_file($file,$state);
     $cfg=tvs_radar_config();
@@ -5769,6 +5783,7 @@ function tvs_radar_execute_full_cycle_v13(){
     ]);
     tvs_radar_save_status($pipeline);
     $state['collected']=$collected;
+    $state['discovered']=(int)($pipeline['pipeline_discovered_last_cycle']??0);
     $state['phase']='processando';
     tvs_save_json_file($file,$state);
     @set_time_limit(0);
@@ -5778,14 +5793,17 @@ function tvs_radar_execute_full_cycle_v13(){
       'processed'=>(int)($batch['processed']??0),
       'persisted'=>(int)($batch['persisted']??0),
       'skipped'=>(int)($batch['skipped']??0),
-      'errors'=>(int)($batch['errors']??0)
+      'errors'=>(int)($batch['errors']??0),
+      'internal_error_count'=>(int)($batch['internal_error_count']??0),
+      'auxiliary_attempts'=>(int)($batch['auxiliary_attempts']??0),
+      'selection_note'=>(string)($batch['selection_note']??'')
     ];
     $state['phase']='concluido';
     $state['status']=in_array((string)($batch['status']??''),['lote_concluido','sem_pautas_elegiveis'],true)
       ? 'concluido' : 'concluido_parcialmente';
     $state['finished_at']=date('c');
     tvs_save_json_file($file,$state);
-    return ['status'=>$state['status'],'collected'=>$collected,'batch'=>$batch,'run_id'=>$run];
+    return ['status'=>$state['status'],'collected'=>$collected,'discovered'=>$state['discovered'],'batch'=>$batch,'run_id'=>$run];
   } catch(Throwable $e){
     // Não gravar a exceção integral no painel nem executar publicação automática.
     $state['phase']='falhou';
@@ -5825,6 +5843,8 @@ if(!$TVS_RADAR_IS_CLI_CRON && (($_SERVER['REQUEST_METHOD']??'GET')==='GET') && i
     'cycle_started_at'=>(string)($manualCycle['started_at']??''),
     'cycle_finished_at'=>(string)($manualCycle['finished_at']??''),
     'cycle_collected'=>(int)($manualCycle['collected']??0),
+    'cycle_discovered'=>(int)($manualCycle['discovered']??0),
+    'cycle_batch'=>(array)($manualCycle['batch']??[]),
     'checked_at'=>date('c'),
     'last_batch_id'=>(string)($latest['batch_token']??''),
     'last_status'=>(string)($latest['status']??''),
@@ -5832,7 +5852,10 @@ if(!$TVS_RADAR_IS_CLI_CRON && (($_SERVER['REQUEST_METHOD']??'GET')==='GET') && i
     'processed'=>(int)($latest['processed']??0),
     'persisted'=>(int)($latest['persisted']??0),
     'skipped'=>(int)($latest['skipped']??0),
-    'errors'=>(int)($latest['errors']??0)
+    'errors'=>(int)($latest['errors']??0),
+    'internal_error_count'=>(int)($latest['internal_error_count']??0),
+    'auxiliary_attempts'=>(int)($latest['auxiliary_attempts']??0),
+    'selection_note'=>(string)($latest['selection_note']??'')
   ],JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
   exit;
 }
@@ -5849,12 +5872,15 @@ if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'){
     } else {
       $batch=(array)($cycle['batch']??[]);
       $notice='Radar '.strtoupper((string)$cycle['status']).': '
-        .(int)($cycle['collected']??0).' matéria(s) preparada(s) na atualização; '
+        .(int)($cycle['discovered']??0).' pauta(s) descoberta(s) na coleta; '
+        .(int)($cycle['collected']??0).' matéria(s) preparadas na atualização; '
         .(int)($batch['selected']??0).' selecionada(s) no backlog; '
         .(int)($batch['processed']??0).' processada(s); '
         .(int)($batch['persisted']??0).' persistida(s); '
         .(int)($batch['skipped']??0).' não executada(s); '
-        .(int)($batch['errors']??0).' erro(s). Publicação apenas mediante aprovação humana.';
+        .(int)($batch['errors']??0).' erro(s) de persistência do lote; '
+        .(int)($batch['internal_error_count']??0).' ausência(s) de persistência em tentativas internas; '
+        .(string)($batch['selection_note']??'').' Publicação apenas mediante aprovação humana.';
     }
   } elseif($action==='update_radar'){
     $cfg=tvs_radar_config();
@@ -6301,14 +6327,16 @@ document.addEventListener('DOMContentLoaded',function(){
           batchButton.disabled=state.active;
           batchButton.setAttribute('aria-busy',state.active?'true':'false');
         }
-        var summary=state.last_batch_id ? (' Último lote: '+state.last_batch_id+' — '+state.processed+'/'+state.selected+' processadas, '+state.errors+' erro(s).') : '';
+        var summary=state.last_batch_id ? (' Último lote: '+state.last_batch_id+' — '+state.processed+'/'+state.selected+' processadas, '+state.persisted+' persistidas, '+state.skipped+' não executadas, '+state.errors+' falhas de persistência no lote.') : '';
+        var cycle=state.cycle_batch||{};
+        var cycleSummary=' Coleta: '+(state.cycle_discovered||0)+' pautas descobertas, '+(state.cycle_collected||0)+' matérias preparadas; backlog: '+(cycle.processed||0)+'/'+(cycle.selected||0)+' processadas, '+(cycle.persisted||0)+' persistidas, '+(cycle.skipped||0)+' não executadas.';
         if(commandStatus && !document.querySelector('form.radar-action-form[data-submitting="1"]')){
           commandStatus.textContent=state.active
             ? 'Radar em execução — '+(state.cycle_phase==='coletando'?'atualizando fontes':state.cycle_phase==='processando'?'processando pautas':'conferindo etapa ativa')+'. Não envie outro comando.'+summary
-            : 'Radar '+(state.cycle_phase||'ocioso')+'. '+(state.cycle_collected||0)+' pauta(s) preparadas na última atualização.'+summary;
+            : 'Radar '+(state.cycle_phase||'ocioso')+'.'+cycleSummary+summary+(state.selection_note?' '+state.selection_note:'');
         }
         if(lastObservedBatch && lastObservedBatch!==state.last_batch_id && commandStatus){
-          commandStatus.textContent='Novo lote concluído: '+state.last_batch_id+' — '+state.processed+'/'+state.selected+' processadas, '+state.skipped+' não executadas, '+state.errors+' erro(s). Atualize a página para ver o diagnóstico individual.';
+          commandStatus.textContent='Novo lote registrado: '+state.last_batch_id+' — '+state.processed+'/'+state.selected+' processadas, '+state.skipped+' não executadas, '+state.errors+' falhas de persistência no lote. Atualize a página para consultar o diagnóstico individual.';
         }
         lastObservedBatch=state.last_batch_id||'';
       }).catch(function(){
