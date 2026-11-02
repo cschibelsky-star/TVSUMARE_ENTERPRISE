@@ -4306,6 +4306,12 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5,$options=[]
     foreach($discovery as $idx=>$cand){
       $requested=(string)($cand['radar_requested_city']??$cand['city']??'');
       if($requested!==$city) continue;
+      // Bloqueio conservador: prazo explicitamente encerrado não volta à fila automática.
+      $deadline=(string)($cand['deadline_at']??$cand['registration_end_at']??$cand['event_end_at']??'');
+      if($deadline!==''){
+        $deadlineTs=strtotime($deadline);
+        if($deadlineTs===false || $deadlineTs<time()) continue;
+      }
       // Proteção anti-loop: pautas com histórico extremo de tentativas não podem
       // continuar consumindo o ciclo normal indefinidamente.
       if((int)($cand['pipeline_attempts']??0)>100){
