@@ -5133,7 +5133,7 @@ function tvs_radar_run_backlog_batch_v13($limit=20){
     if(!isset($actuallyProcessed[$id])){
       $itemDiagnostics[]=[
         'id'=>$id,'previous_stage'=>(string)($before[$id]['stage']??''),
-        'current_stage'=>'nao_processada','reason'=>'Selecionada, mas não executada neste ciclo.',
+        'current_stage'=>'nao_processada','reason'=>'Selecionada para o lote, mas não executada: verificar elegibilidade por cidade, data da fonte, prazo, auditoria, retry/TTL e limite de execução no diagnóstico do pipeline.',
         'next_retry_at'=>'','attempts'=>(int)($before[$id]['attempts']??0)
       ];
       $reasons['nao_processada_no_lote']=($reasons['nao_processada_no_lote']??0)+1;
