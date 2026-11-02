@@ -4641,7 +4641,11 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5,$options=[]
           'Repórter IA + Editor IA concluídos e conteúdo validado; SF '.$sf.'/100; diversidade aplicada como preferência.',
           $cand['url']??''
         );
-        break;
+        // O fluxo normal mantém uma matéria pronta por cidade no ciclo.
+        // O backlog 1.3, porém, já selecionou um lote explícito: parar aqui
+        // faz as outras pautas dessa cidade aparecerem como não executadas.
+        // Continuar até o orçamento do lote, sem alterar a cota de publicação.
+        if(empty($options['backlog_v13'])) break;
       }
 
       // Se a própria geração já classificou a pauta como descarte terminal,
