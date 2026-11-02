@@ -11,7 +11,7 @@ function tvs_radar_freshness_classify(array $item, ?int $now=null): array {
         if($expiry===false) return ['eligible'=>false,'reason'=>'invalid_deadline'];
         if($expiry<$now) return ['eligible'=>false,'reason'=>'expired_deadline'];
     }
-    $date=trim((string)($item['source_date']??$item['published_at']??''));
+    $date=trim((string)($item['source_date']??$item['source_published_at']??$item['published_at']??''));
     if($date==='') return ['eligible'=>false,'reason'=>'missing_source_date'];
     $published=strtotime($date);
     if($published===false || $published>$now+300) return ['eligible'=>false,'reason'=>'invalid_source_date'];
