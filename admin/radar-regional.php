@@ -4935,6 +4935,35 @@ function tvs_radar_pilot_allows_backlog_v12(){
   return is_array(tvs_radar_last_approved_pilot_v12());
 }
 
+/**
+ * Diagnostic-only view of effective execution gates for a selected backlog item.
+ * Does not change candidate state or relax editorial policies.
+ */
+function tvs_radar_backlog_exclusion_reason_v13($cand,$city='', $now=null){
+  if(!is_array($cand)) return 'registro_ausente';
+  $requested=(string)($cand['radar_requested_city']??$cand['city']??'');
+  if($city!=='' && $requested!==$city) return 'cidade_divergente';
+  if((int)($cand['pipeline_attempts']??0)>100) return 'limite_global_tentativas';
+  if(empty($cand['entry_audit_status'])) return 'auditoria_pendente';
+  $stage=(string)($cand['pipeline_stage']??'');
+  if(in_array($stage,['fonte_esgotada','revisao_manual_pipeline','expirada_sem_enriquecimento','pronta_para_redacao'],true)) return 'etapa_bloqueada_'.$stage;
+  if($stage==='aguardando_fonte' && tvs_radar_is_google_news_url($cand['url']??$cand['source_url']??'')) return 'fonte_google_pendente';
+  $now=$now??time();
+  $sourceDate=(string)($cand['source_date']??$cand['source_published_at']??$cand['published_at']??'');
+  if($sourceDate!==''){
+    $ts=strtotime($sourceDate);
+    if($ts!==false && $ts<=$now && $now-$ts>172800 && empty($cand['verified_new_fact'])) return 'fonte_antiga_sem_fato_novo';
+  }
+  $deadline=(string)($cand['deadline_at']??$cand['registration_end_at']??$cand['event_end_at']??'');
+  if($deadline!==''){
+    $ts=strtotime($deadline);
+    if($ts===false || $ts<$now) return 'prazo_vencido_ou_invalido';
+  }
+  if(!tvs_radar_enrichment_due($cand)) return 'retry_ou_ttl_nao_vencido';
+  if(!tvs_radar_backlog_candidate_eligible_v13($cand)) return 'inelegivel_seletor';
+  return '';
+}
+
 function tvs_radar_backlog_candidate_eligible_v13($cand){
   if(!is_array($cand)) return false;
   if((int)($cand['pipeline_attempts']??0)>100) return false;
@@ -5142,14 +5171,23 @@ function tvs_radar_run_backlog_batch_v13($limit=20){
     if($processedId!=='') $actuallyProcessed[$processedId]=true;
   }
   $advanced=0; $stalled=0; $reasons=[]; $itemDiagnostics=[];
+  $discoveryForDiagnostics=[];
+  foreach($beforeRows as $row){
+    if(is_array($row) && (string)($row['id']??'')!=='') $discoveryForDiagnostics[(string)$row['id']]=$row;
+  }
   foreach($ids as $id){
     if(!isset($actuallyProcessed[$id])){
+      $candidate=$discoveryForDiagnostics[$id]??null;
+      $gate=tvs_radar_backlog_exclusion_reason_v13($candidate);
+      if($gate==='') $gate='limite_ou_priorizacao_do_ciclo';
       $itemDiagnostics[]=[
         'id'=>$id,'previous_stage'=>(string)($before[$id]['stage']??''),
-        'current_stage'=>'nao_processada','reason'=>'Selecionada para o lote, mas não executada: verificar elegibilidade por cidade, data da fonte, prazo, auditoria, retry/TTL e limite de execução no diagnóstico do pipeline.',
-        'next_retry_at'=>'','attempts'=>(int)($before[$id]['attempts']??0)
+        'current_stage'=>'nao_processada','reason'=>$gate,
+        'reason_code'=>$gate,
+        'next_retry_at'=>is_array($candidate)?(string)($candidate['enrichment_next_retry_at']??''):'',
+        'attempts'=>(int)($before[$id]['attempts']??0)
       ];
-      $reasons['nao_processada_no_lote']=($reasons['nao_processada_no_lote']??0)+1;
+      $reasons[$gate]=($reasons[$gate]??0)+1;
       continue;
     }
     $current=$after[$id]??[];
@@ -6055,6 +6093,25 @@ $factLabels=['sem_auditoria'=>'Ainda sem auditoria','fonte_nao_resolvida'=>'Font
 foreach($factBlocks as $key=>$count){ if($count>0): ?><span class="badge"><?=h($factLabels[$key])?>: <?=$count?></span><?php endif; }
 foreach($editorBlocks as $label=>$count){ if($count>0): ?><span class="badge" style="background:#f5f3ff;color:#6d28d9">Pendência editorial — <?=h($label)?>: <?=$count?></span><?php endif; }
 ?></div><small class="muted">Uma pauta pode aparecer em mais de um motivo factual; os cards superiores continuam mutuamente exclusivos.</small></details>
+<?php
+$radarBatchHistory=tvs_read_json_file(dirname(__DIR__).'/data/radar_backlog_batches_v13.json');
+if(!is_array($radarBatchHistory)) $radarBatchHistory=[];
+$radarBatchHistory=array_slice(array_reverse($radarBatchHistory),0,10);
+?>
+<?php if($radarBatchHistory): ?><details class="settings-box"><summary>Histórico dos últimos lotes Radar 1.3 (diagnóstico por pauta)</summary>
+<?php foreach($radarBatchHistory as $batch): ?>
+<section style="margin:12px 0;border-top:1px solid #ddd;padding-top:8px">
+<strong><?=h((string)($batch['batch_token']??'lote'))?></strong>
+<span class="badge">Selecionadas: <?= (int)($batch['selected']??0) ?></span>
+<span class="badge">Processadas: <?= (int)($batch['processed']??0) ?></span>
+<span class="badge">Persistidas: <?= (int)($batch['persisted']??0) ?></span>
+<span class="badge">Não executadas: <?= (int)($batch['skipped']??0) ?></span>
+<span class="badge">Erros: <?= (int)($batch['errors']??0) ?></span>
+<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse"><thead><tr><th>ID</th><th>Etapa anterior</th><th>Resultado</th><th>Motivo</th><th>Próxima tentativa</th></tr></thead><tbody>
+<?php foreach((array)($batch['item_diagnostics']??[]) as $item): if(!is_array($item)) continue; ?>
+<tr><td><?=h((string)($item['id']??''))?></td><td><?=h((string)($item['previous_stage']??''))?></td><td><?=h((string)($item['current_stage']??''))?></td><td><?=h((string)($item['reason_code']??$item['reason']??''))?></td><td><?=h((string)($item['next_retry_at']??''))?></td></tr>
+<?php endforeach; ?></tbody></table></div></section>
+<?php endforeach; ?></details><?php endif; ?>
 <?php if($lastRunTelemetry): ?><details class="settings-box radar-metrics-details"><summary>Telemetria da última execução</summary><div style="margin-top:8px;display:flex;gap:7px;flex-wrap:wrap"><span class="badge">Etapa: <?=h($lastRunTelemetry['retroactive_stage']??'normal')?></span><span class="badge"><?=($lastRunTelemetry['retroactive_stage']??'normal')==='normal'?'Pautas no pool':'Selecionadas'?>: <?=h((string)($lastRunTelemetry['selected_count']??0))?></span><span class="badge">Processadas: <?=h((string)($lastRunTelemetry['processed_count']??0))?></span><span class="badge">Persistidas: <?=h((string)($lastRunTelemetry['persisted_count']??0))?></span><span class="badge">Alteradas: <?=h((string)($lastRunTelemetry['changed_count']??0))?></span><span class="badge">Erros: <?=h((string)($lastRunTelemetry['error_count']??0))?></span><span class="badge">Cursor: <?=h((string)($lastRunTelemetry['cursor_before']??'-'))?> → <?=h((string)($lastRunTelemetry['cursor_after']??'-'))?></span></div><small class="muted">Run <?=h($lastRunTelemetry['run_id']??'')?> · início <?=h($lastRunTelemetry['started_at']??'')?> · fim <?=h($lastRunTelemetry['finished_at']??'')?> · regra <?=h($lastRunTelemetry['rule_version']??'')?></small></details><?php endif; ?>
 <?php if($lastBacklogBatch): ?><details class="settings-box radar-metrics-details"><summary>Último lote do backlog 1.3</summary><div style="margin-top:8px;display:flex;gap:7px;flex-wrap:wrap">
 <span class="badge">Selecionadas: <?=(int)($lastBacklogBatch['selected']??0)?></span>
