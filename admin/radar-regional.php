@@ -5428,6 +5428,27 @@ function tvs_radar_update_queue($perCity=15,$mode='normal'){
   return $generated;
 }
 function tvs_publish_from_queue($id,$post){
+  // Serializa a verificacao do teto diario, a deduplicacao e a gravacao.
+  // O lock e compartilhado pelos caminhos de aprovacao individual e em lote.
+  global $newsFile, $TVS_PUBLISH_ERROR;
+  $lockPath=dirname($newsFile).'/.radar_publication.lock';
+  $handle=@fopen($lockPath,'c');
+  if($handle===false){
+    $TVS_PUBLISH_ERROR='Publicação bloqueada: não foi possível abrir o controle de concorrência.';
+    return false;
+  }
+  try {
+    if(!flock($handle,LOCK_EX)){
+      $TVS_PUBLISH_ERROR='Publicação bloqueada: controle de concorrência indisponível.';
+      return false;
+    }
+    return tvs_publish_from_queue_locked($id,$post);
+  } finally {
+    flock($handle,LOCK_UN);
+    fclose($handle);
+  }
+}
+function tvs_publish_from_queue_locked($id,$post){
   global $newsFile, $TVS_PUBLISH_ERROR;
   $TVS_PUBLISH_ERROR='';
   $queue=tvs_queue_read(); $found=null; $newq=[];
