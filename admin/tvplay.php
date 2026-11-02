@@ -66,7 +66,10 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
   $action=$_POST['action']??'';
   if($action==='suggest_top3'){
     $r=tvp_generate_top_suggestions(3);
-    tvp_admin_redirect(['msg'=>'Sugestões geradas: '.($r['created']??0).'.']);
+    $created=(int)($r['created']??0);
+    $message='Sugestões geradas: '.$created.'.';
+    if($created===0) $message.=' Nenhuma matéria publicada atendeu simultaneamente aos critérios do Top 3 (até 3 dias, pontuação mínima 75, sem tema sensível e sem vídeo já cadastrado). Confira a Produção Manual para matérias elegíveis e valide a atualidade antes de gerar.';
+    tvp_admin_redirect(['msg'=>$message]);
   }
   if($action==='create_manual'){
     $n=tvp_admin_find_news($_POST['news_id']??'');
