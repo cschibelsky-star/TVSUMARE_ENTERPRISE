@@ -4306,6 +4306,13 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5,$options=[]
     foreach($discovery as $idx=>$cand){
       $requested=(string)($cand['radar_requested_city']??$cand['city']??'');
       if($requested!==$city) continue;
+      // Fonte datada há mais de 48h exige fato novo verificado antes de
+      // voltar à seleção automática; sem data, mantém revisão existente.
+      $sourceDate=(string)($cand['source_date']??$cand['source_published_at']??$cand['published_at']??'');
+      if($sourceDate!==''){
+        $sourceTs=strtotime($sourceDate);
+        if($sourceTs!==false && $sourceTs<=time() && time()-$sourceTs>172800 && empty($cand['verified_new_fact'])) continue;
+      }
       // Bloqueio conservador: prazo explicitamente encerrado não volta à fila automática.
       $deadline=(string)($cand['deadline_at']??$cand['registration_end_at']??$cand['event_end_at']??'');
       if($deadline!==''){
