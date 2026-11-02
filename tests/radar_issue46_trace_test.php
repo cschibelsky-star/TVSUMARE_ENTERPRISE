@@ -53,4 +53,7 @@ if(!str_contains($source,'Histórico dos últimos lotes Radar 1.3')) throw new R
 if(!str_contains($source, "'reason_code'".'=>'.'$gate')) throw new RuntimeException('Per-item code missing');
 if(!str_contains($source,"'excluded_before_execution'") || !str_contains($source,"'rank'")) throw new RuntimeException('Execution alignment missing');
 if(!str_contains($source,"'publication_eligible'")) throw new RuntimeException('Human editorial gates missing');
+// A pauta pronta encerra apenas o ciclo normal, nunca os outros IDs do backlog.
+$continueBacklog="if(empty(\$options['backlog_v13'])) break;";
+if(!str_contains($source,$continueBacklog)) throw new RuntimeException('Backlog still stops at first ready story per city');
 echo "RADAR_ISSUE46_SELECTOR_GATE_TEST=PASS\n";
