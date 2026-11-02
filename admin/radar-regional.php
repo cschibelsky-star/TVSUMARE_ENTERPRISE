@@ -5741,6 +5741,36 @@ function tvs_reprocess_discarded_pautas($limit=12,$mode='normal'){
   return [$ok, max(0,count($discarded)-count($kept)-$ok)];
 }
 
+// Consulta autenticada e somente leitura do estado do lote. O lock e a fonte
+// de verdade para execucao ativa; nunca interpretar ultimo lote como ativo.
+if(!$TVS_RADAR_IS_CLI_CRON && (($_SERVER['REQUEST_METHOD']??'GET')==='GET') && isset($_GET['radar_batch_status'])){
+  $lockPath=dirname(__DIR__).'/data/radar_backlog_batch_v13.lock';
+  $active=false;
+  if(is_file($lockPath)){
+    $lockHandle=@fopen($lockPath,'r');
+    if($lockHandle){
+      if(@flock($lockHandle,LOCK_SH|LOCK_NB)) @flock($lockHandle,LOCK_UN);
+      else $active=true;
+      fclose($lockHandle);
+    }
+  }
+  $history=tvs_read_json_file(dirname(__DIR__).'/data/radar_backlog_batches_v13.json');
+  $latest=is_array($history) && $history ? end($history) : [];
+  header('Content-Type: application/json; charset=utf-8');
+  echo json_encode([
+    'active'=>$active,
+    'checked_at'=>date('c'),
+    'last_batch_id'=>(string)($latest['batch_token']??''),
+    'last_status'=>(string)($latest['status']??''),
+    'selected'=>(int)($latest['selected']??0),
+    'processed'=>(int)($latest['processed']??0),
+    'persisted'=>(int)($latest['persisted']??0),
+    'skipped'=>(int)($latest['skipped']??0),
+    'errors'=>(int)($latest['errors']??0)
+  ],JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+  exit;
+}
+
 if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'){
   tvs_verify_csrf();
   $action=$_POST['action']??'';
@@ -6177,6 +6207,34 @@ document.addEventListener('DOMContentLoaded',function(){
   }
 
   var commandStatus=document.getElementById('radar-command-status');
+  var lastObservedBatch='';
+  var batchButton=document.querySelector('form.radar-action-form input[name="action"][value="process_backlog_batch"]');
+  batchButton=batchButton?batchButton.closest('form').querySelector('button[type="submit"]'):null;
+  function inspectBacklogStatus(){
+    fetch('radar-regional.php?radar_batch_status=1',{credentials:'same-origin',cache:'no-store'})
+      .then(function(response){if(!response.ok) throw new Error('status');return response.json();})
+      .then(function(state){
+        if(!state || typeof state.active!=='boolean') return;
+        if(batchButton && batchButton.closest('form').dataset.submitting!=='1'){
+          batchButton.disabled=state.active;
+          batchButton.setAttribute('aria-busy',state.active?'true':'false');
+        }
+        var summary=state.last_batch_id ? (' Último lote: '+state.last_batch_id+' — '+state.processed+'/'+state.selected+' processadas, '+state.errors+' erro(s).') : '';
+        if(commandStatus && !document.querySelector('form.radar-action-form[data-submitting="1"]')){
+          commandStatus.textContent=state.active
+            ? 'Backlog 1.3 em execução no servidor. Não envie outro lote.'+summary
+            : 'Nenhum lote ativo no momento.'+summary;
+        }
+        if(lastObservedBatch && lastObservedBatch!==state.last_batch_id && commandStatus){
+          commandStatus.textContent='Novo lote concluído: '+state.last_batch_id+' — '+state.processed+'/'+state.selected+' processadas, '+state.skipped+' não executadas, '+state.errors+' erro(s). Atualize a página para ver o diagnóstico individual.';
+        }
+        lastObservedBatch=state.last_batch_id||'';
+      }).catch(function(){
+        if(commandStatus && !commandStatus.textContent) commandStatus.textContent='Consulta de status indisponível. Não repita o processamento sem conferir a telemetria.';
+      });
+  }
+  inspectBacklogStatus();
+  window.setInterval(inspectBacklogStatus,10000);
   document.querySelectorAll('form.radar-action-form').forEach(function(form){
     form.addEventListener('submit',function(ev){
       if(form.dataset.submitting==='1'){
