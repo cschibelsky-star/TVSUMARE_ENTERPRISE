@@ -1,35 +1,56 @@
 <?php
-// Isolated, non-mutating regression for issue #46 diagnostic codes.
+// Regression of the actual selector and shared gate logic, without real data or API calls.
 $source=file_get_contents(dirname(__DIR__).'/admin/radar-regional.php');
 $start=strpos($source,'function tvs_radar_backlog_exclusion_reason_v13(');
-$end=strpos($source,'function tvs_radar_backlog_candidate_eligible_v13(',$start);
-if($start===false || $end===false) throw new RuntimeException('Backlog diagnostic helper not found');
+$end=strpos($source,'function tvs_radar_run_backlog_batch_v13(',$start);
+if($start===false || $end===false) throw new RuntimeException('Radar functions not found');
 eval(substr($source,$start,$end-$start));
+$cities=['Sumaré','Campinas','Paulínia'];
+$fixture_discovery=[];
+function tvs_radar_discovery_read(){return $GLOBALS['fixture_discovery'];}
 function tvs_radar_is_google_news_url($url){return str_contains((string)$url,'news.google.com');}
 function tvs_radar_enrichment_due($row){return empty($row['retry_future']);}
-function tvs_radar_backlog_candidate_eligible_v13($row){return empty($row['selector_block']);}
-function check_gate($item,$expected){
+function assert_gate($item,$expected){
   $actual=tvs_radar_backlog_exclusion_reason_v13($item);
   if($actual!==$expected) throw new RuntimeException("Expected {$expected}, got {$actual}");
 }
 $valid=['id'=>'p-1','city'=>'Sumaré','entry_audit_status'=>'aprovada_para_enriquecimento','pipeline_stage'=>'aguardando_enriquecimento','url'=>'https://example.org/article'];
-check_gate($valid,'');
-check_gate($valid+['unused'=>true],'');
-check_gate(array_replace($valid,['entry_audit_status'=>'']),'auditoria_pendente');
-check_gate(array_replace($valid,['pipeline_attempts'=>101]),'limite_global_tentativas');
-check_gate(array_replace($valid,['pipeline_stage'=>'fonte_esgotada']),'etapa_bloqueada_fonte_esgotada');
-check_gate(array_replace($valid,['pipeline_stage'=>'aguardando_fonte','url'=>'https://news.google.com/rss/articles/abc']),'fonte_google_pendente');
-check_gate(array_replace($valid,['deadline_at'=>'2020-01-01']),'prazo_vencido_ou_invalido');
-check_gate(array_replace($valid,['source_date'=>'2020-01-01']),'fonte_antiga_sem_fato_novo');
-check_gate(array_replace($valid,['retry_future'=>true]),'retry_ou_ttl_nao_vencido');
-check_gate(array_replace($valid,['selector_block'=>true]),'inelegivel_seletor');
-if(tvs_radar_backlog_exclusion_reason_v13($valid,'Campinas')!=='cidade_divergente') throw new RuntimeException('city mismatch');
-$selected=array_map(fn($n)=>'p-'.$n,range(1,16));
-$processed=['p-1','p-2'];
-$skipped=array_values(array_diff($selected,$processed));
-if(count($selected)!==16 || count($processed)!==2 || count($skipped)!==14) throw new RuntimeException('fixture mismatch');
-if(!str_contains($source,'Histórico dos últimos lotes Radar 1.3')) throw new RuntimeException('batch history missing');
-if(!str_contains($source, "'reason_code'".'=>'.'$gate')) throw new RuntimeException('per-item reason missing');
-if(!str_contains($source,"'publication_eligible'=>0") && !str_contains($source,"'publication_eligible'")) throw new RuntimeException('editorial protection missing');
-if(!str_contains($source,"'excluded_before_execution'") || !str_contains($source,"'rank'")) throw new RuntimeException('backlog alignment missing');
-echo "RADAR_ISSUE46_TRACE_TEST=PASS\n";
+assert_gate($valid,'');
+assert_gate(array_replace($valid,['entry_audit_status'=>'']),'auditoria_pendente');
+assert_gate(array_replace($valid,['pipeline_attempts'=>101]),'limite_global_tentativas');
+assert_gate(array_replace($valid,['pipeline_stage'=>'fonte_esgotada']),'etapa_bloqueada_fonte_esgotada');
+assert_gate(array_replace($valid,['pipeline_stage'=>'aguardando_fonte','url'=>'https://news.google.com/rss/articles/a']),'fonte_google_pendente');
+assert_gate(array_replace($valid,['deadline_at'=>'2020-01-01']),'prazo_vencido_ou_invalido');
+assert_gate(array_replace($valid,['source_date'=>'2020-01-01']),'fonte_antiga_sem_fato_novo');
+assert_gate(array_replace($valid,['retry_future'=>true]),'retry_ou_ttl_nao_vencido');
+if(tvs_radar_backlog_exclusion_reason_v13($valid,'Campinas')!=='cidade_divergente') throw new RuntimeException('City mismatch');
+for($i=1;$i<=16;$i++){
+  $fixture_discovery[]=array_replace($valid,[
+    'id'=>'p-'.$i,
+    'city'=>$cities[($i-1)%3],
+    'sf_score'=>100-$i
+  ]);
+}
+$GLOBALS['fixture_discovery']=$fixture_discovery;
+$selected=tvs_radar_select_backlog_ids_v13(16);
+if(count($selected)!==16 || count(array_unique($selected))!==16) throw new RuntimeException('16 candidates not selected');
+$byId=[];
+foreach($fixture_discovery as $i=>$item){
+  // Replicate a race: 14 items became retry-delayed after selection.
+  if($i>=2) $item['retry_future']=true;
+  $byId[$item['id']]=$item;
+}
+$eligible=[]; $excluded=[];
+foreach($selected as $id){
+  $reason=tvs_radar_backlog_exclusion_reason_v13($byId[$id]);
+  if($reason==='') $eligible[]=$id;
+  else $excluded[$id]=$reason;
+}
+if(count($eligible)!==2 || count($excluded)!==14) throw new RuntimeException('16/2/14 eligibility race not reproduced');
+foreach($excluded as $reason) if($reason!=='retry_ou_ttl_nao_vencido') throw new RuntimeException('Untraceable deferred item');
+if(count(tvs_radar_select_backlog_ids_v13(20))!==16) throw new RuntimeException('Unexpected selector count');
+if(!str_contains($source,'Histórico dos últimos lotes Radar 1.3')) throw new RuntimeException('Admin history missing');
+if(!str_contains($source, "'reason_code'".'=>'.'$gate')) throw new RuntimeException('Per-item code missing');
+if(!str_contains($source,"'excluded_before_execution'") || !str_contains($source,"'rank'")) throw new RuntimeException('Execution alignment missing');
+if(!str_contains($source,"'publication_eligible'")) throw new RuntimeException('Human editorial gates missing');
+echo "RADAR_ISSUE46_SELECTOR_GATE_TEST=PASS\n";
