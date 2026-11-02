@@ -4364,9 +4364,10 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5,$options=[]
     }
 
     usort($cityCandidates,function($a,$b){
-      if($a['diversity_penalty']!==$b['diversity_penalty']) return $a['diversity_penalty']<=>$b['diversity_penalty'];
-      if($a['resolution_penalty']!==$b['resolution_penalty']) return $a['resolution_penalty']<=>$b['resolution_penalty'];
+      // A qualidade factual tem prioridade sobre a distribuição por editoria.
       if($a['sf_score']!==$b['sf_score']) return $b['sf_score']<=>$a['sf_score'];
+      if($a['resolution_penalty']!==$b['resolution_penalty']) return $a['resolution_penalty']<=>$b['resolution_penalty'];
+      if($a['diversity_penalty']!==$b['diversity_penalty']) return $a['diversity_penalty']<=>$b['diversity_penalty'];
       if($a['attempts']!==$b['attempts']) return $a['attempts']<=>$b['attempts'];
       return strcmp($a['updated'],$b['updated']);
     });
