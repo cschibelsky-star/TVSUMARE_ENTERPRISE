@@ -5455,6 +5455,10 @@ function tvs_publish_from_queue($id,$post){
       $TVS_PUBLISH_ERROR='Publicação bloqueada: pauta com mais de 48 horas sem fato novo verificado.';
       return false;
     }
+    if(time()-$sourceTs>86400 && empty($found['current_relevance_verified']) && empty($found['verified_new_fact'])){
+      $TVS_PUBLISH_ERROR='Publicação bloqueada: matéria entre 24 e 48 horas exige relevância atual verificada.';
+      return false;
+    }
   }
 
   $humanReview=!empty($post['human_review']);
