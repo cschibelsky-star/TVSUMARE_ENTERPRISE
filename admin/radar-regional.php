@@ -4284,6 +4284,12 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5,$options=[]
   $maxCandidates=max(0,(int)($options['max_candidates']??0));
   $onlyIds=array_values(array_filter(array_map('strval',(array)($options['only_ids']??[]))));
   $onlyLookup=$onlyIds?array_fill_keys($onlyIds,true):[];
+  // In backlog mode the selector's immutable ID order is authoritative.
+  // A candidate that changed eligibility between selection and execution is
+  // diagnosed and deferred; it must never bypass a newer editorial gate.
+  $backlogTrace=[];
+  $backlogRank=$onlyIds?array_flip($onlyIds):[];
+
   $ruleVersion=(string)($options['editorial_rule_version']??'');
   $reprocessReason=(string)($options['reprocess_reason']??'');
   $maxPerCycle=tvs_radar_is_volume_mode($mode)?12:6;
@@ -4306,6 +4312,15 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5,$options=[]
     foreach($discovery as $idx=>$cand){
       $requested=(string)($cand['radar_requested_city']??$cand['city']??'');
       if($requested!==$city) continue;
+      $candId=(string)($cand['id']??'');
+      if(!empty($options['backlog_v13']) && $onlyLookup){
+        if(!isset($onlyLookup[$candId])) continue;
+        $exclusion=tvs_radar_backlog_exclusion_reason_v13($cand,$city);
+        if($exclusion!==''){
+          $backlogTrace[$candId]=$exclusion;
+          continue;
+        }
+      }
       // Fonte datada há mais de 48h exige fato novo verificado antes de
       // voltar à seleção automática; sem data, mantém revisão existente.
       $sourceDate=(string)($cand['source_date']??$cand['source_published_at']??$cand['published_at']??'');
@@ -4361,6 +4376,7 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5,$options=[]
 
       $cityCandidates[]=[
         'idx'=>$idx,
+        'rank'=>$backlogRank[$candId]??PHP_INT_MAX,
         'category'=>$category,
         'diversity_penalty'=>$diversityPenalty,
         'resolution_penalty'=>(int)($cand['resolution_priority_penalty']??0),
@@ -4370,7 +4386,10 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5,$options=[]
       ];
     }
 
-    usort($cityCandidates,function($a,$b){
+    usort($cityCandidates,function($a,$b) use ($onlyLookup,$options){
+      // Restricted backlog batches preserve selector order, not a second priority ranking.
+      if(!empty($options['backlog_v13']) && $onlyLookup)
+        return $a['rank']<=>$b['rank'];
       // A qualidade factual tem prioridade sobre a distribuição por editoria.
       if($a['sf_score']!==$b['sf_score']) return $b['sf_score']<=>$a['sf_score'];
       if($a['resolution_penalty']!==$b['resolution_penalty']) return $a['resolution_penalty']<=>$b['resolution_penalty'];
@@ -4743,6 +4762,7 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5,$options=[]
     'selected_count'=>$selectedCount,
     'processed_count'=>count($processedIds),
     'item_diagnostics'=>$itemDiagnostics,
+    'excluded_before_execution'=>$backlogTrace,
     'changed_count'=>$changedCount,
     'unchanged_count'=>max(0,count($processedIds)-$changedCount),
     'persisted_count'=>$persistedCount,
@@ -5171,6 +5191,7 @@ function tvs_radar_run_backlog_batch_v13($limit=20){
     if($processedId!=='') $actuallyProcessed[$processedId]=true;
   }
   $advanced=0; $stalled=0; $reasons=[]; $itemDiagnostics=[];
+  $effectiveExclusions=(array)($metrics['excluded_before_execution']??[]);
   $discoveryForDiagnostics=[];
   foreach($beforeRows as $row){
     if(is_array($row) && (string)($row['id']??'')!=='') $discoveryForDiagnostics[(string)$row['id']]=$row;
@@ -5178,7 +5199,8 @@ function tvs_radar_run_backlog_batch_v13($limit=20){
   foreach($ids as $id){
     if(!isset($actuallyProcessed[$id])){
       $candidate=$discoveryForDiagnostics[$id]??null;
-      $gate=tvs_radar_backlog_exclusion_reason_v13($candidate);
+      $gate=(string)($effectiveExclusions[$id]??'');
+      if($gate==='') $gate=tvs_radar_backlog_exclusion_reason_v13($candidate);
       if($gate==='') $gate='limite_ou_priorizacao_do_ciclo';
       $itemDiagnostics[]=[
         'id'=>$id,'previous_stage'=>(string)($before[$id]['stage']??''),
