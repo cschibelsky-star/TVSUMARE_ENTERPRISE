@@ -66,5 +66,5 @@ if(!str_contains($source,"'action' value='execute_radar'") && !str_contains($sou
 if(str_contains($source,'>Atualizar Agora</button>') || str_contains($source,'>Processar próximo lote de 20</button>')) throw new RuntimeException('Legacy normal buttons remain visible');
 if(!str_contains($source,"'cycle_discovered'")) throw new RuntimeException('Discovery count absent from cycle status');
 if(!str_contains($source,"'internal_error_count'")) throw new RuntimeException('Internal error diagnostics absent');
-if(!str_contains($source,'\$errors=max(0,\$processed-\$persisted)')) throw new RuntimeException('Batch errors must only reflect selected item persistence');
+if(!str_contains($source,'$errors=max(0,$processed-$persisted)')) throw new RuntimeException('Batch errors must only reflect selected item persistence');
 echo "RADAR_ISSUE46_SELECTOR_GATE_TEST=PASS\n";
