@@ -56,4 +56,5 @@ if(!str_contains($source,"'publication_eligible'")) throw new RuntimeException('
 // A pauta pronta encerra apenas o ciclo normal, nunca os outros IDs do backlog.
 $continueBacklog="if(empty(\$options['backlog_v13'])) break;";
 if(!str_contains($source,$continueBacklog)) throw new RuntimeException('Backlog still stops at first ready story per city');
+if(!str_contains($source,"continue; // próxima pauta selecionada")) throw new RuntimeException('Backlog re-enters fallback on already queued story');
 echo "RADAR_ISSUE46_SELECTOR_GATE_TEST=PASS\n";
