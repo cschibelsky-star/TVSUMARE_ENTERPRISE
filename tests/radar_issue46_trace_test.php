@@ -61,7 +61,7 @@ if(!str_contains($source,'isset($_GET[\'radar_batch_status\'])')) throw new Runt
 if(!str_contains($source,"LOCK_SH|LOCK_NB")) throw new RuntimeException('Batch status endpoint must inspect active lock nonblocking');
 if(!str_contains($source,"window.setInterval(inspectBacklogStatus,10000)")) throw new RuntimeException('Missing client status polling');
 if(!str_contains($source,"function tvs_radar_execute_full_cycle_v13()")) throw new RuntimeException('Single integrated Radar cycle missing');
-if(!str_contains($source,'tvs_radar_run_backlog_batch_v13(20,$lock)')) throw new RuntimeException('Integrated Radar must share collection lock with batch');
+if(!str_contains($source,'tvs_radar_run_backlog_batch_v13(20,$lock,$run)')) throw new RuntimeException('Integrated Radar must share collection lock with batch');
 if(!str_contains($source,"'action' value='execute_radar'") && !str_contains($source,'name="action" value="execute_radar"')) throw new RuntimeException('Single main action absent');
 if(str_contains($source,'>Atualizar Agora</button>') || str_contains($source,'>Processar próximo lote de 20</button>')) throw new RuntimeException('Legacy normal buttons remain visible');
 if(!str_contains($source,"'cycle_discovered'")) throw new RuntimeException('Discovery count absent from cycle status');
