@@ -4739,6 +4739,34 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5,$options=[]
     }
   }
   $cursorAfter=tvs_radar_cursor_state();
+  // Report selected IDs that never reached an execution attempt. This is
+  // diagnostic only: no editorial gate or retry policy is bypassed.
+  if(!empty($options['backlog_v13']) && $onlyIds){
+    $attemptedLookup=array_fill_keys($processedIds,true);
+    $selectedLookup=array_fill_keys($onlyIds,true);
+    $allDiscovery=tvs_radar_discovery_read();
+    $currentLookup=[];
+    foreach($allDiscovery as $row){
+      if(!is_array($row)) continue;
+      $rowId=(string)($row['id']??'');
+      if(isset($selectedLookup[$rowId])) $currentLookup[$rowId]=$row;
+    }
+    foreach($onlyIds as $selectedId){
+      if(isset($attemptedLookup[$selectedId]) || isset($backlogTrace[$selectedId])) continue;
+      $selectedRow=$currentLookup[$selectedId]??null;
+      if(!is_array($selectedRow)){
+        $backlogTrace[$selectedId]='pauta_ausente_na_execucao';
+        continue;
+      }
+      $selectedCity=(string)($selectedRow['radar_requested_city']??$selectedRow['city']??'');
+      if(!in_array($selectedCity,$cities,true)){
+        $backlogTrace[$selectedId]='cidade_fora_do_ciclo';
+        continue;
+      }
+      $gate=tvs_radar_backlog_exclusion_reason_v13($selectedRow,$selectedCity);
+      $backlogTrace[$selectedId]=$gate!==''?$gate:'selecionada_nao_visitada_pelo_executor';
+    }
+  }
   // Diagnostico por pauta, sem alterar gates editoriais nem publicar conteudo.
   $itemDiagnostics=[];
   foreach($processedIds as $processedId){
