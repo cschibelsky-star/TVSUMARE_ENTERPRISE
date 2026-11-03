@@ -73,4 +73,23 @@ if(!str_contains($source,'$line.PHP_EOL')) throw new RuntimeException('NDJSON li
 if(!str_contains($source,"'candidate_result'")) throw new RuntimeException('Per-candidate event missing');
 if(!str_contains($source,'id="radar-operational-log"')) throw new RuntimeException('Operations dashboard absent');
 if(!str_contains($source,"'batch_finished'")) throw new RuntimeException('Batch result event missing');
+// Isolated write/read test: never write to the HML journal or real queue.
+$journalStart=strpos($source,'function tvs_radar_operational_event(');
+$journalEnd=strpos($source,'// Ciclo manual unificado:',$journalStart);
+if($journalStart===false || $journalEnd===false) throw new RuntimeException('Operational journal definitions missing');
+eval(substr($source,$journalStart,$journalEnd-$journalStart));
+$journalDir=sys_get_temp_dir().'/radar_issue46_'.bin2hex(random_bytes(6));
+if(!tvs_radar_operational_event('run_test_001','cycle_started',[],$journalDir)) throw new RuntimeException('Journal write failed');
+if(!tvs_radar_operational_event('run_test_001','candidate_result',['candidate_id'=>'p-2','new_status'=>'nao_processada','reason_code'=>'retry_ou_ttl_nao_vencido','attempt'=>2,'provider'=>'private-provider'],$journalDir)) throw new RuntimeException('Journal candidate write failed');
+$today=date('Y-m-d');
+$allEvents=tvs_radar_operational_query($today,'run_test_001','',10,$journalDir);
+$filtered=tvs_radar_operational_query($today,'run_test_001','p-2',10,$journalDir);
+if(count($allEvents)!==2 || count($filtered)!==1) throw new RuntimeException('Journal read/filter mismatch');
+if(isset($filtered[0]['provider']) || ($filtered[0]['reason_code']??'')!=='retry_ou_ttl_nao_vencido') throw new RuntimeException('Journal allowlist violated');
+if(!tvs_radar_operational_event('run_test_001','cycle_finished',['duration_ms'=>1200],$journalDir)) throw new RuntimeException('Journal completion failed');
+if(tvs_radar_operational_event('run_test_001','unknown_event',[],$journalDir)) throw new RuntimeException('Unknown event incorrectly accepted');
+if(tvs_radar_operational_reason_code('fila_editorial')!=='editorial_queue' || tvs_radar_operational_reason_code('revisao_manual_pipeline')!=='manual_review') throw new RuntimeException('Reason classification failed');
+@unlink($journalDir.'/'.$today.'.ndjson');
+@rmdir($journalDir);
+echo "RADAR_OPERATIONAL_JOURNAL_TEST=PASS\\n";
 echo "RADAR_ISSUE46_SELECTOR_GATE_TEST=PASS\n";
