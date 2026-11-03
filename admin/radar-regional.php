@@ -5223,7 +5223,7 @@ function tvs_radar_run_backlog_batch_v13($limit=20,$sharedLock=null,$parentRunId
       continue;
     }
     $current=$after[$id]??[];
-    $observedStage=(string)($current['pipeline_stage']??(isset($queueIds[$id])?'fila_editorial':(isset($discardedIds[$id])?'descartada':'nao_localizada'));
+    $observedStage=isset($queueIds[$id])?'fila_editorial':(isset($discardedIds[$id])?'descartada':(string)($current['pipeline_stage']??'nao_localizada'));
     tvs_radar_operational_event($eventRun,'candidate_result',['candidate_id'=>$id,'previous_status'=>(string)($before[$id]['stage']??''),'new_status'=>$observedStage,'reason_code'=>($observedStage==='nao_localizada'?'state_missing':'attempt_recorded'),'attempt'=>(int)($current['pipeline_attempts']??$before[$id]['attempts']??0),'next_retry_at'=>(string)($current['enrichment_next_retry_at']??'')]);
     $itemDiagnostics[]=[
       'id'=>$id,
