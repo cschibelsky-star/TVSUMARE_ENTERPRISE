@@ -5794,7 +5794,7 @@ function tvs_radar_operational_event($runId,$type,$data=[]){
   $line=json_encode(['at'=>date('c'),'run_id'=>$runId,'event'=>$type]+$safe,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
   if($line===false) return false;
   // FILE_APPEND | LOCK_EX evita perda de eventos com requisicoes concorrentes.
-  return @file_put_contents($path,$line."\\n",FILE_APPEND|LOCK_EX)!==false;
+  return @file_put_contents($path,$line.PHP_EOL,FILE_APPEND|LOCK_EX)!==false;
 }
 function tvs_radar_operational_query($date,$runFilter='',$candidateFilter='',$limit=200){
   if(!preg_match('/^20[0-9]{2}-[01][0-9]-[0-3][0-9]$/D',$date)) return [];
