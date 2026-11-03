@@ -4305,7 +4305,7 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5,$options=[]
   }
 
   foreach($cycleCities as $city){
-    if($generated>=$maxPerCycle) break;
+    if(empty($options['backlog_v13']) && $generated>=$maxPerCycle) break;
     if(($ready[$city]??0)>=$targetPerCity && !$forceRetry && empty($options['ignore_ready_quota'])) continue;
 
     $cityCandidates=[];
@@ -4400,7 +4400,7 @@ function tvs_radar_process_discovery($mode='normal',$targetPerCity=5,$options=[]
 
     $tries=0;
     foreach($cityCandidates as $meta){
-      if($generated>=$maxPerCycle) break 2;
+      if(empty($options['backlog_v13']) && $generated>=$maxPerCycle) break 2;
       if($maxCandidates>0 && $processed>=$maxCandidates) break 2;
       if($tries>=$maxTriesPerCity) break;
       $pick=$meta['idx'];
