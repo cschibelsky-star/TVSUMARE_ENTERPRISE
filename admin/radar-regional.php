@@ -5829,7 +5829,13 @@ function tvs_radar_operational_reason_code($stage,$candidate=[]){
   if($stage==='nao_localizada') return 'state_missing';
   if($stage==='revisao_manual_pipeline') return 'manual_review';
   if($stage==='aguardando_enriquecimento'){
+    // Classificar esgotamento antes de retries: a presenca de um timestamp
+    // nao significa que o Repórter/Editor IA seja o gargalo.
+    foreach(['factual_gate_attempts'=>'factual_gate_exhausted','second_source_attempts'=>'second_source_exhausted'] as $field=>$code){
+      if((int)($candidate[$field]??0)>=3) return $code;
+    }
     if(!empty($candidate['ai_editor_next_retry_at'])) return 'editor_retry';
+    if(!empty($candidate['enrichment_next_retry_at'])) return 'factual_retry';
     return 'factual_enrichment_pending';
   }
   if($stage==='aguardando_fonte' || $stage==='precisa_resolver_fonte') return 'source_retry';
