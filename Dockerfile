@@ -19,6 +19,7 @@ RUN php /var/www/html/tests/heygen_video_model_test.php \
     && php /var/www/html/tests/radar_image_state_test.php \
     && php -l /var/www/html/admin/radar-regional.php \
     && php /var/www/html/tests/radar_source_rules_test.php \
+    && php /var/www/html/tests/radar_issue46_trace_test.php \
     && php -l /var/www/html/includes/elections_2026.php \
     && php -l /var/www/html/eleicoes-2026.php \
     && php -l /var/www/html/eleicoes-2026-dados.php \
