@@ -5100,7 +5100,7 @@ function tvs_radar_select_backlog_ids_v13($limit=20){
   return $ids;
 }
 
-function tvs_radar_run_backlog_batch_v13($limit=20,$sharedLock=null){
+function tvs_radar_run_backlog_batch_v13($limit=20,$sharedLock=null,$parentRunId=''){
   // O ciclo integrado compartilha o mesmo lock desde a coleta; chamadas
   // individuais continuam adquirindo o lock por conta própria.
   $ownsLock=!is_resource($sharedLock);
@@ -5114,6 +5114,7 @@ function tvs_radar_run_backlog_batch_v13($limit=20,$sharedLock=null){
     ];
   }
   try {
+  if($parentRunId!=='') tvs_radar_operational_event($parentRunId,'batch_started');
   // Antes de selecionar o backlog, drena filas recuperáveis respeitando retry/TTL.
   $sourceResolution=tvs_radar_process_due_source_resolution(min(12,max(4,(int)$limit)));
   $status=tvs_radar_status();
@@ -5157,6 +5158,8 @@ function tvs_radar_run_backlog_batch_v13($limit=20,$sharedLock=null){
   }
 
   $batchToken='backlog_v13_'.date('Ymd_His').'_'.substr(md5(uniqid('',true)),0,8);
+  $eventRun=$parentRunId!==''?$parentRunId:$batchToken;
+  tvs_radar_operational_event($eventRun,'batch_selection',['selected'=>count($ids),'eligible'=>count($ids),'batch_id'=>$batchToken]);
   $generated=tvs_radar_process_discovery('normal',5,[
     'force_retry'=>false,
     'ignore_ready_quota'=>true,
@@ -5216,9 +5219,12 @@ function tvs_radar_run_backlog_batch_v13($limit=20,$sharedLock=null){
         'attempts'=>(int)($before[$id]['attempts']??0)
       ];
       $reasons[$gate]=($reasons[$gate]??0)+1;
+      tvs_radar_operational_event($eventRun,'candidate_result',['candidate_id'=>$id,'previous_status'=>(string)($before[$id]['stage']??''),'new_status'=>'nao_processada','reason_code'=>$gate,'attempt'=>(int)($before[$id]['attempts']??0)]);
       continue;
     }
     $current=$after[$id]??[];
+    $observedStage=(string)($current['pipeline_stage']??(isset($queueIds[$id])?'fila_editorial':(isset($discardedIds[$id])?'descartada':'nao_localizada'));
+    tvs_radar_operational_event($eventRun,'candidate_result',['candidate_id'=>$id,'previous_status'=>(string)($before[$id]['stage']??''),'new_status'=>$observedStage,'reason_code'=>($observedStage==='nao_localizada'?'state_missing':'attempt_recorded'),'attempt'=>(int)($current['pipeline_attempts']??$before[$id]['attempts']??0),'next_retry_at'=>(string)($current['enrichment_next_retry_at']??'')]);
     $itemDiagnostics[]=[
       'id'=>$id,
       'previous_stage'=>(string)($before[$id]['stage']??''),
@@ -5299,6 +5305,7 @@ function tvs_radar_run_backlog_batch_v13($limit=20,$sharedLock=null){
   if(count($state)>120) $state=array_slice($state,-120);
   tvs_save_json_file($stateFile,array_values($state));
 
+  tvs_radar_operational_event($eventRun,'batch_finished',['batch_id'=>$batchToken,'selected'=>$selectedCount,'processed'=>$processed,'persisted'=>$persisted,'skipped'=>$skipped,'errors'=>$errors,'internal_error_count'=>$rawErrors,'auxiliary_attempts'=>$auxiliaryAttempts]);
   tvs_radar_record_run_telemetry([
     'run_id'=>$batchToken,
     'started_at'=>(string)($metrics['started_at']??date('c')),
@@ -5758,6 +5765,59 @@ function tvs_reprocess_discarded_pautas($limit=12,$mode='normal'){
   return [$ok, max(0,count($discarded)-count($kept)-$ok)];
 }
 
+// Diario operacional append-only por data: eventos sao independentes dos snapshots
+// de status. Nao registrar URLs, conteudo das materias, tokens ou mensagens livres.
+function tvs_radar_operational_event($runId,$type,$data=[]){
+  $runId=(string)$runId;
+  if(!preg_match('/^[a-zA-Z0-9_-]{4,100}$/D',$runId)) return false;
+  $allowed=['cycle_started','collection_finished','batch_started','batch_selection',
+    'candidate_result','batch_finished','cycle_finished','cycle_failed','cycle_conflict'];
+  if(!in_array($type,$allowed,true)) return false;
+  $keys=['candidate_id','stage','previous_status','new_status','reason_code',
+    'attempt','next_retry_at','selected','processed','persisted','skipped',
+    'errors','discovered','prepared','eligible','batch_id','duration_ms',
+    'internal_error_count','auxiliary_attempts'];
+  $safe=[];
+  foreach($keys as $key){
+    if(!array_key_exists($key,$data)) continue;
+    if(in_array($key,['candidate_id','stage','previous_status','new_status','reason_code','next_retry_at','batch_id'],true)){
+      $val=(string)$data[$key];
+      if(strlen($val)>180 || !preg_match('/^[a-zA-Z0-9_:.+\\/-]*$/D',$val)) continue;
+      $safe[$key]=$val;
+    } else {
+      $safe[$key]=max(0,(int)$data[$key]);
+    }
+  }
+  $dir=dirname(__DIR__).'/data/radar_operational_events';
+  if(!is_dir($dir) && !@mkdir($dir,0770,true) && !is_dir($dir)) return false;
+  $path=$dir.'/'.date('Y-m-d').'.ndjson';
+  $line=json_encode(['at'=>date('c'),'run_id'=>$runId,'event'=>$type]+$safe,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
+  if($line===false) return false;
+  // FILE_APPEND | LOCK_EX evita perda de eventos com requisicoes concorrentes.
+  return @file_put_contents($path,$line."\\n",FILE_APPEND|LOCK_EX)!==false;
+}
+function tvs_radar_operational_query($date,$runFilter='',$candidateFilter='',$limit=200){
+  if(!preg_match('/^20[0-9]{2}-[01][0-9]-[0-3][0-9]$/D',$date)) return [];
+  $path=dirname(__DIR__).'/data/radar_operational_events/'.$date.'.ndjson';
+  if(!is_file($path)) return [];
+  $handle=@fopen($path,'r');
+  if(!$handle) return [];
+  $result=[];
+  try {
+    // Exibe no maximo um numero controlado de eventos, sem mutar o diario.
+    while(($line=fgets($handle))!==false){
+      if(strlen($line)>4096) continue;
+      $row=json_decode($line,true);
+      if(!is_array($row)) continue;
+      if($runFilter!=='' && ($row['run_id']??'')!==$runFilter) continue;
+      if($candidateFilter!=='' && ($row['candidate_id']??'')!==$candidateFilter) continue;
+      $result[]=$row;
+      if(count($result)>$limit) array_shift($result);
+    }
+  } finally { fclose($handle); }
+  return array_reverse($result);
+}
+
 // Ciclo manual unificado: um lock cobre coleta e processamento, impedindo
 // que um segundo clique inicie coleta enquanto o primeiro ainda trabalha.
 function tvs_radar_execute_full_cycle_v13(){
@@ -5771,6 +5831,7 @@ function tvs_radar_execute_full_cycle_v13(){
   $state=['run_id'=>$run,'started_at'=>date('c'),'finished_at'=>'',
     'phase'=>'coletando','status'=>'executando','collected'=>0,'discovered'=>0,'batch'=>[]];
   try {
+    tvs_radar_operational_event($run,'cycle_started');
     tvs_save_json_file($file,$state);
     $cfg=tvs_radar_config();
     $perCity=max(1,min(40,(int)($cfg['per_city']??20)));
@@ -5785,9 +5846,10 @@ function tvs_radar_execute_full_cycle_v13(){
     $state['collected']=$collected;
     $state['discovered']=(int)($pipeline['pipeline_discovered_last_cycle']??0);
     $state['phase']='processando';
+    tvs_radar_operational_event($run,'collection_finished',['discovered'=>$state['discovered'],'prepared'=>$collected]);
     tvs_save_json_file($file,$state);
     @set_time_limit(0);
-    $batch=tvs_radar_run_backlog_batch_v13(20,$lock);
+    $batch=tvs_radar_run_backlog_batch_v13(20,$lock,$run);
     $state['batch']=[
       'selected'=>(int)($batch['selected']??0),
       'processed'=>(int)($batch['processed']??0),
@@ -5802,12 +5864,14 @@ function tvs_radar_execute_full_cycle_v13(){
     $state['status']=in_array((string)($batch['status']??''),['lote_concluido','sem_pautas_elegiveis'],true)
       ? 'concluido' : 'concluido_parcialmente';
     $state['finished_at']=date('c');
+    tvs_radar_operational_event($run,'cycle_finished',['discovered'=>$state['discovered'],'prepared'=>$collected,'selected'=>$state['batch']['selected'],'processed'=>$state['batch']['processed'],'persisted'=>$state['batch']['persisted'],'skipped'=>$state['batch']['skipped'],'errors'=>$state['batch']['errors']]);
     tvs_save_json_file($file,$state);
     return ['status'=>$state['status'],'collected'=>$collected,'discovered'=>$state['discovered'],'batch'=>$batch,'run_id'=>$run];
   } catch(Throwable $e){
     // Não gravar a exceção integral no painel nem executar publicação automática.
     $state['phase']='falhou';
     $state['status']='falhou';
+    tvs_radar_operational_event($run,'cycle_failed',['stage'=>$state['phase']]);
     $state['finished_at']=date('c');
     tvs_save_json_file($file,$state);
     error_log('RADAR_INTEGRATED_CYCLE_FAILED run_id='.$run.' exception='.get_class($e));
@@ -6263,6 +6327,22 @@ $radarBatchHistory=tvs_read_json_file(dirname(__DIR__).'/data/radar_backlog_batc
 if(!is_array($radarBatchHistory)) $radarBatchHistory=[];
 $radarBatchHistory=array_slice(array_reverse($radarBatchHistory),0,10);
 ?>
+<?php
+$radarOpsDate=(string)($_GET['ops_date']??date('Y-m-d'));
+if(!preg_match('/^20[0-9]{2}-[01][0-9]-[0-3][0-9]$/D',$radarOpsDate)) $radarOpsDate=date('Y-m-d');
+$radarOpsRun=substr((string)($_GET['ops_run']??''),0,100);
+$radarOpsCandidate=substr((string)($_GET['ops_candidate']??''),0,100);
+if($radarOpsRun!=='' && !preg_match('/^[a-zA-Z0-9_-]+$/D',$radarOpsRun)) $radarOpsRun='';
+if($radarOpsCandidate!=='' && !preg_match('/^[a-zA-Z0-9_-]+$/D',$radarOpsCandidate)) $radarOpsCandidate='';
+$radarOpsRows=tvs_radar_operational_query($radarOpsDate,$radarOpsRun,$radarOpsCandidate);
+?>
+<details class="settings-box" id="radar-operational-log" open><summary><strong>Backlog operacional — histórico de eventos</strong></summary>
+<p class="muted">Registros reais, persistidos por data e vinculados por execução e pauta. Histórico disponível a partir da implantação desta versão; não recria eventos antigos.</p>
+<form method="get" action="radar-regional.php" class="settings-inline" style="margin:10px 0"><label>Data<input type="date" name="ops_date" value="<?=h($radarOpsDate)?>"></label><label>Execução<input name="ops_run" value="<?=h($radarOpsRun)?>" placeholder="run_id"></label><label>Pauta<input name="ops_candidate" value="<?=h($radarOpsCandidate)?>" placeholder="candidate_id"></label><button class="btn secondary" type="submit">Filtrar histórico</button></form>
+<?php if(!$radarOpsRows): ?><p class="muted">Nenhum evento encontrado para estes filtros. O histórico começa a registrar na próxima execução do Radar.</p><?php else: ?>
+<div style="overflow-x:auto;max-height:470px;overflow-y:auto"><table style="width:100%;text-align:left;font-size:13px"><thead><tr><th>Data/hora</th><th>Execução</th><th>Evento</th><th>Pauta</th><th>Transição</th><th>Motivo</th><th>Tentativa</th><th>Dados do ciclo</th></tr></thead><tbody>
+<?php foreach($radarOpsRows as $event): ?><tr><td><?=h($event['at']??'')?></td><td><?=h($event['run_id']??'')?></td><td><?=h($event['event']??'')?></td><td><?=h($event['candidate_id']??'')?></td><td><?=h(($event['previous_status']??'').' → '.($event['new_status']??''))?></td><td><?=h($event['reason_code']??'')?></td><td><?=(int)($event['attempt']??0)?></td><td><?=h('descobertas '.(int)($event['discovered']??0).' · preparadas '.(int)($event['prepared']??0).' · selecionadas '.(int)($event['selected']??0).' · processadas '.(int)($event['processed']??0).' · não executadas '.(int)($event['skipped']??0).' · erros '.(int)($event['errors']??0))?></td></tr><?php endforeach; ?></tbody></table></div>
+<?php endif; ?></details>
 <?php if($radarBatchHistory): ?><details class="settings-box"><summary>Histórico dos últimos lotes Radar 1.3 (diagnóstico por pauta)</summary>
 <?php foreach($radarBatchHistory as $batch): ?>
 <section style="margin:12px 0;border-top:1px solid #ddd;padding-top:8px">
