@@ -67,4 +67,10 @@ if(str_contains($source,'>Atualizar Agora</button>') || str_contains($source,'>P
 if(!str_contains($source,"'cycle_discovered'")) throw new RuntimeException('Discovery count absent from cycle status');
 if(!str_contains($source,"'internal_error_count'")) throw new RuntimeException('Internal error diagnostics absent');
 if(!str_contains($source,'$errors=max(0,$processed-$persisted)')) throw new RuntimeException('Batch errors must only reflect selected item persistence');
+if(!str_contains($source,'function tvs_radar_operational_event(')) throw new RuntimeException('Operational append-only journal absent');
+if(!str_contains($source,'FILE_APPEND|LOCK_EX')) throw new RuntimeException('Append locking absent');
+if(!str_contains($source,'$line.PHP_EOL')) throw new RuntimeException('NDJSON line delimiter absent');
+if(!str_contains($source,"'candidate_result'")) throw new RuntimeException('Per-candidate event missing');
+if(!str_contains($source,'id="radar-operational-log"')) throw new RuntimeException('Operations dashboard absent');
+if(!str_contains($source,"'batch_finished'")) throw new RuntimeException('Batch result event missing');
 echo "RADAR_ISSUE46_SELECTOR_GATE_TEST=PASS\n";
