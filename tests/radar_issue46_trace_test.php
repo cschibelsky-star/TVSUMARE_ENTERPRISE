@@ -60,7 +60,7 @@ $processEnd=strpos($source,'function tvs_radar_backlog_exclusion_reason_v13(',$p
 if($processStart===false || $processEnd===false) throw new RuntimeException('Discovery processor bounds missing');
 $processor=substr($source,$processStart,$processEnd-$processStart);
 if(str_contains($processor,'if($generated>=$maxPerCycle) break 2;') || str_contains($processor,'if($generated>=$maxPerCycle) break;')) throw new RuntimeException('Output quota still truncates backlog processing');
-if(substr_count($processor,"empty(\\$options['backlog_v13'])")<3) throw new RuntimeException('Backlog output-quota guards missing');
+if(substr_count($processor,"empty(\$options['backlog_v13'])")<3) throw new RuntimeException('Backlog output-quota guards missing');
 // A pauta pronta encerra apenas o ciclo normal, nunca os outros IDs do backlog.
 $continueBacklog="if(empty(\$options['backlog_v13'])) break;";
 if(!str_contains($source,$continueBacklog)) throw new RuntimeException('Backlog still stops at first ready story per city');
