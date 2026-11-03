@@ -53,6 +53,14 @@ if(!str_contains($source,'Histórico dos últimos lotes Radar 1.3')) throw new R
 if(!str_contains($source, "'reason_code'".'=>'.'$gate')) throw new RuntimeException('Per-item code missing');
 if(!str_contains($source,"'excluded_before_execution'") || !str_contains($source,"'rank'")) throw new RuntimeException('Execution alignment missing');
 if(!str_contains($source,"'publication_eligible'")) throw new RuntimeException('Human editorial gates missing');
+// Regression: the output quota may stop normal discovery, but must never
+// truncate a selected Radar 1.3 backlog before its per-item diagnostics.
+$processStart=strpos($source,'function tvs_radar_process_discovery(');
+$processEnd=strpos($source,'function tvs_radar_backlog_exclusion_reason_v13(',$processStart);
+if($processStart===false || $processEnd===false) throw new RuntimeException('Discovery processor bounds missing');
+$processor=substr($source,$processStart,$processEnd-$processStart);
+if(str_contains($processor,'if($generated>=$maxPerCycle) break 2;') || str_contains($processor,'if($generated>=$maxPerCycle) break;')) throw new RuntimeException('Output quota still truncates backlog processing');
+if(substr_count($processor,"empty(\\$options['backlog_v13'])")<3) throw new RuntimeException('Backlog output-quota guards missing');
 // A pauta pronta encerra apenas o ciclo normal, nunca os outros IDs do backlog.
 $continueBacklog="if(empty(\$options['backlog_v13'])) break;";
 if(!str_contains($source,$continueBacklog)) throw new RuntimeException('Backlog still stops at first ready story per city');
