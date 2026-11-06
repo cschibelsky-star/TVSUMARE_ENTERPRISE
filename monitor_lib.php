@@ -379,7 +379,7 @@ function tvs_read_json_file($path){
 }
 function tvs_save_json_file($path,$data){
   $dir=dirname($path); if(!is_dir($dir)) @mkdir($dir,0775,true);
-  file_put_contents($path,json_encode(array_values($data), JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES));
+  return file_put_contents($path,json_encode(array_values($data), JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)) !== false;
 }
 function tvs_get_sources(){
   $file=dirname(__DIR__).'/data/fontes.json';

@@ -121,7 +121,7 @@ function tvs_publish_from_queue($id,$post){
     'created_at'=>$now
   ];
 
-  if(!tvs_save_json_file($newsFile,$news)) return false;
+  tvs_save_json_file($newsFile,$news);
   tvs_queue_save($newq);
   return true;
 }
