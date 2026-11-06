@@ -10,3 +10,4 @@ logs/
 # Backups locais de seguranca
 *.bak-*
 *.backup-*
+shared_local/

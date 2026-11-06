@@ -251,10 +251,11 @@ function tvs_radar_candidate_region_ok($cand,$requestedCity,&$reason=''){
   if(tvs_radar_stale_event_signal($title,$desc)){ $reason='Evento antigo/sazonal detectado'; return false; }
   if(tvs_radar_has_outside_city_signal($fact)){ $reason='Fora da região monitorada'; return false; }
   $mentionsAllowed=tvs_radar_text_mentions_allowed_city($fact);
-  // Google Notícias só entra se o título/resumo mencionar a cidade monitorada; query/source/url não contam.
-  if(tvs_is_google_news_candidate($cand) && !$mentionsAllowed){ $reason='Google News sem cidade monitorada no título/resumo'; return false; }
-  // Fonte oficial local pode entrar sem cidade explícita no título, desde que não seja Google/agregador.
-  if(!$mentionsAllowed && (tvs_is_google_news_candidate($cand) || !tvs_radar_source_matches_city($cand,$requestedCity))){ $reason='Sem cidade monitorada identificável no fato'; return false; }
+  // v3.1: candidatos de agregador avançam para resolução do link canônico e validação no corpo
+  if(!$mentionsAllowed && !tvs_is_google_news_candidate($cand) && !tvs_radar_source_matches_city($cand,$requestedCity)){
+    $reason='Sem cidade monitorada identificável no fato nem fonte local compatível';
+    return false;
+  }
   return true;
 }
 function tvs_radar_extract_vagas_number($text){
@@ -297,13 +298,14 @@ function tvs_radar_editorial_score($title,$city,$category,$source,$text,$url='',
   // 5) Ação/serviço concreto.
   if(preg_match('~\b(abre|anuncia|oferece|realiza|lan[cç]a|entrega|divulga|inscri[cç][oõ]es|recrutamento|feir[aã]o|mutir[aã]o|campanha|programa|edital|atendimento)\b~iu',$fact)) $score+=8;
 
-  // 6) Atualidade.
+  // 6) Atualidade e Validade de Serviço (v3.1).
+  $isServiceOrEdital = preg_match('~\b(edital|concurso|inscri[cç][oõ]es|vagas?|empregos?|pat|vestibular|matr[ií]cula|vacina|campanha|mutir[aã]o|feira|festival|agenda)\b~iu', $fact);
   if($ageDays!==null){
     if($ageDays<=1) $score+=14;
     elseif($ageDays<=3) $score+=10;
     elseif($ageDays<=7) $score+=4;
-    elseif($ageDays<=15) $score-=15;
-    else $score-=45;
+    elseif($ageDays<=15) $score-= ($isServiceOrEdital ? 2 : 12);
+    else $score-= ($isServiceOrEdital ? 8 : 35);
   }
 
   // 7) Sensibilidade define revisão humana, não reduz a relevância editorial.
@@ -324,7 +326,8 @@ function tvs_radar_status_from_score($score,$sensitive=false){
   return ['review_level'=>'normal','editorial_status'=>$status,'sensitive'=>false];
 }
 function tvs_radar_can_direct_approve($m){
-  if(!empty($m['image_review_required'])) return false;
+  // v3.1: imagem ilustrativa da categoria não impede aprovação direta se a pauta for relevante
+  if(!empty($m['image_review_required']) && ($m['image_source_type']??'') !== 'category:fallback') return false;
   if(!empty($m['sensitive_review_required'])) return false;
   return ($m['review_level']??'')!=='revisao_obrigatoria'
     && ($m['editorial_status']??'')!=='Descartar';

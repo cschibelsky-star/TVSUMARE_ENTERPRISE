@@ -1,0 +1,44 @@
+name: tvsumare-local
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tvsumare_web_local
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    env_file:
+      - .env.local
+    environment:
+      TVSUMARE_ENV: development
+      TVSUMARE_SITE_NAME: "TV Sumare Local"
+    volumes:
+      - ./shared_local/data:/var/www/html/data:rw
+      - ./shared_local/uploads:/var/www/html/uploads:rw
+      - ./shared_local/videos:/var/www/html/videos:rw
+      - ./shared_local/logs:/var/www/html/logs:rw
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1/health.php"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  # Scheduler opcional para testes do radar de noticias local
+  radar_scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tvsumare_radar_local
+    restart: unless-stopped
+    profiles:
+      - full
+    env_file:
+      - .env.local
+    command: ["/bin/sh", "-c", "exec su -s /bin/sh www-data -c 'while true; do php /var/www/html/admin/cron_radar.php; sleep 3600; done'"]
+    volumes:
+      - ./shared_local/data:/var/www/html/data:rw
+      - ./shared_local/uploads:/var/www/html/uploads:rw
+      - ./shared_local/logs:/var/www/html/logs:rw
