@@ -1999,18 +1999,17 @@ function tvs_publish_from_queue($id,$post){
   foreach($queue as $item){ if(($item['id']??'')===$id) $found=$item; else $newq[]=$item; }
   if(!$found) return false;
 
-  // v3.2: Soberania editorial humana. Se o editor aprovou e a matéria usa
-  // imagem temática da TV Sumaré (category:fallback), autoriza a publicação direta.
-  if(!empty($found['image_review_required']) && ($found['image_source_type']??'') !== 'category:fallback'){
-    // Se não for nem fallback nem imagem válida, exige salvar imagem no form
-    if(empty($post['image'])) return false;
-  }
-
-  $title=trim($post['title']??$found['title']??'');
-  $body=trim($post['body']??$found['body']??'');
+  $title=trim((string)($post['title']??$found['title']??''));
+  $body=trim((string)($post['body']??$found['body']??''));
   if($title==='' || $body==='') return false;
+
+  // Garante que sempre exista uma imagem válida (da matéria ou da categoria)
+  $img = trim((string)($post['image'] ?? $found['image'] ?? ''));
+  if($img==='' || !function_exists('tvs_is_valid_image_url') || !tvs_is_valid_image_url($img)){
+    $img = tvs_best_image('', '', $post['category'] ?? $found['category'] ?? 'Cidade');
+  }
   $news=tvs_read_json_file($newsFile); if(!is_array($news)) $news=[];
-  $news[]=['id'=>uniqid('news_'),'title'=>$title,'subtitle'=>trim($post['subtitle']??$found['subtitle']??''),'summary'=>trim($post['summary']??$found['summary']??''),'body'=>$body,'category'=>trim($post['category']??$found['category']??'Cidade'),'city'=>trim($post['city']??$found['city']??'Região'),'source'=>trim($post['source']??$found['source']??'Fonte consultada'),'source_url'=>trim($post['source_url']??$found['source_url']??''),'image'=>tvs_best_image('', trim($post['image']??$found['image']??''), trim($post['category']??$found['category']??'Cidade')) ,'image_credit'=>trim($post['image_credit']??$found['image_credit']??tvs_image_credit_from_source($found['source']??$post['source']??'Fonte consultada', $found['image']??$post['image']??'')),'tags'=>is_array($found['tags']??null)?$found['tags']:array_filter(array_map('trim',explode(',',(string)($post['tags']??'')))),'seo_title'=>trim($post['seo_title']??$found['seo_title']??$title),'meta_description'=>trim($post['meta_description']??$found['meta_description']??''),'slug'=>trim($post['slug']??$found['slug']??tvs_slug($title)),'instagram_caption'=>trim($post['instagram_caption']??$found['instagram_caption']??''),'whatsapp_text'=>trim($post['whatsapp_text']??$found['whatsapp_text']??''),'views'=>0,'shares'=>0,'published_at'=>date('c'),'created_at'=>date('c')];
+  $news[]=['id'=>uniqid('news_'),'title'=>$title,'subtitle'=>trim($post['subtitle']??$found['subtitle']??''),'summary'=>trim($post['summary']??$found['summary']??''),'body'=>$body,'category'=>trim($post['category']??$found['category']??'Cidade'),'city'=>trim($post['city']??$found['city']??'Região'),'source'=>trim($post['source']??$found['source']??'Fonte consultada'),'source_url'=>trim($post['source_url']??$found['source_url']??''),'image'=>$img,'image_credit'=>trim($post['image_credit']??$found['image_credit']??tvs_image_credit_from_source($found['source']??$post['source']??'Fonte consultada', $img)),'tags'=>is_array($found['tags']??null)?$found['tags']:array_filter(array_map('trim',explode(',',(string)($post['tags']??'')))),'seo_title'=>trim($post['seo_title']??$found['seo_title']??$title),'meta_description'=>trim($post['meta_description']??$found['meta_description']??''),'slug'=>trim($post['slug']??$found['slug']??tvs_slug($title)),'instagram_caption'=>trim($post['instagram_caption']??$found['instagram_caption']??''),'whatsapp_text'=>trim($post['whatsapp_text']??$found['whatsapp_text']??''),'views'=>0,'shares'=>0,'published_at'=>date('c'),'created_at'=>date('c')];
   tvs_save_json_file($newsFile,$news); tvs_queue_save($newq); return true;
 }
 
