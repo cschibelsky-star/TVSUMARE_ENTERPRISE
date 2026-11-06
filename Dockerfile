@@ -30,6 +30,7 @@ RUN php /var/www/html/docker/apply-radar-editorial-policy.php \
     && php /var/www/html/docker/apply-video-branding.php \
     && php /var/www/html/docker/apply-youtube-publishing-integration.php \
     && php /var/www/html/docker/apply-tvsumare-recovery-20260911.php \
+    && php /var/www/html/tests/editorial_director_test.php \
     && php /var/www/html/docker/apply-editorial-policy-v3.php \
     && php /var/www/html/tests/editorial_policy_v3_test.php \
     && php /var/www/html/docker/test-reporter-dedup.php \

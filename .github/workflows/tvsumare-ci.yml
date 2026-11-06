@@ -32,6 +32,9 @@ jobs:
           done < <(find . -type f -name '*.php' -print0)
           echo "PHP_LINT=PASS"
 
+      - name: Teste do Diretor Editorial IA
+        run: php tests/editorial_director_test.php
+
       - name: Teste da politica editorial V3
         run: php tests/editorial_policy_v3_test.php
 
