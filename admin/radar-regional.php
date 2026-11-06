@@ -748,6 +748,23 @@ function tvs_radar_find_article_on_source($domain,$title,$city=''){
   return $cache[$cacheKey]='';
 }
 
+
+function tvs_decode_google_news_base64_url($url){
+  if(preg_match('~/articles/(CBMi[a-zA-Z0-9_\-]+)~', (string)$url, $m)){
+    $raw = strtr($m[1], '-_', '+/');
+    $pad = strlen($raw) % 4;
+    if($pad) $raw .= str_repeat('=', 4 - $pad);
+    $decoded = base64_decode($raw, true);
+    if($decoded !== false && preg_match('~https?://[^\x00-\x1f\s"'\\]+~iu', $decoded, $urlMatch)){
+      $cand = rtrim($urlMatch[0], ").,;");
+      if(tvs_radar_external_url_is_valid($cand)){
+        return $cand;
+      }
+    }
+  }
+  return '';
+}
+
 function tvs_radar_resolve_google_news_url($url){
   static $cache=[];
 
@@ -759,6 +776,12 @@ function tvs_radar_resolve_google_news_url($url){
 
   if(isset($cache[$url])){
     return $cache[$url];
+  }
+
+  // Decodificação instantânea do token CBMi do Claude Opus 5 News (evita chamadas lentas e bloqueios)
+  $unpacked = tvs_decode_google_news_base64_url($url);
+  if($unpacked !== ''){
+    return $cache[$url] = $unpacked;
   }
 
   $html='';
