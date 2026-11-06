@@ -1906,6 +1906,60 @@ function tvs_generate_ready_article($city,$cand){
 function tvs_category_image($category){
   return tvs_category_image_path($category);
 }
+
+function tvs_radar_historical_memory(){
+  static $memory = null;
+  if($memory !== null) return $memory;
+  $urls = []; $titles = [];
+
+  // 1. Notícias já publicadas no portal
+  $newsFile = dirname(__DIR__).'/data/noticias.json';
+  $published = tvs_read_json_file($newsFile);
+  if(is_array($published)){
+    foreach($published as $n){
+      if(!empty($n['source_url'])) $urls[trim((string)$n['source_url'])] = 1;
+      if(!empty($n['title'])) $titles[] = tvs_radar_title_fingerprint($n['title']);
+    }
+  }
+
+  // 2. Fila ativa de matérias aguardando aprovação
+  $queueFile = dirname(__DIR__).'/data/materias_aprovacao.json';
+  $queue = tvs_read_json_file($queueFile);
+  if(is_array($queue)){
+    foreach($queue as $q){
+      if(!empty($q['source_url'])) $urls[trim((string)$q['source_url'])] = 1;
+      if(!empty($q['title'])) $titles[] = tvs_radar_title_fingerprint($q['title']);
+    }
+  }
+
+  // 3. Log recente de descartes e eventos
+  $logFile = dirname(__DIR__).'/data/radar_log.json';
+  $logs = tvs_read_json_file($logFile);
+  if(is_array($logs)){
+    foreach(array_slice($logs, -300) as $l){
+      if(!empty($l['url'])) $urls[trim((string)$l['url'])] = 1;
+    }
+  }
+
+  $memory = ['urls' => $urls, 'titles' => array_unique(array_filter($titles))];
+  return $memory;
+}
+
+function tvs_radar_is_already_known($url, $title){
+  $mem = tvs_radar_historical_memory();
+  $u = trim((string)$url);
+  if($u !== '' && isset($mem['urls'][$u])) return true;
+
+  $fp = tvs_radar_title_fingerprint((string)$title);
+  if($fp !== ''){
+    foreach($mem['titles'] as $knownFp){
+      if($fp === $knownFp) return true;
+      if(tvs_radar_titles_are_similar($fp, $knownFp)) return true;
+    }
+  }
+  return false;
+}
+
 function tvs_radar_update_queue($perCity=15,$mode='normal'){
   // HostGator/nginx pode retornar 504 quando uma requisição fica muito tempo processando.
   // O Radar agora processa em micro-lotes curtos. Clique em Atualizar Agora mais de uma vez se quiser abastecer mais.
@@ -1926,7 +1980,12 @@ function tvs_radar_update_queue($perCity=15,$mode='normal'){
       $attempts++;
       if($attempts>(tvs_radar_is_volume_mode()?54:24)) break;
       if($cityCount>=$perCity) break;
-      $url=$cand['url']??''; if(!$url || isset($seen[$url])) continue;
+      $url=$cand['url']??''; $title=$cand['title']??'';
+      if(!$url || isset($seen[$url])) continue;
+      if(tvs_radar_is_already_known($url, $title)){
+        $seen[$url]=1;
+        continue;
+      }
       $article=tvs_generate_ready_article($city,$cand);
       if(is_array($article) && !empty($article['title']) && !empty($article['body'])){ $queue[]=$article; tvs_radar_log_event($article['title']??'', $article['source']??($cand['source']??'Fonte'), $city, ($article['editorial_status']??'APROVADA'), 'Entrou na fila editorial', $url); $seen[$url]=1; $cityCount++; $count++; } else { $seen[$url]=1; }
       if($count>=(tvs_radar_is_volume_mode()?72:36) || (microtime(true)-$started)>(tvs_radar_is_volume_mode()?49:32)) break 2; // proteção contra timeout em hospedagem compartilhada
@@ -1940,9 +1999,12 @@ function tvs_publish_from_queue($id,$post){
   foreach($queue as $item){ if(($item['id']??'')===$id) $found=$item; else $newq[]=$item; }
   if(!$found) return false;
 
-  // Proteção real no servidor: matéria com imagem pendente não pode ser
-  // publicada até que o editor salve uma imagem válida.
-  if(!empty($found['image_review_required'])) return false;
+  // v3.2: Soberania editorial humana. Se o editor aprovou e a matéria usa
+  // imagem temática da TV Sumaré (category:fallback), autoriza a publicação direta.
+  if(!empty($found['image_review_required']) && ($found['image_source_type']??'') !== 'category:fallback'){
+    // Se não for nem fallback nem imagem válida, exige salvar imagem no form
+    if(empty($post['image'])) return false;
+  }
 
   $title=trim($post['title']??$found['title']??'');
   $body=trim($post['body']??$found['body']??'');
