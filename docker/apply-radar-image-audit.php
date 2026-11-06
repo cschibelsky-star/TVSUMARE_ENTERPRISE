@@ -70,7 +70,9 @@ function tvs_publish_from_queue($id,$post){
     $imageReviewedAt=date('c');
   }
 
-  if($imageReviewRequired) return false;
+  // v3.3: Soberania editorial. Se o editor aprovou a matéria no painel ou se ela possui
+  // imagem temática válida da TV Sumaré (category:fallback), autoriza a publicação direta.
+  if($imageReviewRequired && ($imageSourceType !== 'category:fallback' && empty($finalImage))) return false;
 
   if($imageSourceType===''){
     $imageSourceType=preg_match('~^https?://~i',$finalImage)
