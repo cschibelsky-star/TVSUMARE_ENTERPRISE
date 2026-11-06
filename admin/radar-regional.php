@@ -755,7 +755,7 @@ function tvs_decode_google_news_base64_url($url){
     $pad = strlen($raw) % 4;
     if($pad) $raw .= str_repeat('=', 4 - $pad);
     $decoded = base64_decode($raw, true);
-    if($decoded !== false && preg_match('~https?://[^\x00-\x1f\s"'\\]+~iu', $decoded, $urlMatch)){
+    if($decoded !== false && preg_match('~https?://[a-zA-Z0-9\.\-_/%?=&\#+]+~i', $decoded, $urlMatch)){
       $cand = rtrim($urlMatch[0], ").,;");
       if(tvs_radar_external_url_is_valid($cand)){
         return $cand;
