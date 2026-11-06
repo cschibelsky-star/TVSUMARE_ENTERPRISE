@@ -35,3 +35,41 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build application image (no push)
         run: docker build --pull --tag tvsumare:baseline .
+
+
+  http-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build isolated smoke image
+        run: docker build --tag tvsumare:http-smoke .
+      - name: Start isolated container
+        run: |
+          docker run -d --name tvsumare-http-smoke -p 127.0.0.1:18080:80 -e TVSUMARE_ENV=ci tvsumare:http-smoke
+      - name: Check public routes and deny unauthenticated callback
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="http://127.0.0.1:18080"
+          for attempt in $(seq 1 30); do
+            if curl --silent --output /dev/null "$base/health.php"; then break; fi
+            sleep 2
+          done
+          check() {
+            local path="$1" expected="$2" actual
+            actual=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' "$base$path")
+            echo "$path: HTTP $actual (expected $expected)"
+            test "$actual" = "$expected"
+          }
+          check /health.php 200
+          check / 200
+          check /admin/login.php 200
+          check /rss.php 200
+          check /api/heygen-callback.php 403
+      - name: Container diagnostics on failure
+        if: failure()
+        run: docker logs --tail 80 tvsumare-http-smoke
+      - name: Stop smoke container
+        if: always()
+        run: docker rm -f tvsumare-http-smoke || true
