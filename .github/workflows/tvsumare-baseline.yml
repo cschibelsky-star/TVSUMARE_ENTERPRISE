@@ -46,7 +46,7 @@ jobs:
         run: docker build --tag tvsumare:http-smoke .
       - name: Start isolated container
         run: |
-          docker run -d --name tvsumare-http-smoke -p 127.0.0.1:18080:80 -e TVSUMARE_ENV=ci tvsumare:http-smoke
+          docker run -d --name tvsumare-http-smoke -p 127.0.0.1:18080:80 --tmpfs /var/www/html/data:rw,nosuid,nodev,mode=0755 -e TVSUMARE_ENV=ci tvsumare:http-smoke
       - name: Check public routes and deny unauthenticated callback
         shell: bash
         run: |
