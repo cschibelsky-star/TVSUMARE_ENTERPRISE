@@ -1,0 +1,37 @@
+name: TV Sumare - baseline PHP and Docker
+on:
+  pull_request:
+    paths:
+      - '**/*.php'
+      - 'Dockerfile'
+      - 'docker/**'
+      - '.github/workflows/tvsumare-baseline.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  php-baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: PHP runtime
+        run: php -v
+      - name: PHP syntax validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          find . -type f -name '*.php' -not -path './vendor/*' -not -path './.git/*' -print0 |
+            while IFS= read -r -d '' file; do php -l "$file" > /dev/null || exit 1; done
+      - name: Editorial policy regression tests
+        run: php tests/editorial_policy_v3_test.php
+
+  docker-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build application image (no push)
+        run: docker build --pull --tag tvsumare:baseline .
