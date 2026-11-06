@@ -200,12 +200,19 @@ function tvs_radar_temporal_exception($title,$text=''){
 }
 function tvs_radar_temporal_status($cand){
   $age=tvs_radar_age_days($cand);
-  if($age===null) return ['ok'=>true,'age'=>null,'label'=>'Data não identificada','force_review'=>false];
-  $isException=tvs_radar_temporal_exception($cand['title']??'', ($cand['description']??'').' '.($cand['text']??''));
-  if($isException) return ['ok'=>true,'age'=>$age,'label'=>$age<=3?'Atual':($age<=15?'Válida por serviço/evento':'Exceção temporal'),'force_review'=>$age>7];
-  if($age>15) return ['ok'=>false,'age'=>$age,'label'=>'Antiga +15 dias','force_review'=>true];
-  if($age>7) return ['ok'=>true,'age'=>$age,'label'=>'Antiga: revisar','force_review'=>true];
-  if($age>3) return ['ok'=>true,'age'=>$age,'label'=>'Esta semana','force_review'=>false];
+  $title=$cand['title']??'';
+  $text=($cand['description']??'').' '.($cand['text']??'');
+  if(tvs_radar_stale_event_signal($title,$text)){
+    return ['ok'=>false,'age'=>$age,'label'=>'Evento ou campanha encerrada','force_review'=>true];
+  }
+  $isException=tvs_radar_temporal_exception($title,$text);
+  if($age===null){
+    return ['ok'=>true,'age'=>null,'label'=>'Data não identificada: revisar','force_review'=>true];
+  }
+  if($isException){
+    return ['ok'=>true,'age'=>$age,'label'=>$age<=3?'Atual':($age<=15?'Válida por serviço/evento':'Exceção temporal'),'force_review'=>$age>7];
+  }
+  if($age>3) return ['ok'=>false,'age'=>$age,'label'=>'Notícia antiga (+3 dias)','force_review'=>true];
   return ['ok'=>true,'age'=>$age,'label'=>'Atual','force_review'=>false];
 }
 function tvs_radar_sensitive_topic($title,$text=''){
@@ -241,8 +248,14 @@ function tvs_radar_has_outside_city_signal($text){
 }
 function tvs_radar_stale_event_signal($title,$text=''){
   $all=tvs_lower(tvs_clean_text($title.' '.$text));
-  // Conteúdo sazonal/antigo não deve voltar ao Radar como notícia atual.
-  if(preg_match('~\b(carnaval|natal|ano novo|r[eé]veillon|elei[cç][oõ]es?\s+20[0-9]{2}|campanha eleitoral|segundo turno|retrospectiva|arquivo)\b~iu',$all)) return true;
+  // 1. Eleições, campanhas, carreatas e comícios passados
+  if(preg_match('~\b(encerra\s+campanha|carreata|com[ií]cio|candidat[oa]\s+(?:a\s+)?(?:deputad[oa]|prefeit[oa]|vereador)|hor[aá]rio\s+eleitoral|propaganda\s+eleitoral|pesquisa\s+eleitoral|elei[cç][oõ]es?(?:\s+20[0-9]{2})?|campanha\s+eleitoral|segundo\s+turno|apurad[oa]s?\s+as\s+urnas)\b~iu', $all)){
+    return true;
+  }
+  // 2. Feriados e eventos sazonais passados
+  if(preg_match('~\b(carnaval|natal|ano\s+novo|r[eé]veillon|outubro\s+rosa|semana\s+nacional\s+de\s+tr[aâ]nsito|dia\s+das\s+crian[cç]as|finados|retrospectiva|arquivo\s+hist[oó]rico)\b~iu', $all)){
+    return true;
+  }
   return false;
 }
 function tvs_radar_candidate_region_ok($cand,$requestedCity,&$reason=''){

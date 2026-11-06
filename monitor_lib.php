@@ -137,21 +137,32 @@ function tvs_absolute_url($base, $href){
 function tvs_extract_meta_image_from_html($base, $html){
   $html=(string)$html;
   if($html==='') return '';
-  // Captura <meta property="og:image" content="..."> em qualquer ordem de atributos.
+  // 1. Meta tags OpenGraph e Twitter
   if(preg_match_all('~<meta\b[^>]*>~is',$html,$tags)){
     foreach($tags[0] as $tag){
-      $isImage = preg_match('~(?:property|name)=["\'](?:og:image|twitter:image|twitter:image:src)["\']~i',$tag);
+      $isImage = preg_match('~(?:property|name)=["\'](?:og:image|og:image:secure_url|twitter:image|twitter:image:src)["\']~i',$tag);
       if($isImage && preg_match('~content=["\']([^"\']+)["\']~i',$tag,$m)){
         $img=tvs_absolute_url($base, html_entity_decode($m[1],ENT_QUOTES|ENT_HTML5,'UTF-8'));
         if(tvs_is_valid_image_url($img)) return $img;
       }
     }
   }
-  // Fallback: primeira imagem relevante dentro do HTML.
+  // 2. Busca com suporte completo a Lazy-Load moderno e srcset
   if(preg_match_all('~<img\b[^>]*>~is',$html,$imgs)){
     foreach($imgs[0] as $tag){
-      if(preg_match('~(?:src|data-src|data-original|data-lazy-src)=["\']([^"\']+)["\']~i',$tag,$m)){
-        $img=tvs_absolute_url($base, html_entity_decode($m[1],ENT_QUOTES|ENT_HTML5,'UTF-8'));
+      $foundUrl = '';
+      if(preg_match('~(?:data-src|data-lazy-src|data-original|data-hi-res-src)=["\']([^"\']+)["\']~i',$tag,$m)){
+        $foundUrl = $m[1];
+      } elseif(preg_match('~srcset=["\']([^"\']+)["\']~i',$tag,$m)){
+        $parts = explode(',', $m[1]);
+        $lastPart = trim(end($parts));
+        $sub = preg_split('/\s+/', $lastPart);
+        $foundUrl = $sub[0] ?? '';
+      } elseif(preg_match('~src=["\']([^"\']+)["\']~i',$tag,$m)){
+        $foundUrl = $m[1];
+      }
+      if($foundUrl !== ''){
+        $img=tvs_absolute_url($base, html_entity_decode($foundUrl,ENT_QUOTES|ENT_HTML5,'UTF-8'));
         if(tvs_is_valid_image_url($img)) return $img;
       }
     }
@@ -412,7 +423,16 @@ function tvs_parse_rss($rssUrl, $src){
     $desc=tvs_clean_text((string)($it->description ?? $it->summary ?? $it->content ?? ''));
     $pub=(string)($it->pubDate ?? $it->published ?? $it->updated ?? '');
     if(!$title || !$link) continue;
-    $items[]=['title'=>$title,'url'=>$link,'description'=>$desc,'published_at'=>$pub,'source'=>$src['name']??'', 'city'=>$src['city']??'Região'];
+    $img = '';
+    if(isset($it->enclosure) && isset($it->enclosure['url']) && preg_match('~image/~i', (string)($it->enclosure['type']??''))){
+      $img = (string)$it->enclosure['url'];
+    }
+    if(!$img && function_exists('tvs_extract_image_from_rss_description')){
+      $img = tvs_extract_image_from_rss_description($link, (string)($it->description ?? ''));
+    }
+    $itemData = ['title'=>$title,'url'=>$link,'description'=>$desc,'published_at'=>$pub,'source'=>$src['name']??'', 'city'=>$src['city']??'Região'];
+    if($img && tvs_is_valid_image_url($img)) $itemData['image'] = $img;
+    $items[] = $itemData;
     if(count($items)>=5) break;
   }
   return $items;
