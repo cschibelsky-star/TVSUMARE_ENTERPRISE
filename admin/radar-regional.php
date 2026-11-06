@@ -118,17 +118,21 @@ function tvs_queue_save($data){ global $queueFile; tvs_save_json_file($queueFile
 function tvs_category_from_text($text){
   $t=tvs_lower($text);
   $map=[
-    'Saúde'=>['saúde','ubs','hospital','vacina','vacinação','médico','atendimento','dengue','farmácia'],
-    'Educação'=>['educação','escola','creche','aluno','matrícula','curso','professor','ensino'],
-    'Segurança'=>['segurança','polícia','guarda','prisão','roubo','furto','operação','violência'],
-    'Esportes'=>['esporte','futebol','campeonato','atleta','jogos','competição','torneio'],
+    'Saúde'=>['saúde','ubs','upa','hospital','vacina','vacinação','médico','atendimento','dengue','leishmaniose','zoonoses','exame','exames','doença','doenças','surto','epidemia','vírus','infecção','tratamento','cachorro','cão','cães','gato','animais','castração','veterinár','farmácia'],
+    'Educação'=>['educação','escola','creche','aluno','matrícula','curso','professor','ensino','universidade','vestibular','faculdade'],
+    'Segurança'=>['segurança','polícia','policial','guarda municipal','gcm','prisão','preso','roubo','furto','operação','violência','homicídio','assalto','tráfico'],
+    'Esportes'=>['esporte','esportes','futebol','campeonato','atleta','jogos','competição','torneio','judô','judo','corrida'],
     'Empregos'=>['emprego','empregos','vaga','vagas','trabalho','processo seletivo','qualificação','qualificacao','pat','mercado livre','contratação','contratacao','oportunidade','currículo','curriculo','rh'],
-    'Política'=>['câmara','vereador','prefeito','projeto de lei','sessão','lei','secretário'],
-    'Cultura'=>['cultura','show','teatro','evento','festival','música','turismo','feira'],
-    'Economia'=>['economia','comércio','empresa','indústria','investimento','negócio','replan','refinaria','poupança','bancos','crédito'],
-    'Brasil'=>['agência brasil','governo federal','tse','fies','desenrola','inmet','ministério','brasileiros','copa','argentina','peru'],
+    'Cultura'=>['cultura','show','teatro','evento','festival','música','turismo','feira','gastronomia','yakisoba'],
+    'Economia'=>['economia','comércio','empresa','indústria','investimento','negócio','replan','refinaria','poupança','bancos','crédito','faturamento'],
+    'Política'=>['câmara municipal','vereador','vereadores','prefeito','prefeita','projeto de lei','sessão da câmara','secretário municipal'],
+    'Brasil'=>['agência brasil','governo federal','tse','fies','desenrola','inmet','ministério','brasileiros'],
   ];
-  foreach($map as $cat=>$terms){ foreach($terms as $term){ if(strpos($t,$term)!==false) return $cat; } }
+  foreach($map as $cat=>$terms){
+    foreach($terms as $term){
+      if(strpos($t,$term)!==false) return $cat;
+    }
+  }
   return 'Cidade';
 }
 
