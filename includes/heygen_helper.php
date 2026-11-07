@@ -219,25 +219,21 @@ if (!function_exists('tvp_heygen_config')) {
     if (function_exists('mb_substr')) $script = mb_substr($script, 0, 4900, 'UTF-8'); else $script = substr($script, 0, 4900);
     $portrait = (($cfg['heygen_orientation'] ?? 'landscape') === 'portrait');
     $payload = [
-      'video_inputs' => [[
-        'character' => [
-          'type' => 'avatar',
-          'avatar_id' => $avatarId,
-          'avatar_style' => 'normal'
-        ],
-        'voice' => [
-          'type' => 'text',
-          'input_text' => $script,
-          'voice_id' => $voiceId,
-          'speed' => 1.0
-        ]
-      ]],
-      'dimension' => $portrait ? ['width'=>720,'height'=>1280] : ['width'=>1280,'height'=>720]
+      'type' => 'avatar',
+      'avatar_id' => $avatarId,
+      'voice_id' => $voiceId,
+      'script' => $script,
+      'voice_settings' => ['speed'=>1.0],
+      'aspect_ratio' => $portrait ? '9:16' : '16:9',
+      'resolution' => '720p',
+      'output_format' => 'mp4',
+      // Preserve the legacy Avatar III renderer instead of accepting the v3 IV default.
+      'engine' => ['type'=>'avatar_iii']
     ];
-    $r = tvp_http('POST', '/v2/video/generate', $payload, 75);
+    $r = tvp_http('POST', '/v3/videos', $payload, 75);
     if (!$r['ok']) return $r;
-    $d = $r['data']['data'] ?? [];
-    $videoId = trim((string)($d['video_id'] ?? ''));
+    $d = $r['data']['data'] ?? ($r['data'] ?? []);
+    $videoId = trim((string)($d['video_id'] ?? $d['id'] ?? ''));
     if ($videoId === '') return ['ok'=>false,'http'=>$r['http'] ?? 200,'error'=>'HeyGen aceitou a requisição, mas não retornou video_id.','raw'=>$r['data']];
     return ['ok'=>true,'session_id'=>'','video_id'=>$videoId,'status'=>'gerando','raw'=>$r['data']];
   }
@@ -245,13 +241,13 @@ if (!function_exists('tvp_heygen_config')) {
   function tvp_check_heygen($job) {
     $videoId = trim((string)($job['heygen_video_id'] ?? ''));
     if ($videoId === '') return ['ok'=>false,'error'=>'Job sem video_id da HeyGen.'];
-    $r = tvp_http('GET', '/v1/video_status.get?video_id='.rawurlencode($videoId), null, 40);
+    $r = tvp_http('GET', '/v3/videos/'.rawurlencode($videoId), null, 40);
     if (!$r['ok']) return $r;
-    $d = $r['data']['data'] ?? [];
+    $d = $r['data']['data'] ?? ($r['data'] ?? []);
     $status = strtolower(trim((string)($d['status'] ?? '')));
     $failure = '';
     if ($status === 'failed') {
-      $failure = is_string($d['error'] ?? null) ? $d['error'] : (($d['error']['message'] ?? '') ?: 'HeyGen informou falha na geração.');
+      $failure = ($d['failure_message'] ?? '') ?: (($d['failure_code'] ?? '') ?: 'HeyGen informou falha na geração.');
     }
     return [
       'ok'=>true,
@@ -259,7 +255,7 @@ if (!function_exists('tvp_heygen_config')) {
       'video_status'=>$status,
       'progress'=>$d['progress'] ?? null,
       'video_url'=>$status === 'completed' ? ($d['video_url'] ?? '') : '',
-      'captioned_video_url'=>$status === 'completed' ? ($d['video_url_caption'] ?? '') : '',
+      'captioned_video_url'=>$status === 'completed' ? ($d['captioned_video_url'] ?? '') : '',
       'thumb'=>$d['thumbnail_url'] ?? '',
       'failure_message'=>$failure
     ];
