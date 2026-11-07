@@ -137,3 +137,8 @@ Exigir evidência read-only do equivalente a `docker inspect --format '{{json .M
 - Adicionado `tests/social_draft_security_contract_test.php` ao PR #58; verifica ausência de GET mutável, POST, campo CSRF, ID de origem, esquema HTTP(S) e isolamento de abas. Teste **estático de contrato**, não teste funcional de requisições nem teste de concorrência.
 - Atualizado `.github/workflows/tvsumare-ci.yml` na branch do PR #58 para executar o teste em pull requests.
 - **Execução CI ainda não verificada**. Não declarar PASS até obter resultado real.
+
+## Evidência de CI — PR #58 (07/11/2026)
+- Commit head `57e93b69c118b52baa6e922c4ad94be8cc7eb206`; GitHub Actions `TV Sumare CI`, run ID `42422390472`: `status=completed`, `conclusion=success`.
+- Essa evidência confirma conclusão do workflow configurado para o PR, incluindo lint PHP e teste estático de contrato. Não comprova testes HTTP end-to-end, concorrência, backup, mounts nem deploy.
+- PR #57 e PR #58 continuam `open`, `draft=true`, `merged=false`.
