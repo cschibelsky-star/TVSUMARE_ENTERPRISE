@@ -142,3 +142,9 @@ Exigir evidência read-only do equivalente a `docker inspect --format '{{json .M
 - Commit head `57e93b69c118b52baa6e922c4ad94be8cc7eb206`; GitHub Actions `TV Sumare CI`, run ID `42422390472`: `status=completed`, `conclusion=success`.
 - Essa evidência confirma conclusão do workflow configurado para o PR, incluindo lint PHP e teste estático de contrato. Não comprova testes HTTP end-to-end, concorrência, backup, mounts nem deploy.
 - PR #57 e PR #58 continuam `open`, `draft=true`, `merged=false`.
+
+## P0 comprovado no código: persistência JSON não transacional
+- `monitor_lib.php`, funções `tvs_read_json_file` e `tvs_save_json_file` (linhas ~386-394 no `main` consultado): leitura direta por `file_get_contents`, gravação direta por `file_put_contents` **sem `LOCK_EX`, sem escrita temporária/rename e sem transação de leitura-modificação-escrita**.
+- Consequências possíveis: sobrescrita de atualizações concorrentes, leitura de JSON parcialmente gravado, perda silenciosa de registros quando `json_decode` retorna null e fallback `[]` é usado. Não afirmar perda já ocorrida sem examinar dados.
+- A deduplicação por `social_pauta_id` no PR #58 é sequencial, **não atômica**. Manter PR draft até validar concorrência ou acrescentar serialização por lock compartilhado entre escritores.
+- Proposta: PR P0 independente com API de mutação transacional por arquivo (lock estável, re-leitura dentro do lock, temp + rename, validação JSON, falha explícita), fixtures de concorrência e migração gradual dos escritores. Não alterar globalmente `tvs_save_json_file` sem testes de compatibilidade.
