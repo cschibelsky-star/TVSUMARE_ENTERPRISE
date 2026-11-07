@@ -154,3 +154,8 @@ Exigir evidência read-only do equivalente a `docker inspect --format '{{json .M
 - Novo `includes/json_atomic_storage.php`: bloqueio por arquivo `.lock`, re-leitura sob lock, validação estrita de lista JSON, escrita temporária e `rename` atômico. Exige que **todos os escritores** do mesmo arquivo adotem a API para serialização completa.
 - Novo `tests/json_atomic_storage_test.php`: atualização sequencial e rejeição de JSON corrompido; CI configurado. Teste multiprocesso/concorrência e resultado CI ainda pendentes.
 - Não substitui `tvs_save_json_file` nem modifica dados operacionais. Migração gradual por domínio após QA e confirmação de isolamento HML/prod.
+
+## Gate CI PR #59 — 07/11/2026
+- GitHub Actions run `42423579519`, head anterior `5097f7fa632f1461451b8a5545feb0938ffee8f5`: `completed/success`.
+- Adicionado `tests/json_atomic_concurrency_test.php` no PR #59: cinco processos PHP, 40 atualizações cada, total esperado 200 registros; teste utiliza somente diretório temporário e falha se perder atualizações.
+- Workflow atualizado para executar o teste multiprocesso; **resultado do CI do novo head ainda pendente**. A aprovação anterior não abrange o novo teste.
