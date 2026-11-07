@@ -101,8 +101,139 @@ $log=tvs_read_json_file($logFile); $discard=tvs_read_json_file($discardFile);
 if(!is_array($log)) $log=[]; if(!is_array($discard)) $discard=[];
 $combined=$log;
 foreach($discard as $i=>$d){
-  $combined[]=['title'=>$d['title']??'','source'=>$d['source']??'Fonte','city'=>$d['city']??'Região','status'=>'DESCARTADA','reason'=>$d['reason']??'Descartada','url'=>$d['source_url']??($d['url']??''),'created_at'=>$d['created_at']??'','discard_index'=>$i,'recoverable'=>true,'image'=>$d['image']??($d['image_url']??''),'image_source_type'=>$d['image_source_type']??'','image_credit'=>$d['image_credit']??'','image_review_required'=>$d['image_review_required']??0,'image_reviewed_at'=>$d['image_reviewed_at']??''];
+  $combined[]=['title'=>$d['title']??'','source'=>$d['source']??'Fonte','city'=>$d['city']??'Região','status'=>'DESCARTADA','reason'=>$d['reason']??'Descartada','url'=>$d['source_url']??($d['url']??''),'created_at'=>$d['created_at']??'','discard_index'=>$i,'recoverable'=>true,'image'=>$d['image']??($d['image_url']??''),'image_source_type'=>$d['image_source_type']??'','image_credit'=>$d['image_credit']??'','image_review_required'=>$d['image_review_required']??0,'image_reviewed_at'=>$d['image_reviewed_at']??'','rule'=>'DESCARTADA_LEGADO'];
 }
 usort($combined,function($a,$b){return strcmp((string)($b['created_at']??''),(string)($a['created_at']??''));});
-$combined=array_slice($combined,0,250);
-?><!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Log Editorial</title><link rel="stylesheet" href="admin.css?v=93"><style>.tag{display:inline-block;border-radius:999px;padding:4px 9px;font-size:12px;font-weight:800;background:#eef2ff;color:#1d4ed8}.tag.desc{background:#fee2e2;color:#991b1b}.tag.guia{background:#ecfccb;color:#365314}.tag.rev{background:#fff7ed;color:#9a3412}.tag.pub{background:#dcfce7;color:#166534}.recover{margin-top:8px}.recover button{border:0;border-radius:8px;padding:7px 10px;font-weight:800;cursor:pointer;background:#fff7ed;color:#9a3412}.thumb{width:72px;height:48px;object-fit:cover;border-radius:7px;display:block;margin-top:6px}</style></head><body><div class="admin"><?php include __DIR__.'/_menu.php'; ?><main class="main"><h1>📊 Log Editorial do Radar</h1><p class="muted">Histórico das decisões do Radar. Descarte não é irreversível: pautas úteis podem voltar para revisão com fonte, texto, imagem e rastreabilidade preservados.</p><?php if($notice): ?><div class="alert success"><?=h($notice)?></div><?php endif; ?><?php if($error): ?><div class="alert error"><?=h($error)?></div><?php endif; ?><div class="actions"><a class="btn" href="radar-regional.php">Centro de Redação</a><a class="btn" href="fontes-status.php">Saúde das Fontes</a></div><section class="card"><table><thead><tr><th>Data</th><th>Status</th><th>Cidade</th><th>Fonte</th><th>Título</th><th>Motivo / ação</th></tr></thead><tbody><?php if(!$combined): ?><tr><td colspan="6" class="muted">Ainda não há registros. Rode o Radar para gerar o primeiro log.</td></tr><?php endif; ?><?php foreach($combined as $r): $st=strtoupper((string)($r['status']??'')); $cls=strpos($st,'DESC')!==false?'desc':((strpos($st,'REV')!==false||strpos($st,'RECUP')!==false)?'rev':(strpos($st,'GUIA')!==false?'guia':'pub')); ?><tr><td><?=h(!empty($r['created_at'])?date('d/m H:i',strtotime($r['created_at'])):'')?></td><td><span class="tag <?=$cls?>"><?=h($st?:'REGISTRO')?></span></td><td><?=h($r['city']??'Região')?></td><td><?=h($r['source']??'Fonte')?></td><td><?php if(!empty($r['url'])): ?><a href="<?=h($r['url'])?>" target="_blank" rel="noopener"><?=h($r['title']??'Sem título')?></a><?php else: ?><?=h($r['title']??'Sem título')?><?php endif; ?><?php if(!empty($r['image'])): ?><img class="thumb" src="<?=h($r['image'])?>" alt="Imagem da pauta"><small class="muted">Imagem: <?=h($r['image_source_type']??'legado')?><?php if(!empty($r['image_credit'])): ?> • <?=h($r['image_credit'])?><?php endif; ?><?php if(!empty($r['image_review_required'])): ?> • REVISÃO PENDENTE<?php elseif(!empty($r['image_reviewed_at'])): ?> • revisada<?php endif; ?></small><?php endif; ?></td><td><?=h($r['reason']??'')?><?php if(!empty($r['recoverable'])): ?><form class="recover" method="post" onsubmit="return confirm('Recuperar esta pauta e enviar para revisão editorial?')"><?=tvs_csrf_field()?><input type="hidden" name="action" value="recover"><input type="hidden" name="discard_index" value="<?=h($r['discard_index'])?>"><button type="submit">↩ Recuperar para revisão</button></form><?php endif; ?></td></tr><?php endforeach; ?></tbody></table></section></main></div></body></html>
+
+// Métricas da Régua
+$totalAnalyzed = count($combined);
+$countApproved = 0;
+$countDuplicated = 0;
+$countZumbi = 0;
+$countOutside = 0;
+$countOther = 0;
+
+foreach($combined as $r){
+  $rule = $r['rule'] ?? '';
+  $reason = mb_strtolower((string)($r['reason'] ?? ''), 'UTF-8');
+  $st = strtoupper((string)($r['status'] ?? ''));
+  if(strpos($st, 'APROV') !== false || $rule === 'APROVADA_FILA'){
+    $countApproved++;
+  } elseif($rule === 'DUPLICIDADE' || strpos($reason, 'duplicad') !== false || strpos($reason, 'memória histórica') !== false){
+    $countDuplicated++;
+  } elseif($rule === 'TEMPORAL_ZUMBI' || strpos($reason, 'eleiç') !== false || strpos($reason, 'campanha') !== false || strpos($reason, 'antig') !== false || strpos($reason, 'sazonal') !== false){
+    $countZumbi++;
+  } elseif($rule === 'FORA_RMC' || strpos($reason, 'fora da região') !== false || strpos($reason, 'fora da lista') !== false){
+    $countOutside++;
+  } else {
+    $countOther++;
+  }
+}
+
+// Filtro por aba na tela
+$filter = $_GET['filter'] ?? 'all';
+$filtered = [];
+foreach($combined as $r){
+  $rule = $r['rule'] ?? '';
+  $reason = mb_strtolower((string)($r['reason'] ?? ''), 'UTF-8');
+  $st = strtoupper((string)($r['status'] ?? ''));
+  $isApp = (strpos($st, 'APROV') !== false || $rule === 'APROVADA_FILA');
+  $isDup = ($rule === 'DUPLICIDADE' || strpos($reason, 'duplicad') !== false || strpos($reason, 'memória histórica') !== false);
+  $isZum = ($rule === 'TEMPORAL_ZUMBI' || strpos($reason, 'eleiç') !== false || strpos($reason, 'campanha') !== false || strpos($reason, 'antig') !== false || strpos($reason, 'sazonal') !== false);
+  $isOut = ($rule === 'FORA_RMC' || strpos($reason, 'fora da região') !== false || strpos($reason, 'fora da lista') !== false);
+
+  if($filter === 'aprovadas' && !$isApp) continue;
+  if($filter === 'duplicadas' && !$isDup) continue;
+  if($filter === 'zumbi' && !$isZum) continue;
+  if($filter === 'fora_rmc' && !$isOut) continue;
+  $filtered[] = $r;
+}
+
+$itemsToShow = array_slice($filtered, 0, 300);
+?><!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Monitor da Régua Editorial | TV Sumaré</title><link rel="stylesheet" href="admin.css?v=95"><style>
+.metrics-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin:18px 0}
+.metric-card{background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:12px 14px;box-shadow:0 2px 8px rgba(0,0,0,.03)}
+.metric-card span{display:block;font-size:12px;color:#64748b;font-weight:700}
+.metric-card b{display:block;font-size:24px;color:#0f172a;margin-top:4px}
+.metric-card.green b{color:#16a34a}
+.metric-card.red b{color:#dc2626}
+.metric-card.purple b{color:#9333ea}
+.metric-card.amber b{color:#d97706}
+.filter-tabs{display:flex;gap:8px;margin:16px 0;flex-wrap:wrap}
+.filter-tab{display:inline-flex;align-items:center;padding:7px 14px;border-radius:999px;font-size:13px;font-weight:700;text-decoration:none;background:#f1f5f9;color:#475569;border:1px solid #e2e8f0}
+.filter-tab.active{background:#1d4ed8;color:#fff;border-color:#1d4ed8}
+.tag{display:inline-block;border-radius:999px;padding:4px 9px;font-size:11px;font-weight:800;background:#eef2ff;color:#1d4ed8}
+.tag.desc{background:#fee2e2;color:#991b1b}
+.tag.zumbi{background:#fef3c7;color:#92400e}
+.tag.dup{background:#f3e8ff;color:#6b21a8}
+.tag.rmc{background:#ffedd5;color:#9a3412}
+.tag.pub{background:#dcfce7;color:#166534}
+.reason-box{font-size:13px;line-height:1.4}
+.badge-rule{display:inline-block;padding:2px 6px;border-radius:6px;font-size:10px;font-weight:800;margin-right:4px;text-transform:uppercase}
+.recover-btn{border:0;border-radius:8px;padding:5px 9px;font-size:11px;font-weight:800;cursor:pointer;background:#fff7ed;color:#9a3412;margin-top:4px}
+.thumb{width:64px;height:42px;object-fit:cover;border-radius:6px;display:block;margin-top:4px}
+@media(max-width:900px){.metrics-grid{grid-template-columns:repeat(2,1fr)}}
+</style></head><body><div class="admin"><?php include __DIR__.'/_menu.php'; ?><main class="main"><div class="top"><div><span class="eyebrow">Observabilidade & Qualidade Editorial</span><h1>📡 Monitor da Régua Editorial</h1><p class="muted">Acompanhe em tempo real cada decisão da Régua v3.2: o que foi aprovado para a fila, o que foi barrado pela trava anti-zumbi, duplicidades evitadas e descarte regional.</p></div><div class="actions"><a class="btn orange" href="radar-regional.php">Ir para Aprovações</a></div></div>
+<?php if($notice): ?><div class="alert success"><?=h($notice)?></div><?php endif; ?><?php if($error): ?><div class="alert error"><?=h($error)?></div><?php endif; ?>
+
+<div class="metrics-grid">
+  <div class="metric-card"><span>Total Analisadas</span><b><?=$totalAnalyzed?></b></div>
+  <div class="metric-card green"><span>Aprovadas para a Fila</span><b><?=$countApproved?></b></div>
+  <div class="metric-card red"><span>Barradas Anti-Zumbi / Antigas</span><b><?=$countZumbi?></b></div>
+  <div class="metric-card purple"><span>Barradas por Duplicidade</span><b><?=$countDuplicated?></b></div>
+  <div class="metric-card amber"><span>Barradas Fora da RMC</span><b><?=$countOutside?></b></div>
+</div>
+
+<div class="filter-tabs">
+  <a class="filter-tab <?=$filter==='all'?'active':''?>" href="?filter=all">Todas (<?=$totalAnalyzed?>)</a>
+  <a class="filter-tab <?=$filter==='aprovadas'?'active':''?>" href="?filter=aprovadas">🟢 Aprovadas Fila (<?=$countApproved?>)</a>
+  <a class="filter-tab <?=$filter==='zumbi'?'active':''?>" href="?filter=zumbi">🛑 Anti-Zumbi / Antigas (<?=$countZumbi?>)</a>
+  <a class="filter-tab <?=$filter==='duplicadas'?'active':''?>" href="?filter=duplicadas">🟣 Duplicadas (<?=$countDuplicated?>)</a>
+  <a class="filter-tab <?=$filter==='fora_rmc'?'active':''?>" href="?filter=fora_rmc">🟠 Fora da RMC (<?=$countOutside?>)</a>
+</div>
+
+<section class="card"><table><thead><tr><th style="width:100px">Data/Hora</th><th style="width:130px">Decisão da Régua</th><th style="width:110px">Cidade</th><th style="width:140px">Fonte</th><th>Matéria & Imagem</th><th>Trilha da Régua / Motivo</th></tr></thead><tbody>
+<?php if(!$itemsToShow): ?><tr><td colspan="6" class="muted" style="text-align:center;padding:24px">Nenhum registro encontrado para este filtro.</td></tr><?php endif; ?>
+<?php foreach($itemsToShow as $r):
+  $st=strtoupper((string)($r['status']??''));
+  $rule=$r['rule']??'';
+  $reason=(string)($r['reason']??'');
+  $reasonLow=mb_strtolower($reason,'UTF-8');
+  $isApp=(strpos($st,'APROV')!==false || $rule==='APROVADA_FILA');
+  $isDup=($rule==='DUPLICIDADE' || strpos($reasonLow,'duplicad')!==false || strpos($reasonLow,'memória histórica')!==false);
+  $isZum=($rule==='TEMPORAL_ZUMBI' || strpos($reasonLow,'eleiç')!==false || strpos($reasonLow,'campanha')!==false || strpos($reasonLow,'antig')!==false || strpos($reasonLow,'sazonal')!==false);
+  $isOut=($rule==='FORA_RMC' || strpos($reasonLow,'fora da região')!==false || strpos($reasonLow,'fora da lista')!==false);
+
+  $cls = $isApp ? 'pub' : ($isDup ? 'dup' : ($isZum ? 'zumbi' : ($isOut ? 'rmc' : 'desc')));
+  $badgeLabel = $isApp ? 'APROVADA' : ($isDup ? 'DUPLICADA' : ($isZum ? 'ANTI-ZUMBI' : ($isOut ? 'FORA DA RMC' : $st)));
+?>
+<tr>
+  <td><small><?=h(!empty($r['created_at'])?date('d/m H:i:s',strtotime($r['created_at'])):'')?></small></td>
+  <td><span class="tag <?=$cls?>"><?=h($badgeLabel)?></span></td>
+  <td><b><?=h($r['city']??'Região')?></b></td>
+  <td><small class="muted"><?=h($r['source']??'Fonte')?></small></td>
+  <td>
+    <?php if(!empty($r['url'])): ?><a href="<?=h($r['url'])" target="_blank" rel="noopener" style="font-weight:700;color:#0f172a;text-decoration:none"><?=h($r['title']??'Sem título')?></a><?php else: ?><b><?=h($r['title']??'Sem título')?></b><?php endif; ?>
+    <?php if(!empty($r['image'])): ?>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:4px">
+        <img class="thumb" src="<?=h($r['image'])" alt="">
+        <small class="muted">Tipo: <?=h($r['image_type']?:'detectada')?></small>
+      </div>
+    <?php endif; ?>
+  </td>
+  <td class="reason-box">
+    <div><?=h($reason)?></div>
+    <?php if(!empty($r['category'])): ?><small class="muted">Categoria: <b><?=h($r['category'])?></b></small><?php endif; ?>
+    <?php if(isset($r['score'])): ?> • <small class="muted">Score: <b><?=h($r['score'])?></b></small><?php endif; ?>
+    <?php if(!empty($r['recoverable'])): ?>
+      <form method="post" onsubmit="return confirm('Recuperar esta pauta para a fila de aprovação?')" style="margin-top:4px">
+        <?=tvs_csrf_field()?>
+        <input type="hidden" name="action" value="recover">
+        <input type="hidden" name="discard_index" value="<?=h($r['discard_index'])">
+        <button type="submit" class="recover-btn">↩ Recuperar para Fila</button>
+      </form>
+    <?php endif; ?>
+  </td>
+</tr>
+<?php endforeach; ?>
+</tbody></table></section></main></div></body></html>

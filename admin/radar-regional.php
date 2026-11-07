@@ -60,7 +60,7 @@ function tvs_radar_save_status($st){
   $dir=dirname($radarStatusFile); if(!is_dir($dir)) @mkdir($dir,0775,true);
   file_put_contents($radarStatusFile,json_encode($st, JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES));
 }
-function tvs_radar_log_event($title,$source,$city,$status,$reason,$url=''){
+function tvs_radar_log_event($title,$source,$city,$status,$reason,$url='',$extra=[]){
   global $radarLogFile;
   $items=tvs_read_json_file($radarLogFile);
   if(!is_array($items)) $items=[];
@@ -72,6 +72,11 @@ function tvs_radar_log_event($title,$source,$city,$status,$reason,$url=''){
     'status'=>(string)$status,
     'reason'=>(string)$reason,
     'url'=>(string)$url,
+    'rule'=>!empty($extra['rule']) ? (string)$extra['rule'] : (strpos((string)$reason, 'duplicad')!==false ? 'DUPLICIDADE' : (strpos((string)$reason, 'fora da região')!==false ? 'FORA_RMC' : (strpos((string)$reason, 'antig')!==false||strpos((string)$reason, 'eleitoral')!==false ? 'TEMPORAL_ZUMBI' : (strpos((string)$status, 'APROV')!==false ? 'APROVADA' : 'OUTRO')))),
+    'category'=>!empty($extra['category']) ? (string)$extra['category'] : '',
+    'score'=>isset($extra['score']) ? $extra['score'] : null,
+    'image'=>!empty($extra['image']) ? (string)$extra['image'] : '',
+    'image_type'=>!empty($extra['image_type']) ? (string)$extra['image_type'] : '',
     'created_at'=>date('c')
   ];
   $items=array_slice($items,-500);
@@ -2024,10 +2029,11 @@ function tvs_radar_update_queue($perCity=15,$mode='normal'){
       if(!$url || isset($seen[$url])) continue;
       if(tvs_radar_is_already_known($url, $title)){
         $seen[$url]=1;
+        tvs_radar_log_event($title, $cand['source']??'Fonte', $city, 'DESCARTADA', 'Memória Histórica: notícia já publicada no portal ou analisada recentemente.', $url, ['rule'=>'DUPLICIDADE']);
         continue;
       }
       $article=tvs_generate_ready_article($city,$cand);
-      if(is_array($article) && !empty($article['title']) && !empty($article['body'])){ $queue[]=$article; tvs_radar_log_event($article['title']??'', $article['source']??($cand['source']??'Fonte'), $city, ($article['editorial_status']??'APROVADA'), 'Entrou na fila editorial', $url); $seen[$url]=1; $cityCount++; $count++; } else { $seen[$url]=1; }
+      if(is_array($article) && !empty($article['title']) && !empty($article['body'])){ $queue[]=$article; tvs_radar_log_event($article['title']??'', $article['source']??($cand['source']??'Fonte'), $city, ($article['editorial_status']??'APROVADA'), 'Aprovada pela Régua e inserida na fila editorial', $url, ['rule'=>'APROVADA_FILA','category'=>$article['category']??'Cidade','score'=>$article['editorial_score']??null,'image'=>$article['image']??'','image_type'=>$article['image_source_type']??'']); $seen[$url]=1; $cityCount++; $count++; } else { $seen[$url]=1; }
       if($count>=(tvs_radar_is_volume_mode()?72:36) || (microtime(true)-$started)>(tvs_radar_is_volume_mode()?49:32)) break 2; // proteção contra timeout em hospedagem compartilhada
     }
   }
