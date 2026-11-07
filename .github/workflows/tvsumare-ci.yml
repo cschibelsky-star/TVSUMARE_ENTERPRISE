@@ -44,6 +44,9 @@ jobs:
       - name: Testar deduplicacao concorrente de pautas
         run: php tests/json_atomic_dedupe_test.php
 
+      - name: Testar persistencia atomica das pautas descartadas
+        run: php tests/radar_discard_atomic_test.php
+
       - name: Validar regras editoriais criticas
         shell: bash
         run: |
