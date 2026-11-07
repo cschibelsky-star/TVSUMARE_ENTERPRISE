@@ -3,6 +3,22 @@
  * Pure editorial workflow policy. No IO, no publishing, no side effects.
  * Legacy records without editorial_state remain in editing until validated.
  */
+function tvs_editorial_text_length($text): int {
+    $clean = trim(preg_replace('/\\s+/u', ' ', strip_tags((string)$text)));
+    return function_exists('mb_strlen') ? mb_strlen($clean, 'UTF-8') : strlen($clean);
+}
+function tvs_editorial_source_ready(array $item): bool {
+    $source = (string)($item['source_body'] ?? '');
+    $title = trim((string)($item['title'] ?? ''));
+    $clean = trim(preg_replace('/\\s+/u', ' ', strip_tags($source)));
+    if ($title !== '' && $clean === $title) return false;
+    return tvs_editorial_text_length($source) >= 350;
+}
+function tvs_editorial_article_ready(array $item): bool {
+    return tvs_editorial_text_length($item['body'] ?? '') >= 350
+        && tvs_editorial_source_ready($item)
+        && !empty($item['editorial_ai_completed']);
+}
 function tvs_editorial_required_fields(array $item): array {
     $missing = [];
     foreach (['title', 'body', 'city', 'category', 'source', 'source_url'] as $field) {
@@ -13,6 +29,7 @@ function tvs_editorial_required_fields(array $item): array {
         !in_array(strtolower((string)parse_url($url, PHP_URL_SCHEME)), ['http', 'https'], true))) {
         $missing[] = 'valid_source_url';
     }
+    if (!tvs_editorial_article_ready($item)) $missing[] = 'editorial_integrity';
     return $missing;
 }
 function tvs_editorial_next_state(string $state, string $action, array $item): ?string {

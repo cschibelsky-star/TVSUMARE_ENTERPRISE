@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__.'/../includes/outbound_guard.php';
+require_once __DIR__.'/../includes/editorial_workflow_policy.php';
 $TVS_RADAR_IS_CLI_CRON = defined('TVS_RADAR_CRON') && TVS_RADAR_CRON && PHP_SAPI === 'cli';
 if(!$TVS_RADAR_IS_CLI_CRON){
   require_once __DIR__.'/auth.php';
@@ -348,6 +349,7 @@ function tvs_radar_status_from_score($score,$sensitive=false){
   return ['review_level'=>'normal','editorial_status'=>$status,'sensitive'=>false];
 }
 function tvs_radar_can_direct_approve($m){
+  if(($m['status']??'')==='em_edicao' || !tvs_editorial_article_ready($m)) return false;
   // v3.1: imagem ilustrativa da categoria não impede aprovação direta se a pauta for relevante
   if(!empty($m['image_review_required']) && ($m['image_source_type']??'') !== 'category:fallback') return false;
   if(!empty($m['sensitive_review_required'])) return false;
@@ -357,6 +359,7 @@ function tvs_radar_can_direct_approve($m){
 function tvs_radar_enforce_queue_rules($save=true){
   $queue=tvs_queue_read(); $new=[]; $removed=0; $changed=0;
   foreach($queue as $q){
+    if(($q['status']??'')==='em_edicao'){ $new[]=$q; continue; }
     $reason='';
     $cand=['title'=>$q['title']??'','description'=>($q['subtitle']??'').' '.($q['summary']??'').' '.($q['body']??''),'url'=>$q['source_url']??'','source'=>$q['source']??'','source_type'=>$q['source']??'','city'=>$q['city']??''];
     $city=$q['city']??'';
@@ -1837,6 +1840,21 @@ function tvs_generate_ready_article($city,$cand){
   global $gemini_api_key;
   $requestedCity=$city;
   $mat=tvs_build_material_from_candidate($cand);
+  // A pauta sem texto integral da fonte nao e materia pronta nem deve consumir LLM.
+  $sourceBody=trim((string)($mat['text']??''));
+  if(tvs_editorial_text_length($sourceBody)<350){
+    return [
+      'id'=>uniqid('pauta_'),'title'=>$cand['title']??'','body'=>'',
+      'source_body'=>$sourceBody,'source'=>$cand['source']??'Fonte consultada',
+      'source_url'=>$cand['url']??'','city'=>$city,
+      'category'=>$cand['category']??'Cidade',
+      'status'=>'em_edicao','editorial_state'=>'em_edicao',
+      'editorial_ai_completed'=>false,'review_level'=>'precisa_revisao',
+      'editorial_status'=>'Pauta: fonte insuficiente',
+      'image_source_type'=>'category:fallback',
+      'image_review_required'=>1,'created_at'=>date('c')
+    ];
+  }
   // Cidade editorial = cidade do fato, não necessariamente cidade consultada no loop.
   // Ex.: Portal de Sumaré pode trazer acidente em Americana; a matéria deve cair em Americana.
   $detectText=($mat['title']??'').' '.($mat['text']??'').' '.($cand['title']??'').' '.($cand['description']??'').' '.($cand['url']??'').' '.($cand['source']??'');
@@ -1924,6 +1942,8 @@ function tvs_generate_ready_article($city,$cand){
   $result['source']=$cand['source']??'Fonte consultada';
   $result['source_url']=$cand['url']??'';
   $result['status']='aguardando';
+  $result['source_body']=$sourceBody;
+  $result['editorial_ai_completed']=true;
   if(!empty($cand['age_days'])) $result['age_days']=$cand['age_days'];
   if(!empty($cand['temporal_label'])) $result['temporal_label']=$cand['temporal_label'];
   if(!empty($cand['force_review'])){ $result['review_level']='precisa_revisao'; $result['editorial_status']='Revisão temporal'; }
@@ -1942,6 +1962,11 @@ function tvs_generate_ready_article($city,$cand){
     $result['editorial_status']='Revisão de imagem';
   }
   $result['created_at']=date('c');
+  if(!tvs_editorial_article_ready($result)){
+    $result['status']='em_edicao'; $result['editorial_state']='em_edicao';
+    $result['editorial_status']='Pauta: redacao incompleta';
+    return $result;
+  }
   if(!tvs_radar_quality_ok($result,$reason)){
     tvs_radar_discard($cand,$city,$reason);
     return null;
@@ -2033,7 +2058,7 @@ function tvs_radar_update_queue($perCity=15,$mode='normal'){
         continue;
       }
       $article=tvs_generate_ready_article($city,$cand);
-      if(is_array($article) && !empty($article['title']) && !empty($article['body'])){ $queue[]=$article; tvs_radar_log_event($article['title']??'', $article['source']??($cand['source']??'Fonte'), $city, ($article['editorial_status']??'APROVADA'), 'Aprovada pela Régua e inserida na fila editorial', $url, ['rule'=>'APROVADA_FILA','category'=>$article['category']??'Cidade','score'=>$article['editorial_score']??null,'image'=>$article['image']??'','image_type'=>$article['image_source_type']??'']); $seen[$url]=1; $cityCount++; $count++; } else { $seen[$url]=1; }
+      if(is_array($article) && !empty($article['title'])){ $queue[]=$article; tvs_radar_log_event($article['title']??'', $article['source']??($cand['source']??'Fonte'), $city, ($article['status']??'')==='em_edicao'?'PAUTA_PENDENTE':'MINUTA_RECEBIDA', 'Captada pelo Radar; exige validacao editorial', $url, ['rule'=>'APROVADA_FILA','category'=>$article['category']??'Cidade','score'=>$article['editorial_score']??null,'image'=>$article['image']??'','image_type'=>$article['image_source_type']??'']); $seen[$url]=1; $cityCount++; $count++; } else { $seen[$url]=1; }
       if($count>=(tvs_radar_is_volume_mode()?72:36) || (microtime(true)-$started)>(tvs_radar_is_volume_mode()?49:32)) break 2; // proteção contra timeout em hospedagem compartilhada
     }
   }
@@ -2043,11 +2068,11 @@ function tvs_publish_from_queue($id,$post){
   global $newsFile;
   $queue=tvs_queue_read(); $found=null; $newq=[];
   foreach($queue as $item){ if(($item['id']??'')===$id) $found=$item; else $newq[]=$item; }
-  if(!$found) return false;
+  if(!$found || !tvs_radar_can_direct_approve($found)) return false;
 
   $title=trim((string)($post['title']??$found['title']??''));
   $body=trim((string)($post['body']??$found['body']??''));
-  if($title==='' || $body==='') return false;
+  if($title==='' || $body==='' || !tvs_editorial_article_ready($found)) return false;
 
   // Garante que sempre exista uma imagem válida (da matéria ou da categoria)
   $img = trim((string)($post['image'] ?? $found['image'] ?? ''));
@@ -2133,7 +2158,7 @@ function tvs_reprocess_discarded_pautas($limit=12,$mode='normal'){
       continue;
     }
     $article=tvs_generate_ready_article($city,$cand);
-    if(is_array($article) && !empty($article['title']) && !empty($article['body'])){
+    if(is_array($article) && !empty($article['title'])){
       $article['review_level']='precisa_revisao';
       $article['editorial_status']='Revisão';
       $queue[]=$article;
@@ -2252,7 +2277,7 @@ $queue=tvs_queue_read();
 $byCity=[]; foreach($cities as $c) $byCity[$c]=[];
 $sensitiveQueue=[]; $imageReviewQueue=[]; $normalQueue=[];
 foreach($queue as $q){
-  if(($q['status']??'aguardando')!=='aguardando') continue;
+  if(($q['status']??'aguardando')!=='aguardando' || !tvs_editorial_article_ready($q)) continue;
   if(!empty($q['sensitive_review_required']) || ($q['review_level']??'')==='revisao_obrigatoria'){
     $sensitiveQueue[]=$q;
     continue;
