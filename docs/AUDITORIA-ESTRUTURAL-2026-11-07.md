@@ -59,3 +59,15 @@ GitHub é fonte de verdade. PRs #54/#55 permanecem isolados; não misturar audit
 2. Obter inventário atual de containers, vhosts, cron, backups e storage com conector read-only apropriado.
 3. Auditar todas as rotas de publicação e escrita JSON antes de refatorar.
 4. Estabelecer checklist de pronto por módulo e baseline de testes.
+
+## Evidências adicionais — V4 e backup VPS (2026-11-07)
+- Conector V4 `tvsumare_git_status`: diretório em `main...origin/main`, com **seis entradas não rastreadas** de nomes semelhantes a fragmentos de fontes/cidades. Preservar; não executar reset, clean, merge ou deploy sobre essa árvore antes de inventariar.
+- V4 `docker_status`: container `tvsumare_web` ativo e marcado **healthy** em 2026-11-07 21:18 UTC; Docker Compose project `tvsumare`, diretório `/srv/tvsumare/repository`, compose `docker-compose.vps.yml`, roteamento Traefik `tv-hml.vitrineiapro.com.br`. Isso confirma o serviço HML, não a produção HostGator.
+- V5 `vps_backup_status`: backup geral habilitado, retenção 14 dias, inclui `/srv/tvsumare`; último arquivo listado `vps-filesystem-20261107T171312Z.tar.gz`, 2.254.843.540 bytes, checksum SHA-256 presente, 146.207 membros. **Restore não testado**.
+- O ID tentativo `tv-sumare` não é manifest V5; não criar novo manifest sem reconciliar com Compose existente.
+
+### Próximo gate de segurança
+1. Inspecionar com leitura os seis untracked e o status de outros serviços do Compose, sem expor segredos.
+2. Conferir `/health.php` HML e agendamento `tvsumare_radar_scheduler` com evidência atual.
+3. Validar backups específicos de JSON/uploads e plano de restauração isolado; não restaurar em produção.
+4. Auditar caminhos de publicação direta e concorrência de escrita JSON; testar em ambiente descartável.
