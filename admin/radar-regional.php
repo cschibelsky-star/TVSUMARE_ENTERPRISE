@@ -1841,7 +1841,7 @@ function tvs_generate_ready_article($city,$cand){
   $requestedCity=$city;
   $mat=tvs_build_material_from_candidate($cand);
   // A pauta sem texto integral da fonte nao e materia pronta nem deve consumir LLM.
-  $sourceBody=trim((string)($mat['article']['body']??''));
+  $sourceBody=trim((string)($mat['text']??''));
   if(tvs_editorial_text_length($sourceBody)<350){
     return [
       'id'=>uniqid('pauta_'),'title'=>$cand['title']??'','body'=>'',
@@ -2058,7 +2058,7 @@ function tvs_radar_update_queue($perCity=15,$mode='normal'){
         continue;
       }
       $article=tvs_generate_ready_article($city,$cand);
-      if(is_array($article) && !empty($article['title'])){ $queue[]=$article; tvs_radar_log_event($article['title']??'', $article['source']??($cand['source']??'Fonte'), $city, ($article['editorial_status']??'APROVADA'), 'Aprovada pela Régua e inserida na fila editorial', $url, ['rule'=>'APROVADA_FILA','category'=>$article['category']??'Cidade','score'=>$article['editorial_score']??null,'image'=>$article['image']??'','image_type'=>$article['image_source_type']??'']); $seen[$url]=1; $cityCount++; $count++; } else { $seen[$url]=1; }
+      if(is_array($article) && !empty($article['title'])){ $queue[]=$article; tvs_radar_log_event($article['title']??'', $article['source']??($cand['source']??'Fonte'), $city, ($article['status']??'')==='em_edicao'?'PAUTA_PENDENTE':'MINUTA_RECEBIDA', 'Captada pelo Radar; exige validacao editorial', $url, ['rule'=>'APROVADA_FILA','category'=>$article['category']??'Cidade','score'=>$article['editorial_score']??null,'image'=>$article['image']??'','image_type'=>$article['image_source_type']??'']); $seen[$url]=1; $cityCount++; $count++; } else { $seen[$url]=1; }
       if($count>=(tvs_radar_is_volume_mode()?72:36) || (microtime(true)-$started)>(tvs_radar_is_volume_mode()?49:32)) break 2; // proteção contra timeout em hospedagem compartilhada
     }
   }
