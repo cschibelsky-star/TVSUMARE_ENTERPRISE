@@ -359,6 +359,7 @@ function tvs_radar_can_direct_approve($m){
 function tvs_radar_enforce_queue_rules($save=true){
   $queue=tvs_queue_read(); $new=[]; $removed=0; $changed=0;
   foreach($queue as $q){
+    if(($q['status']??'')==='em_edicao'){ $new[]=$q; continue; }
     $reason='';
     $cand=['title'=>$q['title']??'','description'=>($q['subtitle']??'').' '.($q['summary']??'').' '.($q['body']??''),'url'=>$q['source_url']??'','source'=>$q['source']??'','source_type'=>$q['source']??'','city'=>$q['city']??''];
     $city=$q['city']??'';
