@@ -127,3 +127,8 @@ Exigir evidência read-only do equivalente a `docker inspect --format '{{json .M
 2. Localizar logs e cron do Radar por leitura segura, sem ativar novos agendadores.
 3. Revisar manifesto divergente com branch GitHub antes de corrigir metadados.
 4. Configurar backup granular **somente após** avaliar destino, retenção, escopo e autorização específica.
+
+## Hardening complementar — PR #58
+- Revisão identificou que `admin/redes.php` renderizava `href` externo a partir de URL cadastrada sem limitar esquema; `htmlspecialchars` impede injeção de atributo, mas não impede links `javascript:` ou outros esquemas perigosos.
+- Commit `0cda9fc` na branch do PR #58 limita o botão externo a URL válida com esquema `http` ou `https` e usa `rel=noopener noreferrer` para nova aba. Não altera dados persistentes nem fluxo de publicação.
+- Testes de sintaxe e navegação da branch PR #58 ainda pendentes; não considerar pronto para merge.
