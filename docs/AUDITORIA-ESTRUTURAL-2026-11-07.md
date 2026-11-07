@@ -132,3 +132,8 @@ Exigir evidência read-only do equivalente a `docker inspect --format '{{json .M
 - Revisão identificou que `admin/redes.php` renderizava `href` externo a partir de URL cadastrada sem limitar esquema; `htmlspecialchars` impede injeção de atributo, mas não impede links `javascript:` ou outros esquemas perigosos.
 - Commit `0cda9fc` na branch do PR #58 limita o botão externo a URL válida com esquema `http` ou `https` e usa `rel=noopener noreferrer` para nova aba. Não altera dados persistentes nem fluxo de publicação.
 - Testes de sintaxe e navegação da branch PR #58 ainda pendentes; não considerar pronto para merge.
+
+## Gate de regressão para PR #58 — 07/11/2026
+- Adicionado `tests/social_draft_security_contract_test.php` ao PR #58; verifica ausência de GET mutável, POST, campo CSRF, ID de origem, esquema HTTP(S) e isolamento de abas. Teste **estático de contrato**, não teste funcional de requisições nem teste de concorrência.
+- Atualizado `.github/workflows/tvsumare-ci.yml` na branch do PR #58 para executar o teste em pull requests.
+- **Execução CI ainda não verificada**. Não declarar PASS até obter resultado real.
