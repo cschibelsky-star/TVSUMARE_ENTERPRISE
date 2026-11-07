@@ -1795,19 +1795,11 @@ function tvs_build_reviewable_article_without_ai($city,$category,$cand,$mat){
   // Fallback sem IA só pode usar informação real extraída.
   // Em modo produtivo, uma pauta curta pode entrar como NOTA CURTA para revisão,
   // desde que venha de título/descrição factual. Não inventa complemento.
-  if(count($paras)<2){
-    $facts=[];
-    foreach([$summary, $base, $title] as $fact){
-      $fact=tvs_remove_editorial_artifacts(tvs_clean_text($fact));
-      if($fact && tvs_strlen($fact)>28 && !tvs_radar_has_generic_text($fact) && !tvs_is_boilerplate($fact)) $facts[]=$fact;
-      if(count($facts)>=3) break;
-    }
-    $facts=array_values(array_unique($facts));
-    if(!$facts) return null;
-    $body=$facts;
-  } else {
-    $body=$paras;
+  // Issue #53: Proibido criar matéria oca repetindo título. Exige pelo menos 1 parágrafo autêntico com mais de 120 caracteres
+  if(count($paras) < 1){
+    return null;
   }
+  $body = $paras;
 
   $body=implode("\n\n", array_values(array_unique(array_filter($body))));
   $body=tvs_remove_editorial_artifacts($body);
@@ -1859,6 +1851,15 @@ function tvs_generate_ready_article($city,$cand){
   if(!tvs_material_quality_ok($mat,$reason)){
     tvs_radar_discard($cand,$city,$reason);
     tvs_radar_log_event($cand['title']??'', $cand['source']??'Fonte consultada', $city, 'DESCARTADA', $reason, $cand['url']??'');
+    return null;
+  }
+
+  // Issue #53: Trava de integridade editorial. Exige apuração mínima na fonte (>= 260 caracteres)
+  // para impedir que manchetes isoladas sem corpo virem matérias na fila de aprovação.
+  $sourceText = trim((string)($mat['text'] ?? ($cand['description'] ?? '')));
+  if(tvs_strlen($sourceText) < 260){
+    tvs_radar_discard($cand,$city,'Texto insuficiente na fonte (<260 caracteres): retida na triagem');
+    tvs_radar_log_event($cand['title']??'', $cand['source']??'Fonte consultada', $city, 'DESCARTADA', 'Texto insuficiente na fonte (<260 caracteres): retida na triagem', $cand['url']??'', ['rule'=>'CONTEUDO_INSUFICIENTE']);
     return null;
   }
   $facts=tvs_extract_facts_block($mat['title']??($cand['title']??''),$city,$category,$mat['text']??'',($cand['source']??'Fonte consultada'),($cand['url']??''));
@@ -2277,6 +2278,12 @@ $editId=$_GET['edit']??''; $editItem=null; foreach($queue as $q){ if(($q['id']??
 <?php if($imageReviewQueue): ?><section class="city-block"><h2>Revisão de imagem <small class="muted">(<?=count($imageReviewQueue)?>)</small></h2><div class="queue-grid"><?php foreach($imageReviewQueue as $m): ?><article class="matter"><span class="badge" style="background:#fff7ed;color:#c2410c">Imagem pendente</span><h3><?=h($m['title']??'Sem título')?></h3><p><?=h($m['image_review_reason']??'Revisar imagem antes da publicação.')?></p><a class="btn orange" href="?edit=<?=h($m['id'])?>">Corrigir imagem</a></article><?php endforeach; ?></div></section><?php endif; ?>
 <form id="bulk-form" method="post" class="settings-box bulk-row" onsubmit="return confirm('Aplicar a ação nas matérias selecionadas?');"><?=tvs_csrf_field()?><label class="check"><input type="checkbox" id="select-all-radar"> Selecionar todas visíveis</label><button class="btn orange" type="submit" name="action" value="bulk_approve">Aprovar selecionadas</button><button class="btn secondary" type="submit" name="action" value="bulk_review">Enviar para revisão</button><button class="btn secondary" type="submit" name="action" value="bulk_discard">Descartar selecionadas</button><span class="muted">Use os checkboxes dos cards para operar várias matérias de uma vez.</span></form>
 <?php foreach($cities as $city): $items=array_slice($byCity[$city]??[],0,20); ?>
-<section class="city-block"><h2><?=h($city)?> <small class="muted">(<?=count($items)?>)</small></h2><?php if(!$items): ?><p class="muted">Nenhuma matéria aguardando aprovação para esta cidade.</p><?php else: ?><div class="queue-grid"><?php foreach($items as $m): ?><article class="matter"><label class="bulk-check"><input type="checkbox" class="radar-select" form="bulk-form" name="ids[]" value="<?=h($m['id'])?>"> Selecionar</label><img src="<?=h(tvs_admin_img($m['image']??'', $m['category']??'Cidade'))?>" onerror="this.src='<?=h(tvs_admin_img('', $m['category']??'Cidade'))?>'" alt=""><?php if(!empty($m['image_credit'])): ?><small class="muted" style="display:block;margin:4px 0 8px"><?=h($m['image_credit'])?></small><?php endif; ?><span class="badge"><?=h($m['category']??'Cidade')?></span><?php if(($m['review_level']??'')==='precisa_revisao'): ?><span class="badge" style="background:#fff7ed;color:#c2410c">Precisa revisão</span><?php endif; ?><?php if(!empty($m['image_review_required'])): ?><span class="badge" title="<?=h($m['image_review_reason']??'Revisar imagem')?>" style="background:#fef2f2;color:#b91c1c">Revisar imagem</span><?php endif; ?><span class="badge"><?=h($m['editorial_status']??'Publicável')?></span><?php if(isset($m['editorial_score'])): ?><span class="badge" style="background:#ecfeff;color:#0e7490">Score <?=h($m['editorial_score'])?></span><?php endif; ?><?php if(!empty($m['radar_requested_city']) && $m['radar_requested_city']!==($m['city']??'')): ?><span class="badge" style="background:#eff6ff;color:#1d4ed8">Detectada: <?=h($m['city']??'')?> </span><?php endif; ?><span class="badge"><?=h($m['source']??'Fonte')?></span><h3><?=h($m['title']??'Sem título')?></h3><p><?=h($m['subtitle']??($m['summary']??''))?></p><div class="matter-actions"><?php if(tvs_radar_can_direct_approve($m)): ?><form method="post"><?=tvs_csrf_field()?><input type="hidden" name="action" value="approve"><input type="hidden" name="id" value="<?=h($m['id'])?>"><button class="btn orange" type="submit">Aprovar</button></form><?php else: ?><a class="btn secondary" href="?edit=<?=h($m['id'])?>">Revisar antes</a><?php endif; ?><a class="btn" href="?edit=<?=h($m['id'])?>">Editar</a><form method="post" onsubmit="return confirm('Descartar esta matéria?');"><?=tvs_csrf_field()?><input type="hidden" name="action" value="discard"><input type="hidden" name="id" value="<?=h($m['id'])?>"><button class="btn secondary" type="submit">Descartar</button></form></div></article><?php endforeach; ?></div><?php endif; ?></section>
+<section class="city-block"><h2><?=h($city)?> <small class="muted">(<?=count($items)?>)</small></h2><?php if(!$items): ?><p class="muted">Nenhuma matéria aguardando aprovação para esta cidade.</p><?php else: ?><div class="queue-grid"><?php foreach($items as $m): ?><article class="matter"><label class="bulk-check"><input type="checkbox" class="radar-select" form="bulk-form" name="ids[]" value="<?=h($m['id'])?>"> Selecionar</label><img src="<?=h(tvs_admin_img($m['image']??'', $m['category']??'Cidade'))?>" onerror="this.src='<?=h(tvs_admin_img('', $m['category']??'Cidade'))?>'" alt=""><?php
+  $isFallbackImg = (empty($m['image']) || ($m['image_source_type']??'') === 'category:fallback' || strpos((string)($m['image']??''), 'cat-') !== false || strpos((string)($m['image']??''), '.svg') !== false);
+  if($isFallbackImg): ?>
+  <div style="margin:6px 0"><span class="badge" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;font-weight:800">🎨 Imagem Ilustrativa TV Sumaré</span></div>
+<?php else: ?>
+  <div style="margin:6px 0"><span class="badge" style="background:#dcfce7;color:#166534;border:1px solid #bbf7d0;font-weight:800">📷 Foto da Fonte Original</span> <small class="muted"><?=h($m['image_credit']??'Divulgação')?></small></div>
+<?php endif; ?><span class="badge"><?=h($m['category']??'Cidade')?></span><?php if(($m['review_level']??'')==='precisa_revisao'): ?><span class="badge" style="background:#fff7ed;color:#c2410c">Precisa revisão</span><?php endif; ?><?php if(!empty($m['image_review_required'])): ?><span class="badge" title="<?=h($m['image_review_reason']??'Revisar imagem')?>" style="background:#fef2f2;color:#b91c1c">Revisar imagem</span><?php endif; ?><span class="badge"><?=h($m['editorial_status']??'Publicável')?></span><?php if(isset($m['editorial_score'])): ?><span class="badge" style="background:#ecfeff;color:#0e7490">Score <?=h($m['editorial_score'])?></span><?php endif; ?><?php if(!empty($m['radar_requested_city']) && $m['radar_requested_city']!==($m['city']??'')): ?><span class="badge" style="background:#eff6ff;color:#1d4ed8">Detectada: <?=h($m['city']??'')?> </span><?php endif; ?><span class="badge"><?=h($m['source']??'Fonte')?></span><h3><?=h($m['title']??'Sem título')?></h3><p><?=h($m['subtitle']??($m['summary']??''))?></p><div class="matter-actions"><?php if(tvs_radar_can_direct_approve($m)): ?><form method="post"><?=tvs_csrf_field()?><input type="hidden" name="action" value="approve"><input type="hidden" name="id" value="<?=h($m['id'])?>"><button class="btn orange" type="submit">Aprovar</button></form><?php else: ?><a class="btn secondary" href="?edit=<?=h($m['id'])?>">Revisar antes</a><?php endif; ?><a class="btn" href="?edit=<?=h($m['id'])?>">Editar</a><form method="post" onsubmit="return confirm('Descartar esta matéria?');"><?=tvs_csrf_field()?><input type="hidden" name="action" value="discard"><input type="hidden" name="id" value="<?=h($m['id'])?>"><button class="btn secondary" type="submit">Descartar</button></form></div></article><?php endforeach; ?></div><?php endif; ?></section>
 <?php endforeach; ?>
 <?php endif; ?></main></div><script>document.addEventListener('DOMContentLoaded',function(){var all=document.getElementById('select-all-radar');if(!all)return;all.addEventListener('change',function(){document.querySelectorAll('.radar-select').forEach(function(cb){cb.checked=all.checked;});});});</script></body></html>
