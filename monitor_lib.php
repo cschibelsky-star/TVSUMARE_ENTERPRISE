@@ -397,8 +397,14 @@ function tvs_get_sources(){
   $sources=tvs_read_json_file($file);
   if(!$sources){
     $sources=[
-      ['type'=>'oficial','city'=>'Sumaré','name'=>'Prefeitura de Sumaré','url'=>'https://sumare.sp.gov.br/','rss'=>''],
-      ['type'=>'regional','city'=>'Região','name'=>'G1 Campinas e Região','url'=>'https://g1.globo.com/sp/campinas-regiao/','rss'=>'https://g1.globo.com/rss/g1/sp/campinas-regiao/']
+      ['type'=>'regional','city'=>'Região','name'=>'G1 Campinas e Região','url'=>'https://g1.globo.com/sp/campinas-regiao/','rss'=>'https://g1.globo.com/rss/g1/sp/campinas-regiao/','active'=>true],
+      ['type'=>'regional','city'=>'Região','name'=>'G1 Piracicaba e Região','url'=>'https://g1.globo.com/sp/piracicaba-regiao/','rss'=>'https://g1.globo.com/rss/g1/sp/piracicaba-regiao/','active'=>true],
+      ['type'=>'regional','city'=>'Região','name'=>'TodoDia Regional','url'=>'https://tododia.com.br/','rss'=>'https://tododia.com.br/feed/','active'=>true],
+      ['type'=>'regional','city'=>'Paulínia','name'=>'Notícias de Paulínia','url'=>'https://noticiasdepaulinia.com.br/','rss'=>'https://noticiasdepaulinia.com.br/feed/','active'=>true],
+      ['type'=>'regional','city'=>'Hortolândia','name'=>'Portal Hortolândia','url'=>'https://portalhortolandia.com.br/','rss'=>'https://portalhortolandia.com.br/feed/','active'=>true],
+      ['type'=>'regional','city'=>'Campinas','name'=>'Hora Campinas','url'=>'https://horacampinas.com.br/','rss'=>'https://horacampinas.com.br/feed/','active'=>true],
+      ['type'=>'regional','city'=>'Nova Odessa','name'=>'Jornal de Nova Odessa','url'=>'https://jornaldenovaodessa.com.br/','rss'=>'https://jornaldenovaodessa.com.br/feed/','active'=>true],
+      ['type'=>'oficial','city'=>'Sumaré','name'=>'Prefeitura de Sumaré','url'=>'https://sumare.sp.gov.br/','rss'=>'','active'=>true]
     ];
     tvs_save_json_file($file,$sources);
   }
