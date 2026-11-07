@@ -6,6 +6,7 @@ require_once dirname(__DIR__).'/config.php';
 require_once __DIR__.'/gemini.php';
 require_once __DIR__.'/monitor_lib.php';
 require_once dirname(__DIR__).'/includes/heygen_helper.php';
+require_once dirname(__DIR__).'/includes/voice_policy.php';
 $activeAdmin='reporter_ia';
 
 function rpia_h($s){ return htmlspecialchars((string)$s,ENT_QUOTES,'UTF-8'); }
@@ -58,7 +59,8 @@ function rpia_video_agent_prompt($job,$cfg){
   $isBoletim=!empty($job['boletim']); $presenter=tvs_clean_text($job['presenter_name']??''); $tone=tvs_clean_text($job['presenter_tone']??'');
   if($isBoletim){ if($presenter==='') $presenter='apresentador digital dos boletins da TV Sumaré'; if($tone==='') $tone='informal, próximo, ágil e confiável'; $presentation="Persona: {$presenter}. Tom: {$tone}. Apresente como conteúdo nativo de redes sociais: natural, direto, simpático e conversacional, sem perder precisão jornalística. Evite postura rígida de telejornal e linguagem excessivamente formal."; }
   else $presentation="Tom: apresentador de telejornal regional, claro, confiável, objetivo e sem sensacionalismo.";
-  return "Crie um vídeo jornalístico regional para a TV Sumaré, portal regional de notícias de Sumaré e Região Metropolitana de Campinas.\n\nFormato: {$orientation}. Duração alvo: {$durationTarget}. {$presentation}\n\nUse o avatar e a voz fornecidos na configuração deste vídeo. Use identidade visual limpa e moderna. Inclua legendas e cards discretos de apoio.\n\nTítulo da pauta: {$title}\nCidade/região: {$city}\nFonte: {$source}\n\nTexto falado obrigatório, sem inventar dados além deste roteiro:\n{$script}\n\nRegras editoriais: não cite que o conteúdo foi gerado por IA; não acrescente números, datas, nomes ou acusações que não estejam no roteiro; preserve a informação jornalística; finalize reforçando que o público acompanhe a TV Sumaré.";
+  $voicePolicy = tvs_voice_policy_prompt();
+  return "Crie um vídeo jornalístico regional para a TV Sumaré, portal regional de notícias de Sumaré e Região Metropolitana de Campinas.\n\nFormato: {$orientation}. Duração alvo: {$durationTarget}. {$presentation}\n\n{$voicePolicy}\n\nUse o avatar e a voz fornecidos na configuração deste vídeo. Use identidade visual limpa e moderna. Inclua legendas e cards discretos de apoio.\n\nTítulo da pauta: {$title}\nCidade/região: {$city}\nFonte: {$source}\n\nTexto falado obrigatório, sem inventar dados além deste roteiro:\n{$script}\n\nRegras editoriais: não cite que o conteúdo foi gerado por IA; não acrescente números, datas, nomes ou acusações que não estejam no roteiro; preserve a informação jornalística; finalize reforçando que o público acompanhe a TV Sumaré.";
 }
 function rpia_heygen_create($job,$cfg){
   $key=rpia_heygen_key($cfg); if($key==='') return ['ok'=>false,'error'=>'Configure a chave da HeyGen.'];
