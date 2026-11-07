@@ -148,3 +148,9 @@ Exigir evidência read-only do equivalente a `docker inspect --format '{{json .M
 - Consequências possíveis: sobrescrita de atualizações concorrentes, leitura de JSON parcialmente gravado, perda silenciosa de registros quando `json_decode` retorna null e fallback `[]` é usado. Não afirmar perda já ocorrida sem examinar dados.
 - A deduplicação por `social_pauta_id` no PR #58 é sequencial, **não atômica**. Manter PR draft até validar concorrência ou acrescentar serialização por lock compartilhado entre escritores.
 - Proposta: PR P0 independente com API de mutação transacional por arquivo (lock estável, re-leitura dentro do lock, temp + rename, validação JSON, falha explícita), fixtures de concorrência e migração gradual dos escritores. Não alterar globalmente `tvs_save_json_file` sem testes de compatibilidade.
+
+## PR #59 — fundação para persistência transacional
+- Criada branch `fix/json-atomic-storage-20261107`, PR #59 draft.
+- Novo `includes/json_atomic_storage.php`: bloqueio por arquivo `.lock`, re-leitura sob lock, validação estrita de lista JSON, escrita temporária e `rename` atômico. Exige que **todos os escritores** do mesmo arquivo adotem a API para serialização completa.
+- Novo `tests/json_atomic_storage_test.php`: atualização sequencial e rejeição de JSON corrompido; CI configurado. Teste multiprocesso/concorrência e resultado CI ainda pendentes.
+- Não substitui `tvs_save_json_file` nem modifica dados operacionais. Migração gradual por domínio após QA e confirmação de isolamento HML/prod.
