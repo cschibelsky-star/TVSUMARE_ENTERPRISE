@@ -1523,7 +1523,20 @@ function tvs_radar_candidates_for_city($city){
     $scity=$src['city']??'Região';
     // Fontes genéricas da região não devem ser consumidas como se fossem da primeira cidade do loop.
     // Isso estava fazendo notícias de Americana/Campinas entrarem como Sumaré e bloquearem as demais cidades por duplicidade.
-    if($scity==='Região' && !($volumeMode && preg_match('/google|regional|portal|notícias|noticias/iu', (string)($src['type']??'').' '.(string)($src['name']??'')))) continue;
+    // Fontes de cobertura regional (G1, TodoDia) abastecem a cidade se houver menção ao município no conteúdo
+    if($scity==='Região'){
+      foreach(tvs_capture_source_items($src) as $it){
+        $txt = tvs_clean_text(($it['title']??'').' '.($it['description']??''));
+        if(stripos($txt, $city) !== false){
+          $it['city']=$city;
+          $it['source']=$src['name']??'Fonte regional';
+          $it['source_type']=$src['type']??'regional';
+          $it['priority']=2;
+          $items[]=$it;
+        }
+      }
+      continue;
+    }
     if($scity && $scity!=='Região' && tvs_lower($scity)!==tvs_lower($city)) continue;
     foreach(tvs_capture_source_items($src) as $it){
       $it['city']=$city;
@@ -1679,8 +1692,16 @@ function tvs_build_material_from_candidate($cand){
 
   // Google News e alguns portais redirecionam/ bloqueiam extração; tentar abrir todos derruba o Radar por timeout.
   // Para esses casos, usamos o RSS como pauta e deixamos a IA/ fallback editorial construir matéria revisável.
-  if(!tvs_is_google_news_candidate($cand) && $url){
-    $ex=tvs_extract_article($url,$title);
+  // Tenta resolver a URL para o portal de origem para extrair texto integral e foto real
+  $targetUrl = $url;
+  if(tvs_is_google_news_candidate($cand)){
+    $resolved = tvs_radar_resolve_google_news_url($url);
+    if($resolved && !tvs_is_google_news_candidate(['url'=>$resolved])){
+      $targetUrl = $resolved;
+    }
+  }
+  if($targetUrl){
+    $ex=tvs_extract_article($targetUrl,$title);
     if(is_array($ex) && (tvs_strlen(($ex['body']??'').($ex['description']??''))>80)){
       $a=$ex;
       if(empty($a['title'])) $a['title']=$title;
