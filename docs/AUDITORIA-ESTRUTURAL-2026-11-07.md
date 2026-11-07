@@ -107,3 +107,9 @@ GitHub é fonte de verdade. PRs #54/#55 permanecem isolados; não misturar audit
 
 ### Critério de desbloqueio P0
 Exigir evidência read-only do equivalente a `docker inspect --format '{{json .Mounts}}'` para os dois containers, com apenas Source/Destination/Mode/RW, sem variáveis de ambiente nem credenciais. Comparar `data`, `uploads`, `videos` e `logs` por destino; verificar também mounts de scheduler. Se coincidirem, congelar testes que escrevam em JSON até definir isolamento. Identificar cron ativo e últimos eventos do Radar antes de criar/reiniciar scheduler.
+
+## Correção isolada criada em PR #58
+- Auditoria de `admin/redes.php` em `main`: a ação `?draft=<id>` gerava rascunho e gravava `data/rascunhos.json` em requisição GET, sem token CSRF específico e com possibilidade de duplicação por reabertura de link.
+- PR #58 draft (`fix/redes-draft-post-csrf-20261107`) troca por POST com campo CSRF validado em `admin/auth.php` e adiciona `social_pauta_id` para deduplicação sequencial. **Não houve deploy/merge**.
+- Testes PHP/integração ainda não executados; proteção contra concorrência entre requisições simultâneas não está resolvida. A mudança precisa de QA e aprovação antes de integrar.
+- `admin/cron_radar.php` declara trava lógica de uma execução por dia (`last_auto_date`) embora o Compose chame a cada 3600 segundos; isso explica frequência de chamadas versus frequência de geração, mas não comprova cron ativo. Inspecionar atomicidade da trava e logs antes de iniciar outro scheduler.
