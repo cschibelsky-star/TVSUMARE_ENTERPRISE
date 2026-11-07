@@ -38,6 +38,9 @@ jobs:
       - name: Testar armazenamento JSON atomico
         run: php tests/json_atomic_storage_test.php
 
+      - name: Testar concorrencia JSON multiprocesso
+        run: php tests/json_atomic_concurrency_test.php
+
       - name: Validar regras editoriais criticas
         shell: bash
         run: |
