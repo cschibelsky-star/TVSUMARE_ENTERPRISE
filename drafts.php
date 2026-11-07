@@ -102,6 +102,10 @@ if(($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST'){
       foreach($queue as $q){
         if(($q['source_draft_id']??null)===$id){$exists=true;break;}
       }
+      if($exists){
+        tvs_save_json_file($df,$drafts);
+        header('Location: drafts.php?edit='.urlencode($id).'&erro=ja-enviado-para-revisao'); exit;
+      }
       if(!$exists){
         $candidate['id']=uniqid('review_');
         $candidate['status']='aguardando';
@@ -110,6 +114,8 @@ if(($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST'){
         $queue[]=$candidate;
         tvs_save_json_file($qf,$queue);
       }
+      // Preserva rascunho como historico, mas impede reenvio de versao divergente.
+      $drafts[$idx]['editorial_queue_id']=$candidate['id']??($drafts[$idx]['editorial_queue_id']??'');
       $drafts[$idx]['status']='enviado_para_revisao';
       tvs_save_json_file($df,$drafts);
       header('Location: drafts.php?edit='.urlencode($id).'&saved=1'); exit;
