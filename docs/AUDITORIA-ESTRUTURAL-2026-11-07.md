@@ -113,3 +113,17 @@ Exigir evidência read-only do equivalente a `docker inspect --format '{{json .M
 - PR #58 draft (`fix/redes-draft-post-csrf-20261107`) troca por POST com campo CSRF validado em `admin/auth.php` e adiciona `social_pauta_id` para deduplicação sequencial. **Não houve deploy/merge**.
 - Testes PHP/integração ainda não executados; proteção contra concorrência entre requisições simultâneas não está resolvida. A mudança precisa de QA e aprovação antes de integrar.
 - `admin/cron_radar.php` declara trava lógica de uma execução por dia (`last_auto_date`) embora o Compose chame a cada 3600 segundos; isso explica frequência de chamadas versus frequência de geração, mas não comprova cron ativo. Inspecionar atomicidade da trava e logs antes de iniciar outro scheduler.
+
+## Desbloqueio do manifesto V5 e verificações — 07/11/2026
+- **ID canônico encontrado: `tvsumare`**. `project_manifest` V5 aponta `/srv/tvsumare`, repositório `cschibelsky-star/TVSUMARE_ENTERPRISE`, HML `tv-hml.vitrineiapro.com.br`, produção `tvsumare.com.br`, Compose `docker-compose.vps.yml`, diretórios compartilhados `data/uploads/videos/logs/cache/secrets`.
+- **Divergência:** manifesto V5 declara branch `fix/home-regular-production-20261026`, mas `project_git_status` informa checkout `main...origin/main` com seis untracked. Preservar árvore; não sincronizar automaticamente.
+- `project_docker_status` V5: `tvsumare_web` e `tvsumare_web_prod` healthy; serviços Compose `web` e `web_prod`. **Nenhum `radar_scheduler` ativo listado.** Não concluir ausência de cron externo.
+- `project_backup_status` V5: `backup_not_configured` para backup **específico de projeto**. O backup geral VPS inclui `/srv/tvsumare` e não substitui prova de restauração granular.
+- `project_php_lint` V5 em `admin/redes.php` do checkout VPS: **exit 0, sem erros de sintaxe**, em container efêmero `vitrine-core-hml-app:latest`. **Não testa o PR #58**, pois a branch ainda não foi aplicada ao checkout; não equivale a teste funcional.
+- `project_compose_service_status` para `radar_scheduler` e `web_prod`: `controlled_service_not_allowed`. Isso é limite do conector, não estado dos serviços.
+
+### Próximas ações permitidas
+1. Comparar efetivamente os mounts HML/prod via ferramenta de leitura autorizada; sem `docker inspect` exposto neste conector.
+2. Localizar logs e cron do Radar por leitura segura, sem ativar novos agendadores.
+3. Revisar manifesto divergente com branch GitHub antes de corrigir metadados.
+4. Configurar backup granular **somente após** avaliar destino, retenção, escopo e autorização específica.
