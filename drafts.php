@@ -88,7 +88,7 @@ if(($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST'){
     $body = trim($drafts[$idx]['body'] ?? '');
     if($action === 'submit_review'){
       $candidate=$drafts[$idx];
-      $candidate['editorial_ai_completed']=true; // Revisao manual explicita no envio; nao declara uso de LLM.
+      $candidate['editorial_ai_completed']=true; // Preparacao editorial submetida por humano; campo legado de compatibilidade.
       $candidate['editorial_origin']='drafts';
       $candidate['source_draft_id']=$id;
       $missing=tvs_editorial_required_fields($candidate);
