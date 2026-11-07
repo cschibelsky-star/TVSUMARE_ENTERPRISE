@@ -63,3 +63,22 @@ function tvs_json_update_list_atomic(string $path, callable $mutate): array
         fclose($lock);
     }
 }
+
+/**
+ * Append one entry and retain the newest $limit entries under the same lock.
+ * Intended for bounded editorial logs; legacy writers must be migrated
+ * separately if they also touch the same JSON path.
+ */
+function tvs_json_append_bounded_atomic(string $path, array $entry, int $limit): array
+{
+    if ($limit < 1) {
+        throw new InvalidArgumentException('JSON retention limit must be positive');
+    }
+    return tvs_json_update_list_atomic(
+        $path,
+        static function (array $entries) use ($entry, $limit): array {
+            $entries[] = $entry;
+            return array_slice($entries, -$limit);
+        }
+    );
+}
