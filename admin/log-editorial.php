@@ -213,10 +213,10 @@ $itemsToShow = array_slice($filtered, 0, 300);
   <td><b><?=h($r['city']??'Região')?></b></td>
   <td><small class="muted"><?=h($r['source']??'Fonte')?></small></td>
   <td>
-    <?php if(!empty($r['url'])): ?><a href="<?=h($r['url'])" target="_blank" rel="noopener" style="font-weight:700;color:#0f172a;text-decoration:none"><?=h($r['title']??'Sem título')?></a><?php else: ?><b><?=h($r['title']??'Sem título')?></b><?php endif; ?>
+    <?php if(!empty($r['url'])): ?><a href="<?=h($r['url'])?>" target="_blank" rel="noopener" style="font-weight:700;color:#0f172a;text-decoration:none"><?=h($r['title']??'Sem título')?></a><?php else: ?><b><?=h($r['title']??'Sem título')?></b><?php endif; ?>
     <?php if(!empty($r['image'])): ?>
       <div style="display:flex;align-items:center;gap:8px;margin-top:4px">
-        <img class="thumb" src="<?=h($r['image'])" alt="">
+        <img class="thumb" src="<?=h($r['image'])?>" alt="">
         <small class="muted">Tipo: <?=h($r['image_type']?:'detectada')?></small>
       </div>
     <?php endif; ?>
@@ -229,7 +229,7 @@ $itemsToShow = array_slice($filtered, 0, 300);
       <form method="post" onsubmit="return confirm('Recuperar esta pauta para a fila de aprovação?')" style="margin-top:4px">
         <?=tvs_csrf_field()?>
         <input type="hidden" name="action" value="recover">
-        <input type="hidden" name="discard_index" value="<?=h($r['discard_index'])">
+        <input type="hidden" name="discard_index" value="<?=h($r['discard_index'])?>">
         <button type="submit" class="recover-btn">↩ Recuperar para Fila</button>
       </form>
     <?php endif; ?>
