@@ -71,3 +71,17 @@ GitHub é fonte de verdade. PRs #54/#55 permanecem isolados; não misturar audit
 2. Conferir `/health.php` HML e agendamento `tvsumare_radar_scheduler` com evidência atual.
 3. Validar backups específicos de JSON/uploads e plano de restauração isolado; não restaurar em produção.
 4. Auditar caminhos de publicação direta e concorrência de escrita JSON; testar em ambiente descartável.
+
+## Verificações adicionais — 2026-11-07, leitura somente
+- `tvsumare_health` V4 confirma `/srv/tvsumare` existente e gravável e `/srv/backups/tvsumare` configurado; não confirma integridade do backup específico.
+- `docker_status` V4 confirma `tvsumare_web` healthy, **`tvsumare_web_prod` healthy** e `tvsumare_radar_prod_candidate` Exited (0) há aproximadamente 6 dias. Não concluir que o scheduler está inoperante sem inspecionar cron/timers; container pode ser one-shot.
+- `hostgator_health` V4 confirma conexão remota disponível, mas a lista de raízes permitidas não inclui uma raiz TV Sumaré específica; não foi auditado conteúdo de produção HostGator.
+- `tvsumare_php_lint` V4 falhou (exit 127, `php: No such file or directory`), não considerar lint aprovado. Avaliar execução de lint em container PHP com rota permitida ou CI.
+- `container_status` V4 retornou 403 `container_not_allowed` para os nomes TV; preferir `docker_status` read-only e não contornar a política do broker.
+- HML `tvsumare_web` foi recriado entre consultas no mesmo dia; investigar motivo e logs com ferramentas autorizadas antes de afirmar estabilidade histórica.
+
+### Riscos novos
+1. **P0**: confirmar roteamento de produção VPS vs HostGator e origem canônica de publicação para evitar escrita dupla.
+2. **P0**: confirmar scheduler do Radar, execução real e logs, sem reiniciar.
+3. **P1**: estabelecer lint/testes no ambiente PHP real, sem depender de `php` no host.
+4. **P1**: auditar divergência de deploy e dados entre `tvsumare_web` e `tvsumare_web_prod`.
