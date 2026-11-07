@@ -85,3 +85,16 @@ GitHub é fonte de verdade. PRs #54/#55 permanecem isolados; não misturar audit
 2. **P0**: confirmar scheduler do Radar, execução real e logs, sem reiniciar.
 3. **P1**: estabelecer lint/testes no ambiente PHP real, sem depender de `php` no host.
 4. **P1**: auditar divergência de deploy e dados entre `tvsumare_web` e `tvsumare_web_prod`.
+
+## Evidências de roteamento, scheduler e health (07/11/2026)
+- `docker-compose.vps.yml` em `main` define `tvsumare_web` e `tvsumare_radar_scheduler`, ambos com `TVSUMARE_ENV: homologation`. Scheduler previsto: loop `php /var/www/html/admin/cron_radar.php; sleep 3600`. **A presença do serviço no Compose não comprova que esteja rodando**; o inventário Docker atual não exibiu `tvsumare_radar_scheduler` ativo.
+- O Compose monta `/srv/tvsumare/shared/data`, `uploads`, `logs` na homologação. **P0:** conferir os mounts de `tvsumare_web_prod`; se apontarem aos mesmos caminhos, há risco de HML e produção compartilharem dados vivos. Não foi comprovado compartilhamento com produção.
+- `health.php` considera saudável apenas `data/` existente e legível. Status Docker healthy **não verifica scheduler, conectividade de fonte, publicação, filas, gravação JSON ou consistência editorial**.
+- `AUDIT_STATUS.md` (2026-09-12) relata produção HostGator e cron horário; são informações históricas, não evidência atual de execução.
+- `hostgator_dns_status` para `tv-hml.vitrineiapro.com.br` retornou A `143.95.219.238`; validar roteamento DNS/Traefik com testes autorizados antes de atribuir destino. Consulta `tvsumare.com.br` retornou `hostname_not_allowed` (403), não inferir destino.
+
+### Gate P0 atualizado
+- Verificar isolamento real de volumes HML/prod e quem escreve `noticias.json` e `materias_aprovacao.json`.
+- Identificar scheduler ativo: Compose, cron HostGator, logs e idempotência. Não iniciar um segundo scheduler sem evidência.
+- Melhorar health em PR separado para health de dependências, sem expor segredos e sem chamadas pagas.
+- Não confundir sucesso do health básico com prontidão editorial.
