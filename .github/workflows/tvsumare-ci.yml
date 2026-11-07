@@ -41,6 +41,9 @@ jobs:
       - name: Testar concorrencia JSON multiprocesso
         run: php tests/json_atomic_concurrency_test.php
 
+      - name: Testar deduplicacao concorrente de pautas
+        run: php tests/json_atomic_dedupe_test.php
+
       - name: Validar regras editoriais criticas
         shell: bash
         run: |
