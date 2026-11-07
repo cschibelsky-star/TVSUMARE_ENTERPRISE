@@ -159,3 +159,9 @@ Exigir evidência read-only do equivalente a `docker inspect --format '{{json .M
 - GitHub Actions run `42423579519`, head anterior `5097f7fa632f1461451b8a5545feb0938ffee8f5`: `completed/success`.
 - Adicionado `tests/json_atomic_concurrency_test.php` no PR #59: cinco processos PHP, 40 atualizações cada, total esperado 200 registros; teste utiliza somente diretório temporário e falha se perder atualizações.
 - Workflow atualizado para executar o teste multiprocesso; **resultado do CI do novo head ainda pendente**. A aprovação anterior não abrange o novo teste.
+
+## PR #59 — integração incremental do registro de pautas descartadas
+- CI do commit `eeabffc4b150219839145437af47ee747ae993d3`: GitHub Actions run `42424235673` `completed/success`. Etapas PHP lint, política editorial, atomic JSON, concorrência (5 x 40), deduplicação simultânea, guardas editoriais e Docker smoke aprovadas.
+- Integração inicial em `admin/monitor_lib.php`: `tvs_monitor_discard` agora usa `tvs_json_append_bounded_atomic` para atualizar `data/pautas_descartadas.json`, com retenção dos 300 registros mais recentes.
+- Novo teste `tests/radar_discard_atomic_test.php`: retenção/ordenação e recusa de JSON corrompido; etapa CI acrescentada. Head `edb460a21cfda9259e89f982a8a819a1cf248450`, run `42424529064` iniciada, resultado ainda não confirmado no momento do registro.
+- Atenção: ainda podem existir escritores legados da mesma lista e a proteção só serializa os caminhos que utilizarem a mesma API. Não está liberado deploy/merge; falta inspeção do uso de `pautas_descartadas.json` em outras rotas e isolamento HML/PROD.
