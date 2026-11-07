@@ -98,3 +98,12 @@ GitHub é fonte de verdade. PRs #54/#55 permanecem isolados; não misturar audit
 - Identificar scheduler ativo: Compose, cron HostGator, logs e idempotência. Não iniciar um segundo scheduler sem evidência.
 - Melhorar health em PR separado para health de dependências, sem expor segredos e sem chamadas pagas.
 - Não confundir sucesso do health básico com prontidão editorial.
+
+## Inspeção de volumes efetivos — 07/11/2026
+- `docker_status` V4: `tvsumare_web` (HML) e `tvsumare_web_prod` (VPS produção) possuem **quatro mounts cada**. O retorno do broker abrevia todos como `/srv/tvsumare/…`; não fornece o destino completo. Portanto, **não foi possível confirmar nem excluir compartilhamento de volumes**.
+- Ambos os containers apresentam label `com.docker.compose.project.config_files=/srv/tvsumare/repository/docker-compose.vps.yml`. Essa label é metadado da criação, não prova que a configuração versionada atual corresponda exatamente ao runtime.
+- `tvsumare_radar_prod_candidate` aparece Exited (0) e com três mounts; sem evidência suficiente para concluir que a tarefa agendada esteja parada, pois pode haver cron externo ou execução pontual.
+- Tentativa de consultar logs de containers via V4 não retornou evidência utilizável dentro do tempo disponível; **não alegar inspeção de logs concluída**.
+
+### Critério de desbloqueio P0
+Exigir evidência read-only do equivalente a `docker inspect --format '{{json .Mounts}}'` para os dois containers, com apenas Source/Destination/Mode/RW, sem variáveis de ambiente nem credenciais. Comparar `data`, `uploads`, `videos` e `logs` por destino; verificar também mounts de scheduler. Se coincidirem, congelar testes que escrevam em JSON até definir isolamento. Identificar cron ativo e últimos eventos do Radar antes de criar/reiniciar scheduler.
