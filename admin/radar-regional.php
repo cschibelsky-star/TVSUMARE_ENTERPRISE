@@ -1841,8 +1841,12 @@ function tvs_generate_ready_article($city,$cand){
   $requestedCity=$city;
   $mat=tvs_build_material_from_candidate($cand);
   // A pauta sem texto integral da fonte nao e materia pronta nem deve consumir LLM.
-  $sourceBody=trim((string)($mat['text']??''));
-  if(tvs_editorial_text_length($sourceBody)<350){
+  // Somente corpo realmente extraido da pagina original comprova apuracao.
+  // RSS/Google News pode conter snippet longo e nao deve passar por tamanho apenas.
+  $sourceBody=trim((string)($mat['article']['body']??''));
+  $sourceVerified=!tvs_is_google_news_candidate($cand)
+    && tvs_editorial_text_length($sourceBody)>=350;
+  if(!$sourceVerified){
     return [
       'id'=>uniqid('pauta_'),'title'=>$cand['title']??'','body'=>'',
       'source_body'=>$sourceBody,'source'=>$cand['source']??'Fonte consultada',
@@ -1850,7 +1854,7 @@ function tvs_generate_ready_article($city,$cand){
       'category'=>$cand['category']??'Cidade',
       'status'=>'em_edicao','editorial_state'=>'em_edicao',
       'editorial_ai_completed'=>false,'review_level'=>'precisa_revisao',
-      'editorial_status'=>'Pauta: fonte insuficiente',
+      'editorial_status'=>'Pauta: fonte integral nao comprovada',
       'image_source_type'=>'category:fallback',
       'image_review_required'=>1,'created_at'=>date('c')
     ];
@@ -1962,6 +1966,10 @@ function tvs_generate_ready_article($city,$cand){
     $result['editorial_status']='Revisão de imagem';
   }
   $result['created_at']=date('c');
+  if(!empty($result['image_review_required']) || ($result['image_source_type']??'')==='category:fallback'){
+    $result['image_review_required']=1;
+    $result['editorial_status']='Revisar imagem ilustrativa';
+  }
   if(!tvs_editorial_article_ready($result)){
     $result['status']='em_edicao'; $result['editorial_state']='em_edicao';
     $result['editorial_status']='Pauta: redacao incompleta';
