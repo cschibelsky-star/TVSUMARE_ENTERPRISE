@@ -439,7 +439,7 @@ function tvs_parse_rss($rssUrl, $src){
     $itemData = ['title'=>$title,'url'=>$link,'description'=>$desc,'published_at'=>$pub,'source'=>$src['name']??'', 'city'=>$src['city']??'Região'];
     if($img && tvs_is_valid_image_url($img)) $itemData['image'] = $img;
     $items[] = $itemData;
-    if(count($items)>=5) break;
+    if(count($items)>=15) break;
   }
   return $items;
 }

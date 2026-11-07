@@ -125,7 +125,7 @@ function tvs_category_from_text($text){
   $map=[
     'Saúde'=>['saúde','ubs','upa','hospital','vacina','vacinação','médico','atendimento','dengue','leishmaniose','zoonoses','exame','exames','doença','doenças','surto','epidemia','vírus','infecção','tratamento','cachorro','cão','cães','gato','animais','castração','veterinár','farmácia'],
     'Educação'=>['educação','escola','creche','aluno','matrícula','curso','professor','ensino','universidade','vestibular','faculdade'],
-    'Segurança'=>['segurança','polícia','policial','guarda municipal','gcm','prisão','preso','roubo','furto','operação','violência','homicídio','assalto','tráfico'],
+    'Segurança'=>['segurança','polícia','policial','guarda municipal','gcm','prisão','preso','roubo','furto','operação','violência','homicídio','assalto','tráfico','temporal','alagamento','alagamentos','enchente','chuva','chuvas fortes','defesa civil','desabamento','vendaval'],
     'Esportes'=>['esporte','esportes','futebol','campeonato','atleta','jogos','competição','torneio','judô','judo','corrida'],
     'Empregos'=>['emprego','empregos','vaga','vagas','trabalho','processo seletivo','qualificação','qualificacao','pat','mercado livre','contratação','contratacao','oportunidade','currículo','curriculo','rh'],
     'Cultura'=>['cultura','show','teatro','evento','festival','música','turismo','feira','gastronomia','yakisoba'],
@@ -271,8 +271,9 @@ function tvs_radar_candidate_region_ok($cand,$requestedCity,&$reason=''){
   $title=$cand['title']??''; $desc=$cand['description']??'';
   $fact=tvs_radar_fact_text($cand);
   if(tvs_radar_stale_event_signal($title,$desc)){ $reason='Evento antigo/sazonal detectado'; return false; }
-  if(tvs_radar_has_outside_city_signal($fact)){ $reason='Fora da região monitorada'; return false; }
   $mentionsAllowed=tvs_radar_text_mentions_allowed_city($fact);
+  // Se cita expressamente cidade monitorada da RMC, tem prevalência sobre menções secundárias a locais de eventos/provas fora
+  if(!$mentionsAllowed && tvs_radar_has_outside_city_signal($fact)){ $reason='Fora da região monitorada'; return false; }
   // v3.1: candidatos de agregador avançam para resolução do link canônico e validação no corpo
   if(!$mentionsAllowed && !tvs_is_google_news_candidate($cand) && !tvs_radar_source_matches_city($cand,$requestedCity)){
     $reason='Sem cidade monitorada identificável no fato nem fonte local compatível';
