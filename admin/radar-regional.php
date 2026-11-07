@@ -1948,37 +1948,31 @@ function tvs_generate_ready_article($city,$cand){
     return null;
   }
 
-  // Issue #53: Trava de integridade editorial. Exige apuração mínima na fonte (>= 260 caracteres)
-  // para impedir que manchetes isoladas sem corpo virem matérias na fila de aprovação.
+  // Base factual consistente: exige pelo menos 180 caracteres de apuração na fonte
+  // para permitir que a IA elabore reportagens completas e roteirize vídeos robustos.
   $sourceText = trim((string)($mat['text'] ?? ($cand['description'] ?? '')));
-  if(tvs_strlen($sourceText) < 260){
-    tvs_radar_discard($cand,$city,'Texto insuficiente na fonte (<260 caracteres): retida na triagem');
-    tvs_radar_log_event($cand['title']??'', $cand['source']??'Fonte consultada', $city, 'DESCARTADA', 'Texto insuficiente na fonte (<260 caracteres): retida na triagem', $cand['url']??'', ['rule'=>'CONTEUDO_INSUFICIENTE']);
+  if(tvs_strlen($sourceText) < 180){
+    tvs_radar_discard($cand,$city,'Base factual insuficiente na fonte (<180 caracteres): retida na triagem');
+    tvs_radar_log_event($cand['title']??'', $cand['source']??'Fonte consultada', $city, 'DESCARTADA', 'Base factual insuficiente na fonte (<180 caracteres): retida na triagem', $cand['url']??'', ['rule'=>'BASE_FACTUAL_INSUFICIENTE']);
     return null;
   }
   $facts=tvs_extract_facts_block($mat['title']??($cand['title']??''),$city,$category,$mat['text']??'',($cand['source']??'Fonte consultada'),($cand['url']??''));
   $material="CIDADE: {$city}\nCATEGORIA: {$category}\nFONTE: ".($cand['source']??'Fonte consultada')."\nURL: ".($cand['url']??'')."\nTÍTULO ORIGINAL: ".($mat['title']??'')."\n\n".$facts."\n\nCONTEÚDO COMPLETO COLETADO:\n".tvs_substr($mat['text']??'',0,10000);
 
   // Modo produtivo: itens do Google News com texto curto entram como nota revisável,
-  // sem gastar chamada Gemini em cada manchete. Isso aumenta volume sem causar 504.
-  $isGoogle = function_exists('tvs_is_google_news_candidate') ? tvs_is_google_news_candidate($cand) : false;
-  if($isGoogle && tvs_strlen($mat['text']??'') < 320){
-    $result=tvs_build_reviewable_article_without_ai($city,$category,$cand,$mat);
-  } else {
-    $result=gemini_reporter_article($gemini_api_key??'', $material, ['city'=>$city,'theme'=>$category,'category'=>$category]);
-    if(!$result){
-      // Se a IA falhar, entra em revisão quando houver material real suficiente.
-      $result=tvs_build_reviewable_article_without_ai($city,$category,$cand,$mat);
+  // Toda matéria aprovável passa OBRIGATORIAMENTE pela redação da IA (Claude Opus 5 / Editor IA)
+  // para garantir texto jornalístico robusto, lead completo e roteirização pronta para vídeo.
+  $result = gemini_reporter_article($gemini_api_key ?? '', $material, ['city'=>$city, 'theme'=>$category, 'category'=>$category]);
+  if(!$result){
+    // Fallback de contingência: se a IA estiver sem resposta, só aceita se houver texto apurado longo (>= 450 chars)
+    if(tvs_strlen($sourceText) >= 450){
+      $result = tvs_build_reviewable_article_without_ai($city, $category, $cand, $mat);
     }
   }
   if(!$result){
-    $result=tvs_build_reviewable_article_without_ai($city,$category,$cand,$mat);
-  }
-  if(!$result){
-    tvs_radar_log_event($cand['title']??'', $cand['source']??'Fonte consultada', $city, 'REVISÃO', 'IA indisponível: enviado para revisão quando houver pauta mínima', $cand['url']??'');
+    tvs_radar_log_event($cand['title']??'', $cand['source']??'Fonte consultada', $city, 'REVISÃO', 'Pauta retida: aguardando redação completa da IA', $cand['url']??'', ['rule'=>'AGUARDANDO_IA']);
     return null;
   }
-  $result=tvs_sanitize_ai_article($result,['city'=>$city,'name'=>$cand['source']??'Fonte consultada'],['title'=>$cand['title']??'','description'=>$cand['description']??'','body'=>$mat['text']??'','url'=>$cand['url']??'']);
   if(tvs_is_non_news_candidate($result['title']??'', $cand['url']??'', ($result['subtitle']??'').' '.($result['body']??''))){
     tvs_radar_discard($cand,$city,'Texto institucional detectado, não é matéria jornalística');
     return null;
