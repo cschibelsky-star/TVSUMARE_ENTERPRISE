@@ -113,8 +113,9 @@ function tvs_fetch_url($url){
   $ch=curl_init((string)$url);
   curl_setopt_array($ch,$options+[
     CURLOPT_RETURNTRANSFER=>true,
-    CURLOPT_USERAGENT=>'TVSumareBot/2.0',
-    CURLOPT_HTTPHEADER=>['Accept: text/html,application/xhtml+xml,application/rss+xml']
+    CURLOPT_FOLLOWLOCATION=>true,
+    CURLOPT_USERAGENT=>'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+    CURLOPT_HTTPHEADER=>['Accept: text/html,application/xhtml+xml,application/rss+xml,application/xml;q=0.9,*/*;q=0.8']
   ]);
   $html=curl_exec($ch);
   $http=(int)curl_getinfo($ch,CURLINFO_HTTP_CODE);
