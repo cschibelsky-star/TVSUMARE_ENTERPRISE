@@ -1568,6 +1568,11 @@ function tvs_radar_candidates_for_city($city){
   foreach($items as $it){
     $url=$it['url']??''; $title=$it['title']??'';
     if(!$url || !$title || isset($seen[$url])) continue;
+    // Se já foi descartada anteriormente, ignora na hora sem gastar processamento
+    if(tvs_radar_is_blacklisted($url, $title)){
+      $seen[$url]=1;
+      continue;
+    }
     if(tvs_is_boilerplate($title)) continue;
 
     $falseReason='';
@@ -1738,22 +1743,77 @@ function tvs_radar_has_generic_text($text){
   $bad='~(Uma informação divulgada por|O tema foi classificado|Antes da publicação final|Moradores interessados devem acompanhar|A TV Sumar[eé] identificou|rascunho|monitor regional|conte[uú]do gerado automaticamente|redação deve conferir|fonte consultada para confirmar|entrou no acompanhamento regional|permanece em revisão editorial|A pauta tem relação|A ocorrência foi registrada em .* acompanhamento regional|Segundo informações publicadas por .* pode ter impacto direto|Novas informações oficiais poderão detalhar|o assunto envolve .* e pode ter impacto direto|fonte original .* serviços públicos ou atividades da região)~iu';
   return preg_match($bad,(string)$text)===1;
 }
+
+function tvs_radar_blacklist_file(){
+  return dirname(__DIR__).'/data/radar_blacklist_hashes.json';
+}
+
+function tvs_radar_get_blacklist(){
+  static $blacklist = null;
+  if($blacklist !== null) return $blacklist;
+  $file = tvs_radar_blacklist_file();
+  $data = tvs_read_json_file($file);
+  if(!is_array($data)) $data = [];
+
+  // Purga automática de hashes com mais de 20 dias para manter arquivo ultraleve
+  $cutoff = time() - (20 * 86400);
+  $cleaned = [];
+  $changed = false;
+  foreach($data as $hash => $ts){
+    if(is_int($ts) && $ts >= $cutoff){
+      $cleaned[$hash] = $ts;
+    } else {
+      $changed = true;
+    }
+  }
+  if($changed){
+    tvs_save_json_file($file, $cleaned);
+  }
+  return $blacklist = $cleaned;
+}
+
+function tvs_radar_blacklist_item($url, $title){
+  $file = tvs_radar_blacklist_file();
+  $data = tvs_radar_get_blacklist();
+  $now = time();
+  $u = trim((string)$url);
+  if($u !== '') $data[md5($u)] = $now;
+  $fp = tvs_radar_title_fingerprint((string)$title);
+  if($fp !== '') $data[md5($fp)] = $now;
+  tvs_save_json_file($file, $data);
+}
+
+function tvs_radar_is_blacklisted($url, $title){
+  $bl = tvs_radar_get_blacklist();
+  $u = trim((string)$url);
+  if($u !== '' && isset($bl[md5($u)])) return true;
+  $fp = tvs_radar_title_fingerprint((string)$title);
+  if($fp !== '' && isset($bl[md5($fp)])) return true;
+  return false;
+}
+
 function tvs_radar_discard($cand,$city,$reason){
+  $url = $cand['url']??($cand['source_url']??'');
+  $title = $cand['title']??'';
+  // Grava o hash na blacklist definitiva para NUNCA mais ser pesquisada/processada
+  tvs_radar_blacklist_item($url, $title);
+
   $file=dirname(__DIR__).'/data/pautas_descartadas.json';
   $items=tvs_read_json_file($file); if(!is_array($items)) $items=[];
   $row=is_array($cand)?$cand:[];
   $row['original_id']=$cand['id']??'';
   $row['id']=uniqid('desc_');
   $row['city']=$city;
-  $row['title']=$cand['title']??'';
-  $row['url']=$cand['url']??($cand['source_url']??'');
+  $row['title']=$title;
+  $row['url']=$url;
   $row['source']=$cand['source']??'Fonte consultada';
   $row['reason']=$reason;
   $row['created_at']=date('c');
   $items[]=$row;
-  $items=array_slice($items,-500);
+  // Mantém apenas os últimos 30 descartes para recuperação acidental recente, sem inchar o disco
+  $items=array_slice($items,-30);
   tvs_save_json_file($file,$items);
-  if(function_exists('tvs_radar_log_event')) tvs_radar_log_event($row['title'], $row['source'], $city, 'DESCARTADA', $reason, $row['url']);
+  if(function_exists('tvs_radar_log_event')) tvs_radar_log_event($title, $row['source'], $city, 'DESCARTADA', $reason, $url);
 }
 function tvs_radar_quality_ok(&$article,&$reason=''){
   if(!is_array($article)){ $reason='IA não retornou matéria válida'; return false; }
