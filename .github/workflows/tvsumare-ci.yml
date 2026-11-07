@@ -35,6 +35,9 @@ jobs:
       - name: Teste da politica editorial V3
         run: php tests/editorial_policy_v3_test.php
 
+      - name: Teste de contrato de seguranca das pautas sociais
+        run: php tests/social_draft_security_contract_test.php
+
       - name: Validar regras editoriais criticas
         shell: bash
         run: |
