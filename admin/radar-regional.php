@@ -1245,6 +1245,18 @@ function tvs_radar_candidate_category($item){
     (string)($item['description']??'')
   );
 
+  // Segurança tem prioridade imediata sobre pautas policiais, prisões, acidentes e ocorrências
+  if(preg_match(
+    '~\b(pol[ií]cia|policial|militares?|civis|guarda\s+municipal|gcm|'
+    .'pris[aã]o|preso|presos|roubo|furto|assalto|homic[ií]dio|assassinato|'
+    .'tr[aá]fico|drogas?|opera[cç][aã]o\s+policial|investiga[cç][aã]o|'
+    .'acidente|colis[aã]o|capotamento|morte|morre|morreu|v[ií]tima|'
+    .'temporal|alagamento|alagamentos|enchente|chuva|defesa\s+civil|desabamento)\b~iu',
+    $text
+  )){
+    return 'Segurança';
+  }
+
   // Contextos compostos têm prioridade sobre palavras isoladas.
   if(preg_match(
     '~\b(empreendedorismo|emprego|empregos|vagas?|pat|'
