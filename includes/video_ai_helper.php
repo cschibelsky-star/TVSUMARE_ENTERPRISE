@@ -132,26 +132,37 @@ if (!function_exists('tvp_generate_script')) {
     return 'Cristian Schibelsky — Editor Responsável';
   }
   function tvp_script_opening_for_profile($profile,$cat){
-    if($profile==='negocios_empregos') return 'Boa noite. O boletim de Empregos e Negócios da TV Sumaré começa com uma oportunidade para quem busca trabalho na região.';
-    if($profile==='servicos_publicos') return 'Boa noite. A TV Sumaré traz uma atualização de serviço público para moradores da região.';
-    return 'Boa noite. A TV Sumaré acompanha os principais fatos de Sumaré e da região.';
+    if($profile==='negocios_empregos') return 'O boletim de Empregos e Negócios da TV Sumaré traz uma atualização importante para quem busca oportunidades na região.';
+    if($profile==='servicos_publicos') return 'A TV Sumaré traz uma atualização essencial de serviço público e interesse da população regional.';
+    return 'A TV Sumaré acompanha os principais acontecimentos de Sumaré e de toda a Região Metropolitana de Campinas.';
   }
   function tvp_polish_script($script,$job){
     $script=tvp_clean($script);
-    // Remove aberturas artificiais típicas de IA e frases de atendimento.
+    // Remove saudações temporais e frases clichês artificiais de IA.
     $bad=[
+      'Boa noite, telespectadores da TV Sumaré.',
+      'Bom dia, telespectadores da TV Sumaré.',
+      'Boa tarde, telespectadores da TV Sumaré.',
+      'Boa noite, telespectadores.',
+      'Bom dia, telespectadores.',
+      'Boa tarde, telespectadores.',
+      'Boa noite.',
+      'Bom dia.',
+      'Boa tarde.',
+      'Olá, boa noite.',
+      'Olá, bom dia.',
+      'Olá, boa tarde.',
+      'Olá, telespectadores.',
       'É um prazer ter você conosco na TV Sumaré.',
       'E um prazer ter você conosco na TV Sumaré.',
       'É um prazer ter você conosco.',
-      'E um prazer ter você conosco.',
-      'Olá, telespectadores.',
-      'Boa noite, telespectadores da TV Sumaré.'
+      'E um prazer ter você conosco.'
     ];
     $script=str_replace($bad,'',$script);
     $script=preg_replace('/\s+/u',' ',trim($script));
     $profile=$job['presenter_profile']??tvp_avatar_profile_for_category($job['category']??'');
-    // Evita roteiro que começa truncado direto pelo título, como "Sumaré com duas mil vagas...".
-    if(!preg_match('/^(Boa noite|Olá|A TV Sumaré|Confira|Nesta edição)/iu',$script)){
+    // Evita roteiro que começa truncado direto pelo título sem introdução institucional.
+    if(!preg_match('/^(A TV Sumaré|O boletim|Confira|Nesta edição|Acompanhe)/iu',$script)){
       $script=tvp_script_opening_for_profile($profile,$job['category']??'').' '.$script;
     }
     if(stripos($script,'Cristian Schibelsky')===false){
@@ -176,24 +187,29 @@ if (!function_exists('tvp_generate_script')) {
     $details = array_slice($sentences, 1, 4);
     $detailText = !empty($details) ? implode(' ', $details) : $lead;
 
-    // Bloco de impacto e contexto regional
-    $context = "A iniciativa representa um passo importante para a estrutura pública de {$city} e de toda a nossa região, trazendo mais agilidade nos atendimentos e melhorias diretas para a população.";
-    if(preg_match('~sa[uú]de|hospital|ubs|policl[ií]nica|exame|consulta~iu', $cat.' '.$title)){
+    // Bloco de impacto e contexto regional calibrado por editoria
+    $context = "A iniciativa representa um passo importante para a comunidade de {$city} e de toda a nossa região, mobilizando a atenção pública e acompanhamento institucional.";
+    $service = "A recomendação para os moradores é acompanhar as atualizações e os canais oficiais para conferir cronogramas, orientações e novas determinações.";
+
+    if(preg_match('~pol[ií]tica|justi[cç]a|r[eé]u|investiga[cç][aã]o|minist[eé]rio p[uú]blico|c[aâ]mara|prefeito|vereador|elei[cç]~iu', $cat.' '.$title.' '.$body)){
+      $context = "O processo segue em tramitação no Poder Judiciário, e as decisões permanecem sob rigoroso acompanhamento das autoridades competentes e dos órgãos fiscalizadores.";
+      $service = "O espaço segue aberto para a manifestação formal das defesas e das partes citadas, conforme determina o devido processo legal.";
+    } elseif(preg_match('~sa[uú]de|hospital|ubs|policl[ií]nica|exame|consulta~iu', $cat.' '.$title.' '.$body)){
       $context = "A ampliação dos serviços de saúde tem como objetivo agilizar o diagnóstico de pacientes, desafogar as unidades de pronto atendimento e reduzir o tempo de espera por exames e consultas especializadas nos bairros de {$city}.";
-    } elseif(preg_match('~emprego|vaga|trabalho|concurso|processo seletivo~iu', $cat.' '.$title)){
+      $service = "A recomendação para os moradores é acompanhar as atualizações e os canais oficiais para conferir cronogramas, horários de funcionamento e documentos necessários para atendimento.";
+    } elseif(preg_match('~emprego|vaga|trabalho|concurso|processo seletivo~iu', $cat.' '.$title.' '.$body)){
       $context = "A oferta de novas vagas movimenta a economia local e representa uma oportunidade essencial para trabalhadores que buscam colocação ou recolocação no mercado de trabalho regional.";
-    } elseif(preg_match('~seguran[cç]a|pol[ií]cia|guarda|defesa civil~iu', $cat.' '.$title)){
-      $context = "As equipes operacionais seguem atuando no local para garantir a segurança da comunidade, o monitoramento contínuo das áreas afetadas e o rápido restabelecimento da normalidade.";
+      $service = "Os interessados devem consultar os canais de atendimento e os postos oficiais para verificar os pré-requisitos e prazos de candidatura.";
+    } elseif(preg_match('~seguran[cç]a|pol[ií]cia|guarda|defesa civil|tr[aá]fico|roubo|furto|crime~iu', $cat.' '.$title.' '.$body)){
+      $context = "As equipes operacionais e as forças de segurança pública mantêm a vigilância permanente para garantir a ordem, a apuração dos fatos e a tranquilidade da comunidade.";
+      $service = "Informações que possam auxiliar as investigações podem ser encaminhadas de forma anônima aos canais oficiais de denúncia.";
     }
 
-    // Orientação ao cidadão
-    $service = "A recomendação para os moradores é acompanhar as atualizações e os canais oficiais para conferir cronogramas, horários de funcionamento e documentos necessários para atendimento.";
-
-    // Encerramento de bancada oficial
+    // Encerramento de bancada oficial atemporal
     $closure = "A cobertura completa desta e de outras notícias regionais você acompanha no portal tvsumare.com.br. Eu sou Cristian Schibelsky, para a TV Sumaré.";
 
     if($profile==='negocios_empregos'){
-      $script = "Boa noite. O boletim de Empregos e Negócios da TV Sumaré traz uma atualização importante para a nossa região.\n\n" .
+      $script = "O boletim de Empregos e Negócios da TV Sumaré traz uma atualização importante para a nossa região.\n\n" .
         "{$lead}\n\n" .
         "{$detailText}\n\n" .
         "{$context}\n\n" .
@@ -203,7 +219,7 @@ if (!function_exists('tvp_generate_script')) {
     }
 
     if($profile==='servicos_publicos'){
-      $script = "Boa noite. A TV Sumaré traz uma atualização essencial sobre os serviços públicos e obras em {$city}.\n\n" .
+      $script = "A TV Sumaré traz uma atualização essencial sobre os serviços públicos e obras em {$city}.\n\n" .
         "{$lead}\n\n" .
         "{$detailText}\n\n" .
         "{$context}\n\n" .
@@ -212,7 +228,7 @@ if (!function_exists('tvp_generate_script')) {
       return tvp_clean($script);
     }
 
-    $script = "Boa noite. A TV Sumaré acompanha os principais acontecimentos de {$city} e de toda a Região Metropolitana de Campinas.\n\n" .
+    $script = "A TV Sumaré acompanha os principais acontecimentos de {$city} e de toda a Região Metropolitana de Campinas.\n\n" .
       "{$lead}\n\n" .
       "{$detailText}\n\n" .
       "{$context}\n\n" .

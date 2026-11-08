@@ -52,20 +52,27 @@ function rpia_local_script($news){
   $details = array_slice($sentences, 1, 4);
   $detailText = !empty($details) ? implode(' ', $details) : $lead;
 
-  // Contexto de relevância regional
-  $context = "A iniciativa representa um passo importante para a infraestrutura pública de {$city} e de toda a nossa região, trazendo melhorias diretas para a comunidade.";
-  if(preg_match('~sa[uú]de|hospital|ubs|policl[ií]nica|exame|consulta~iu', $cat.' '.$title)){
+  // Contexto e serviço calibrados por editoria (sem clichês)
+  $context = "A iniciativa representa um passo importante para a comunidade de {$city} e de toda a nossa região, mobilizando a atenção pública e acompanhamento institucional.";
+  $service = "A recomendação para os moradores é acompanhar as atualizações e os canais oficiais para conferir cronogramas, orientações e novas determinações.";
+
+  if(preg_match('~pol[ií]tica|justi[cç]a|r[eé]u|investiga[cç][aã]o|minist[eé]rio p[uú]blico|c[aâ]mara|prefeito|vereador|elei[cç]~iu', $cat.' '.$title.' '.$body)){
+    $context = "O processo segue em tramitação no Poder Judiciário, e as decisões permanecem sob rigoroso acompanhamento das autoridades competentes e dos órgãos fiscalizadores.";
+    $service = "O espaço segue aberto para a manifestação formal das defesas e das partes citadas, conforme determina o devido processo legal.";
+  } elseif(preg_match('~sa[uú]de|hospital|ubs|policl[ií]nica|exame|consulta~iu', $cat.' '.$title.' '.$body)){
     $context = "A expansão dos serviços de saúde tem como objetivo agilizar o atendimento, desafogar as unidades de pronto atendimento e reduzir o tempo de espera por exames e consultas especializadas nos bairros.";
-  } elseif(preg_match('~emprego|vaga|trabalho|concurso|processo seletivo~iu', $cat.' '.$title)){
+    $service = "Os moradores devem acompanhar as orientações dos órgãos oficiais para conferir cronogramas, horários de funcionamento e documentos necessários para atendimento.";
+  } elseif(preg_match('~emprego|vaga|trabalho|concurso|processo seletivo~iu', $cat.' '.$title.' '.$body)){
     $context = "A oferta de novas oportunidades movimenta a economia regional e representa um apoio essencial para quem busca colocação ou recolocação no mercado de trabalho.";
-  } elseif(preg_match('~seguran[cç]a|pol[ií]cia|guarda|defesa civil~iu', $cat.' '.$title)){
-    $context = "As forças de segurança e equipes públicas mantêm a vigilância permanente para garantir a tranquilidade e a proteção de todos os moradores.";
+    $service = "Os interessados devem consultar os canais de atendimento e os postos oficiais para verificar os pré-requisitos e prazos de candidatura.";
+  } elseif(preg_match('~seguran[cç]a|pol[ií]cia|guarda|defesa civil|tr[aá]fico|roubo|furto|crime~iu', $cat.' '.$title.' '.$body)){
+    $context = "As equipes operacionais e as forças de segurança pública mantêm a vigilância permanente para garantir a ordem, a apuração dos fatos e a tranquilidade da comunidade.";
+    $service = "Informações que possam auxiliar as investigações podem ser encaminhadas de forma anônima aos canais oficiais de denúncia.";
   }
 
-  $service = "Os moradores devem acompanhar as orientações dos órgãos oficiais para conferir cronogramas, horários de funcionamento e documentos necessários para atendimento.";
   $closure = "A cobertura completa desta e de outras notícias da nossa região você confere no portal tvsumare.com.br. Eu sou Cristian Schibelsky, para a TV Sumaré.";
 
-  $script = "Boa noite. A TV Sumaré acompanha os principais acontecimentos de {$city} e da Região Metropolitana de Campinas.\n\n" .
+  $script = "A TV Sumaré acompanha os principais acontecimentos de {$city} e de toda a Região Metropolitana de Campinas.\n\n" .
     "{$lead}\n\n" .
     "{$detailText}\n\n" .
     "{$context}\n\n" .
@@ -82,14 +89,15 @@ function rpia_generate_script($news){
 
   $prompt = "Você é redator-chefe e apresentador do telejornal de bancada da TV Sumaré.\n" .
     "Sua missão é redigir o roteiro COMPLETO e FALADO para o apresentador virtual de telejornal regional (HeyGen), com duração de 60 a 90 segundos (aproximadamente 130 a 180 palavras faladas).\n\n" .
-    "ABERTURA OBRIGATÓRIA: Boa noite. A TV Sumaré acompanha os principais fatos de {$city} e região.\n\n" .
+    "ABERTURA OBRIGATÓRIA (sem 'bom dia', sem 'boa tarde' e sem 'boa noite'): A TV Sumaré acompanha os principais fatos de {$city} e região.\n\n" .
     "ESTRUTURA DO ROTEIRO (sem colocar títulos ou marcadores, apenas texto contínuo falado):\n" .
-    "1. ABERTURA E MANCHETE: comece com a abertura e apresente a manchete principal com clareza e autoridade.\n" .
+    "1. ABERTURA E MANCHETE: comece com a abertura institucional atemporal e apresente a manchete principal com clareza e autoridade.\n" .
     "2. DESENVOLVIMENTO DOS FATOS: detalhe a notícia (números, metragem, serviços oferecidos, capacidade de atendimento, etapas das obras, locais e impactos).\n" .
-    "3. IMPACTO PARA A POPULAÇÃO: explique o benefício real para o morador de Sumaré e região (redução de filas, desafogamento da rede, atendimento especializado nos bairros).\n" .
+    "3. IMPACTO PARA A POPULAÇÃO OU CONTEXTO INSTITUCIONAL: explique o desdobramento do fato para a comunidade ou para a esfera pública regional.\n" .
     "4. SERVIÇO E ORIENTAÇÃO: informe prazos, funcionamento ou orientações para a comunidade.\n" .
     "5. ENCERRAMENTO DE BANCADA OBRIGATÓRIO: 'A cobertura completa você acompanha no portal tvsumare.com.br. Eu sou Cristian Schibelsky, para a TV Sumaré.'\n\n" .
     "REGRAS RIGOROSAS:\n" .
+    "- ATEMPORAL: NUNCA use 'bom dia', 'boa tarde' ou 'boa noite', pois o vídeo será assistido em horários variados.\n" .
     "- NÃO gere textos curtos de 2 frases. O roteiro precisa ter substância de telejornal (60 a 90 segundos).\n" .
     "- Não invente dados não constantes da pauta; desenvolva as consequências e o contexto com base nas informações apuradas.\n" .
     "- NÃO use termos de IA, não use 'telespectadores', não use 'é um prazer estar aqui'.\n" .
