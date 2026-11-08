@@ -208,61 +208,111 @@ if (!function_exists('tvp_heygen_config')) {
     return ['ok'=>true,'http'=>$http,'data'=>$json];
   }
 
+  /**
+   * Pure v3 response adapters. These functions never access the provider.
+   * The session may be accepted without a video_id; preserve the session_id.
+   */
+  function tvp_heygen_v3_data($response) {
+    $outer = is_array($response) ? ($response['data'] ?? []) : [];
+    $inner = is_array($outer) ? ($outer['data'] ?? $outer) : [];
+    return is_array($inner) ? $inner : [];
+  }
+
+  function tvp_heygen_v3_created($response) {
+    $d = tvp_heygen_v3_data($response);
+    $sessionId = trim((string)($d['session_id'] ?? ''));
+    $videoId = trim((string)($d['video_id'] ?? ''));
+    if ($sessionId === '' && $videoId === '') {
+      return ['ok'=>false,'error'=>'HeyGen não retornou session_id nem video_id.'];
+    }
+    return [
+      'ok'=>true,
+      'session_id'=>$sessionId,
+      'video_id'=>$videoId,
+      'status'=>trim((string)($d['status'] ?? 'generating'))
+    ];
+  }
+
+  function tvp_heygen_v3_status_data($sessionResponse, $videoResponse = null, $knownVideoId = '') {
+    $session = tvp_heygen_v3_data($sessionResponse);
+    $video = $videoResponse === null ? [] : tvp_heygen_v3_data($videoResponse);
+    $videoId = trim((string)($video['video_id'] ?? $session['video_id'] ?? $knownVideoId));
+    $sessionStatus = strtolower(trim((string)($session['status'] ?? '')));
+    $videoStatus = strtolower(trim((string)($video['status'] ?? '')));
+    $failed = in_array($videoStatus, ['failed','error'], true)
+      || in_array($sessionStatus, ['failed','error'], true);
+    $completed = in_array($videoStatus, ['completed','complete','ready'], true);
+    // A session completion alone cannot authorize publication.
+    $url = $completed ? trim((string)($video['video_url'] ?? '')) : '';
+    $captionedUrl = $completed ? trim((string)($video['captioned_video_url'] ?? '')) : '';
+    $failure = $failed ? trim((string)($video['failure_message'] ?? $session['failure_message'] ?? $video['error'] ?? $session['error'] ?? 'Falha informada pela HeyGen.')) : '';
+    return [
+      'ok'=>true,
+      'video_id'=>$videoId,
+      'session_status'=>$sessionStatus,
+      'video_status'=>$videoStatus,
+      'progress'=>$session['progress'] ?? ($video['progress'] ?? null),
+      'video_url'=>$url,
+      'captioned_video_url'=>$captionedUrl,
+      'thumb'=>$completed ? (string)($video['thumbnail_url'] ?? '') : '',
+      'failure_message'=>$failure
+    ];
+  }
+
   function tvp_send_heygen($job) {
     $cfg = tvp_heygen_config();
-    $avatarId = trim((string)($cfg['heygen_avatar_id'] ?? ''));
-    $voiceId = trim((string)($cfg['heygen_voice_id'] ?? ''));
     $script = tvp_heygen_clean_script($job['script'] ?? '');
-    if ($avatarId === '') return ['ok'=>false,'error'=>'HeyGen sem Avatar ID configurado.'];
-    if ($voiceId === '') return ['ok'=>false,'error'=>'HeyGen sem Voice ID configurado.'];
     if ($script === '') return ['ok'=>false,'error'=>'Roteiro vazio após saneamento.'];
     if (function_exists('mb_substr')) $script = mb_substr($script, 0, 4900, 'UTF-8'); else $script = substr($script, 0, 4900);
     $portrait = (($cfg['heygen_orientation'] ?? 'landscape') === 'portrait');
+    $prompt = "Crie um vídeo jornalístico da TV Sumaré, fiel ao roteiro aprovado. "
+      ."Não invente nomes, datas, números ou declarações; não acrescente notícias. "
+      ."Use português brasileiro e mantenha o texto falado conforme o roteiro a seguir:\n\n".$script;
     $payload = [
-      'video_inputs' => [[
-        'character' => [
-          'type' => 'avatar',
-          'avatar_id' => $avatarId,
-          'avatar_style' => 'normal'
-        ],
-        'voice' => [
-          'type' => 'text',
-          'input_text' => $script,
-          'voice_id' => $voiceId,
-          'speed' => 1.0
-        ]
-      ]],
-      'dimension' => $portrait ? ['width'=>720,'height'=>1280] : ['width'=>1280,'height'=>720]
+      'prompt'=>$prompt,
+      'mode'=>'generate',
+      'orientation'=>$portrait ? 'portrait' : 'landscape',
+      'incognito_mode'=>in_array((string)($cfg['heygen_incognito_mode'] ?? '0'), ['1','true','on'], true)
     ];
-    $r = tvp_http('POST', '/v2/video/generate', $payload, 75);
+    foreach (['avatar_id'=>'heygen_avatar_id','voice_id'=>'heygen_voice_id',
+              'style_id'=>'heygen_style_id','brand_kit_id'=>'heygen_brand_kit_id'] as $api=>$local) {
+      $v = trim((string)($cfg[$local] ?? ''));
+      if ($v !== '') $payload[$api] = $v;
+    }
+    $token = trim((string)($cfg['heygen_callback_token'] ?? ''));
+    if ($token !== '') {
+      $payload['callback_url'] = tvp_abs_url('api/heygen-callback.php?token='.rawurlencode($token));
+      $payload['callback_id'] = (string)($job['id'] ?? '');
+    }
+    $r = tvp_http('POST', '/v3/video-agents', $payload, 60);
     if (!$r['ok']) return $r;
-    $d = $r['data']['data'] ?? [];
-    $videoId = trim((string)($d['video_id'] ?? ''));
-    if ($videoId === '') return ['ok'=>false,'http'=>$r['http'] ?? 200,'error'=>'HeyGen aceitou a requisição, mas não retornou video_id.','raw'=>$r['data']];
-    return ['ok'=>true,'session_id'=>'','video_id'=>$videoId,'status'=>'gerando','raw'=>$r['data']];
+    $created = tvp_heygen_v3_created($r['data']);
+    if (!$created['ok']) return $created;
+    $created['raw'] = $r['data'];
+    return $created;
   }
 
   function tvp_check_heygen($job) {
     $videoId = trim((string)($job['heygen_video_id'] ?? ''));
-    if ($videoId === '') return ['ok'=>false,'error'=>'Job sem video_id da HeyGen.'];
-    $r = tvp_http('GET', '/v1/video_status.get?video_id='.rawurlencode($videoId), null, 40);
-    if (!$r['ok']) return $r;
-    $d = $r['data']['data'] ?? [];
-    $status = strtolower(trim((string)($d['status'] ?? '')));
-    $failure = '';
-    if ($status === 'failed') {
-      $failure = is_string($d['error'] ?? null) ? $d['error'] : (($d['error']['message'] ?? '') ?: 'HeyGen informou falha na geração.');
+    $sessionId = trim((string)($job['heygen_session_id'] ?? ''));
+    if ($videoId === '' && $sessionId === '') {
+      return ['ok'=>false,'error'=>'Job sem session_id ou video_id da HeyGen.'];
     }
-    return [
-      'ok'=>true,
-      'video_id'=>$videoId,
-      'video_status'=>$status,
-      'progress'=>$d['progress'] ?? null,
-      'video_url'=>$status === 'completed' ? ($d['video_url'] ?? '') : '',
-      'captioned_video_url'=>$status === 'completed' ? ($d['video_url_caption'] ?? '') : '',
-      'thumb'=>$d['thumbnail_url'] ?? '',
-      'failure_message'=>$failure
-    ];
+    $sessionResponse = null;
+    if ($sessionId !== '') {
+      $r = tvp_http('GET', '/v3/video-agents/'.rawurlencode($sessionId), null, 35);
+      if (!$r['ok']) return $r;
+      $sessionResponse = $r['data'];
+      $session = tvp_heygen_v3_data($sessionResponse);
+      if ($videoId === '') $videoId = trim((string)($session['video_id'] ?? ''));
+    }
+    $videoResponse = null;
+    if ($videoId !== '') {
+      $r = tvp_http('GET', '/v3/videos/'.rawurlencode($videoId), null, 35);
+      if (!$r['ok']) return $r;
+      $videoResponse = $r['data'];
+    }
+    return tvp_heygen_v3_status_data($sessionResponse, $videoResponse, $videoId);
   }
 }
 ?>

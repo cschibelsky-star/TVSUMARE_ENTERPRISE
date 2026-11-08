@@ -66,6 +66,8 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
     $r=tvp_check_heygen($job);
     if(!$r['ok']) tvp_admin_redirect(['err'=>$r['error']??'Falha ao consultar HeyGen.']);
     if(isset($r['progress'])) $jobs[$idx]['heygen_progress']=$r['progress'];
+    if(isset($r['session_status'])) $jobs[$idx]['heygen_session_status']=$r['session_status'];
+    if(isset($r['video_status'])) $jobs[$idx]['heygen_video_status']=$r['video_status'];
     if(!empty($r['video_id'])) $jobs[$idx]['heygen_video_id']=$r['video_id'];
     if(!empty($r['video_url']) || !empty($r['captioned_video_url'])){ $jobs[$idx]['video_url']=$r['video_url']??''; $jobs[$idx]['captioned_video_url']=$r['captioned_video_url']??''; $jobs[$idx]['thumb']=$r['thumb']?:($jobs[$idx]['image']??'assets/cat-cidade.svg'); $jobs[$idx]['status']='pronto'; }
     elseif(!empty($r['failure_message'])){ $jobs[$idx]['status']='erro'; $jobs[$idx]['heygen_failure']=$r['failure_message']; }
