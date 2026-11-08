@@ -52,6 +52,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Testar restauração amostral descartável (fixtures sintéticas)
+        run: python3 tests/tvsumare_backup_sample_restore_test.py
+
       - name: Validar isolamento HML (Compose resolvido, sem secrets)
         shell: bash
         run: |
