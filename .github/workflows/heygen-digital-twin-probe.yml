@@ -5,6 +5,7 @@ on:
       - 'includes/heygen_digital_twin_probe.php'
       - 'tests/heygen_digital_twin_probe_test.php'
       - '.github/workflows/heygen-digital-twin-probe.yml'
+      - 'scripts/heygen_digital_twin_diagnostic.php'
   workflow_dispatch:
 jobs:
   probe-tests:
@@ -15,5 +16,6 @@ jobs:
         run: |
           php -l includes/heygen_digital_twin_probe.php
           php -l tests/heygen_digital_twin_probe_test.php
+          php -l scripts/heygen_digital_twin_diagnostic.php
       - name: Run isolated mock tests (no HeyGen API or credits)
         run: php tests/heygen_digital_twin_probe_test.php
