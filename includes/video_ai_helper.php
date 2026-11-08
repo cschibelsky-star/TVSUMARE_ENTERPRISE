@@ -161,58 +161,137 @@ if (!function_exists('tvp_generate_script')) {
   }
   function tvp_local_script($job){
     $title=tvp_clean($job['title']??'Atualização regional');
-    $city=tvp_clean($job['city']??'região');
-    $cat=tvp_clean($job['category']??'notícias');
+    $city=tvp_clean($job['city']??'Sumaré');
+    $cat=tvp_clean($job['category']??'Notícias');
     $body=tvp_clean($job['body']??($job['summary']??''));
     $profile=$job['presenter_profile']??tvp_avatar_profile_for_category($cat);
-    $txt=tvp_text_lc($title.' '.$cat.' '.$body);
-    // O roteiro fala apenas o fato apurado. A fonte fica nos créditos da matéria, nunca narrada.
-    $lead=$body!==''?$body:$title.'.';
+
+    // Extrai frases ou blocos reais de informação para não ficar um resumo de 10 segundos
+    $rawText = $body !== '' ? $body : $title;
+    $rawText = preg_replace('/\s+/u', ' ', $rawText);
+    $sentences = preg_split('/(?<=[.!?])\s+/u', $rawText, -1, PREG_SPLIT_NO_EMPTY);
+
+    // Monta o lead e o detalhamento
+    $lead = $sentences[0] ?? $title;
+    $details = array_slice($sentences, 1, 4);
+    $detailText = !empty($details) ? implode(' ', $details) : $lead;
+
+    // Bloco de impacto e contexto regional
+    $context = "A iniciativa representa um passo importante para a estrutura pública de {$city} e de toda a nossa região, trazendo mais agilidade nos atendimentos e melhorias diretas para a população.";
+    if(preg_match('~sa[uú]de|hospital|ubs|policl[ií]nica|exame|consulta~iu', $cat.' '.$title)){
+      $context = "A ampliação dos serviços de saúde tem como objetivo agilizar o diagnóstico de pacientes, desafogar as unidades de pronto atendimento e reduzir o tempo de espera por exames e consultas especializadas nos bairros de {$city}.";
+    } elseif(preg_match('~emprego|vaga|trabalho|concurso|processo seletivo~iu', $cat.' '.$title)){
+      $context = "A oferta de novas vagas movimenta a economia local e representa uma oportunidade essencial para trabalhadores que buscam colocação ou recolocação no mercado de trabalho regional.";
+    } elseif(preg_match('~seguran[cç]a|pol[ií]cia|guarda|defesa civil~iu', $cat.' '.$title)){
+      $context = "As equipes operacionais seguem atuando no local para garantir a segurança da comunidade, o monitoramento contínuo das áreas afetadas e o rápido restabelecimento da normalidade.";
+    }
+
+    // Orientação ao cidadão
+    $service = "A recomendação para os moradores é acompanhar as atualizações e os canais oficiais para conferir cronogramas, horários de funcionamento e documentos necessários para atendimento.";
+
+    // Encerramento de bancada oficial
+    $closure = "A cobertura completa desta e de outras notícias regionais você acompanha no portal tvsumare.com.br. Eu sou Cristian Schibelsky, para a TV Sumaré.";
+
     if($profile==='negocios_empregos'){
-      $script="Boa noite. A TV Sumaré traz uma atualização do mercado de trabalho.\n\n".
-        "{$lead}\n\n".
-        "Os interessados devem acompanhar os canais oficiais para confirmar prazos, requisitos, documentos e formas de atendimento.\n\n".
-        "Eu sou Cristian Schibelsky. Até o próximo boletim.";
+      $script = "Boa noite. O boletim de Empregos e Negócios da TV Sumaré traz uma atualização importante para a nossa região.\n\n" .
+        "{$lead}\n\n" .
+        "{$detailText}\n\n" .
+        "{$context}\n\n" .
+        "{$service}\n\n" .
+        "{$closure}";
       return tvp_clean($script);
     }
+
     if($profile==='servicos_publicos'){
-      $script="Boa noite. A TV Sumaré traz uma atualização de serviço público para moradores de {$city}.\n\n".
-        "{$lead}\n\n".
-        "Moradores devem acompanhar os canais oficiais para novas orientações, datas, locais de atendimento e demais detalhes.\n\n".
-        "Eu sou Cristian Schibelsky. Até o próximo boletim.";
+      $script = "Boa noite. A TV Sumaré traz uma atualização essencial sobre os serviços públicos e obras em {$city}.\n\n" .
+        "{$lead}\n\n" .
+        "{$detailText}\n\n" .
+        "{$context}\n\n" .
+        "{$service}\n\n" .
+        "{$closure}";
       return tvp_clean($script);
     }
-    return tvp_clean("Boa noite. A TV Sumaré acompanha os principais fatos de {$city} e região.\n\n{$lead}\n\nEu sou Cristian Schibelsky. Até o próximo boletim.");
+
+    $script = "Boa noite. A TV Sumaré acompanha os principais acontecimentos de {$city} e de toda a Região Metropolitana de Campinas.\n\n" .
+      "{$lead}\n\n" .
+      "{$detailText}\n\n" .
+      "{$context}\n\n" .
+      "{$service}\n\n" .
+      "{$closure}";
+
+    return tvp_clean($script);
   }
   function tvp_generate_script($job){
     $profile=$job['presenter_profile']??tvp_avatar_profile_for_category($job['category']??'');
     $presenter=tvp_presenter_label($profile);
     $opening=tvp_script_opening_for_profile($profile,$job['category']??'');
     $body=tvp_clean(($job['body']??'').' '.($job['summary']??''));
-    $prompt="Você é redator-chefe de telejornal regional da TV Sumaré. Gere APENAS o texto final que será falado pelo apresentador em vídeo, sem markdown, sem tópicos, sem rótulos e sem explicar o formato.\n\n".
-      "APRESENTADOR/ASSINATURA: {$presenter}.\n".
+    $prompt="Você é redator-chefe e apresentador do telejornal de bancada da TV Sumaré.\n".
+      "Sua missão é redigir o roteiro COMPLETO e FALADO para o apresentador virtual de telejornal regional (HeyGen), com duração de 60 a 90 segundos (aproximadamente 130 a 180 palavras faladas).\n\n".
+      "APRESENTADOR / ASSINATURA: {$presenter}.\n".
       "ABERTURA OBRIGATÓRIA: {$opening}\n\n".
-      "OBJETIVO: roteiro natural de telejornal regional, com 60 a 90 segundos, frases curtas, pausas naturais e linguagem humana.\n\n".
-      "ESTRUTURA INTERNA DO TEXTO, mas sem escrever estes títulos: abertura curta, informação principal, contexto regional, serviço ao cidadão quando houver e encerramento natural. Não pronuncie domínio, URL, ponto com ou ponto br.\n\n".
-      "REGRAS IMPORTANTES: não invente fatos, números, datas ou locais; não use sensacionalismo; não use 'é um prazer ter você conosco'; não use 'telespectadores'; não use frases genéricas como 'informação importante' sem detalhar o fato; não mencione IA; não faça acusações além do que a fonte informa; não comece o roteiro de forma truncada repetindo só o título; use tom profissional, próximo e claro.\n\n".
-      "Quando a editoria for Empregos, Economia ou Negócios, destaque oportunidade, orientação ao cidadão, canais oficiais e impacto econômico regional.\n".
-      "Quando a pauta for sensível, use tom neutro, responsável e evite exposição indevida.\n\n".
+      "ESTRUTURA DO ROTEIRO (sem colocar títulos ou marcadores, apenas texto contínuo falado):\n".
+      "1. ABERTURA E MANCHETE: comece com a abertura e apresente a manchete principal com clareza e autoridade.\n".
+      "2. DESENVOLVIMENTO DOS FATOS: detalhe a notícia (números, metragem, serviços oferecidos, capacidade de atendimento, etapas das obras, locais e impactos).\n".
+      "3. IMPACTO PARA A POPULAÇÃO: explique o benefício real para o morador de Sumaré e região (redução de filas, desafogamento da rede, atendimento especializado nos bairros).\n".
+      "4. SERVIÇO E ORIENTAÇÃO: informe prazos, funcionamento ou orientações para a comunidade.\n".
+      "5. ENCERRAMENTO DE BANCADA OBRIGATÓRIO: 'A cobertura completa você acompanha no portal tvsumare.com.br. Eu sou Cristian Schibelsky, para a TV Sumaré.'\n\n".
+      "REGRAS RIGOROSAS:\n".
+      "- NÃO gere textos curtos de 2 frases. O roteiro precisa ter substância de telejornal (60 a 90 segundos).\n".
+      "- Não invente dados não constantes da pauta; desenvolva as consequências e o contexto com base nas informações apuradas.\n".
+      "- NÃO use termos de IA, não use 'telespectadores', não use 'é um prazer estar aqui'.\n".
+      "- Não pronuncie http, www, ponto com ou ponto br no meio da fala.\n\n".
       "DADOS DA MATÉRIA:\n".
       "Título: ".($job['title']??'')."\n".
       "Cidade: ".($job['city']??'')."\n".
       "Categoria: ".($job['category']??'')."\n".
-      "Fonte: ".($job['source']??'')."\n".
-      "URL: ".($job['source_url']??'')."\n".
-      "Conteúdo disponível: {$body}\n\n".
-      "Finalize obrigatoriamente com: 'Eu sou Cristian Schibelsky. Até o próximo boletim.'";
+      "Conteúdo apurado: {$body}";
+
     $script='';
-    if(trim((string)($GLOBALS['gemini_api_key']??''))!=='' && function_exists('tvs_gemini_generate_text')){
-      $r=tvs_gemini_generate_text($GLOBALS['gemini_api_key'],$prompt,['temperature'=>0.18,'maxOutputTokens'=>1100],35);
-      if(!empty($r['ok'])) $script=$r['text']??'';
+
+    // 1. Tenta OpenAI (gpt-5-mini ou configurado)
+    $openaiKey = trim((string)($GLOBALS['openai_api_key'] ?? (getenv('OPENAI_API_KEY') ?: '')));
+    if($openaiKey !== '' && function_exists('tvs_openai_generate_text')){
+      $r = tvs_openai_generate_text($openaiKey, $prompt, ['temperature'=>0.25, 'max_output_tokens'=>1200], 30);
+      if(!empty($r['ok']) && !empty($r['text'])) $script = $r['text'];
     }
-    $script=tvp_polish_script($script,$job);
-    if(tvp_strlen($script)<220) $script=tvp_local_script($job);
-    return tvp_polish_script($script,$job);
+
+    // 2. Tenta Claude Opus 5 em cascata
+    if(trim($script)===''){
+      $geminiKey = trim((string)($GLOBALS['gemini_api_key'] ?? (getenv('GEMINI_API_KEY') ?: '')));
+      if($geminiKey !== '' && function_exists('tvs_gemini_generate_text')){
+        $r = tvs_gemini_generate_text($geminiKey, $prompt, ['temperature'=>0.22, 'maxOutputTokens'=>1200], 30);
+        if(!empty($r['ok']) && !empty($r['text'])) $script = $r['text'];
+      }
+    }
+
+    // 3. Tenta Anthropic em cascata
+    if(trim($script)===''){
+      $anthropicKey = trim((string)($GLOBALS['anthropic_api_key'] ?? (getenv('ANTHROPIC_API_KEY') ?: '')));
+      if($anthropicKey !== '' && function_exists('curl_init')){
+        $model = ($GLOBALS['anthropic_model'] ?? '') ?: 'claude-sonnet-4-20250514';
+        $payload = json_encode(['model'=>$model, 'max_tokens'=>1200, 'messages'=>[['role'=>'user','content'=>$prompt]]], JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+        $url = 'https://api.anthropic.com/v1/messages';
+        $outboundOptions = tvs_outbound_curl_options($url, 25);
+        if($outboundOptions !== null){
+          $ch = curl_init($url);
+          curl_setopt_array($ch, $outboundOptions + [CURLOPT_POST=>true, CURLOPT_POSTFIELDS=>$payload, CURLOPT_RETURNTRANSFER=>true, CURLOPT_HTTPHEADER=>['Content-Type: application/json', 'x-api-key: '.$anthropicKey, 'anthropic-version: 2023-06-01']]);
+          $res = curl_exec($ch);
+          $http = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+          curl_close($ch);
+          if(is_string($res) && strlen($res) <= 2097152 && $http < 400){
+            $j = json_decode($res, true);
+            $script = $j['content'][0]['text'] ?? '';
+          }
+        }
+      }
+    }
+
+    $script = tvp_polish_script($script, $job);
+    if(tvp_strlen($script) < 320){
+      $script = tvp_local_script($job);
+    }
+    return tvp_polish_script($script, $job);
   }
 }
 

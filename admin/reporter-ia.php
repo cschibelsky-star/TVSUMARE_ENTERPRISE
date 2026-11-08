@@ -4,6 +4,7 @@ require_once __DIR__.'/auth.php';
 require_login();
 require_once dirname(__DIR__).'/config.php';
 require_once __DIR__.'/gemini.php';
+require_once __DIR__.'/openai.php';
 require_once __DIR__.'/monitor_lib.php';
 require_once dirname(__DIR__).'/includes/heygen_helper.php';
 $activeAdmin='reporter_ia';
@@ -37,19 +38,113 @@ function rpia_heygen_request($method,$endpoint,$key,$payload=null,$timeout=35){
   return ['ok'=>true,'http'=>$http,'data'=>$json?:[],'raw'=>$res];
 }
 function rpia_local_script($news){
-  $title=tvs_clean_text($news['title']??'Atualização regional'); $city=tvs_clean_text($news['city']??'região'); $cat=tvs_clean_text($news['category']??'notícias'); $body=tvs_clean_text($news['body']??($news['summary']??'')); $summary=tvs_first_sentence($body,$news['subtitle']??$title); $source=tvs_clean_text($news['source']??'fonte consultada');
-  $script="Olá. Esta é uma atualização da TV Sumaré.\n\n".$title.".\n\n".$summary."\n\n";
-  if($cat==='Empregos') $script.="A informação pode interessar trabalhadores e moradores que buscam novas oportunidades na região.\n\n"; elseif($cat==='Segurança') $script.="O caso mobiliza a atenção da população e segue com acompanhamento das autoridades competentes.\n\n"; elseif($cat==='Saúde') $script.="A informação é relevante para usuários dos serviços públicos e moradores que dependem do atendimento local.\n\n"; else $script.="O assunto tem impacto regional e será acompanhado conforme novas informações oficiais forem divulgadas.\n\n";
-  return $script."Fonte: {$source}. Para acompanhar outras notícias da região, acesse a TV Sumaré.";
+  $title=tvs_clean_text($news['title']??'Atualização regional');
+  $city=tvs_clean_text($news['city']??'Sumaré');
+  $cat=tvs_clean_text($news['category']??'Notícias');
+  $body=tvs_clean_text($news['body']??($news['summary']??''));
+
+  // Extrai frases para compor uma narração de telejornal completa (60 a 90s), nunca 10 segundos
+  $rawText = $body !== '' ? $body : $title;
+  $rawText = preg_replace('/\s+/u', ' ', $rawText);
+  $sentences = preg_split('/(?<=[.!?])\s+/u', $rawText, -1, PREG_SPLIT_NO_EMPTY);
+
+  $lead = $sentences[0] ?? $title;
+  $details = array_slice($sentences, 1, 4);
+  $detailText = !empty($details) ? implode(' ', $details) : $lead;
+
+  // Contexto de relevância regional
+  $context = "A iniciativa representa um passo importante para a infraestrutura pública de {$city} e de toda a nossa região, trazendo melhorias diretas para a comunidade.";
+  if(preg_match('~sa[uú]de|hospital|ubs|policl[ií]nica|exame|consulta~iu', $cat.' '.$title)){
+    $context = "A expansão dos serviços de saúde tem como objetivo agilizar o atendimento, desafogar as unidades de pronto atendimento e reduzir o tempo de espera por exames e consultas especializadas nos bairros.";
+  } elseif(preg_match('~emprego|vaga|trabalho|concurso|processo seletivo~iu', $cat.' '.$title)){
+    $context = "A oferta de novas oportunidades movimenta a economia regional e representa um apoio essencial para quem busca colocação ou recolocação no mercado de trabalho.";
+  } elseif(preg_match('~seguran[cç]a|pol[ií]cia|guarda|defesa civil~iu', $cat.' '.$title)){
+    $context = "As forças de segurança e equipes públicas mantêm a vigilância permanente para garantir a tranquilidade e a proteção de todos os moradores.";
+  }
+
+  $service = "Os moradores devem acompanhar as orientações dos órgãos oficiais para conferir cronogramas, horários de funcionamento e documentos necessários para atendimento.";
+  $closure = "A cobertura completa desta e de outras notícias da nossa região você confere no portal tvsumare.com.br. Eu sou Cristian Schibelsky, para a TV Sumaré.";
+
+  $script = "Boa noite. A TV Sumaré acompanha os principais acontecimentos de {$city} e da Região Metropolitana de Campinas.\n\n" .
+    "{$lead}\n\n" .
+    "{$detailText}\n\n" .
+    "{$context}\n\n" .
+    "{$service}\n\n" .
+    "{$closure}";
+
+  return rpia_clean_script($script);
 }
 function rpia_generate_script($news){
-  global $gemini_api_key, $anthropic_api_key, $anthropic_model;
-  $base="Título: ".($news['title']??'')."\nCidade: ".($news['city']??'')."\nCategoria: ".($news['category']??'')."\nSubtítulo: ".($news['subtitle']??'')."\nResumo: ".($news['summary']??'')."\nCorpo: ".tvs_substr(tvs_clean_text($news['body']??''),0,2500)."\nFonte: ".($news['source']??'Fonte consultada')."\nURL: ".($news['source_url']??($news['url']??''));
-  $prompt="Você é apresentador de telejornal regional da TV Sumaré. Gere um roteiro de vídeo com 45 a 60 segundos para avatar HeyGen.\n\nRegras: texto falado natural, profissional, jornalístico, sem markdown, sem vinhetas técnicas, sem dizer que é IA, sem inventar dados, sem acusar pessoas ou instituições sem fonte. Comece com saudação curta. Termine com chamada para acompanhar a TV Sumaré.\n\nMatéria:\n".$base; $script='';
-  $anthropic=trim((string)($anthropic_api_key??''));
-  if($anthropic!=='' && function_exists('curl_init')){ $payload=json_encode(['model'=>($anthropic_model?:'claude-sonnet-4-20250514'),'max_tokens'=>900,'messages'=>[['role'=>'user','content'=>$prompt]]],JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES); $url='https://api.anthropic.com/v1/messages'; $outboundOptions=tvs_outbound_curl_options($url,25); if($outboundOptions!==null){ $ch=curl_init($url); curl_setopt_array($ch,$outboundOptions+[CURLOPT_POST=>true,CURLOPT_POSTFIELDS=>$payload,CURLOPT_RETURNTRANSFER=>true,CURLOPT_HTTPHEADER=>['Content-Type: application/json','x-api-key: '.$anthropic,'anthropic-version: 2023-06-01']]); $res=curl_exec($ch); $http=(int)curl_getinfo($ch,CURLINFO_HTTP_CODE); curl_close($ch); if(is_string($res) && strlen($res)<=2097152 && $http<400){ $j=json_decode($res,true); $script=$j['content'][0]['text']??''; } } }
-  if(trim($script)==='' && trim((string)($gemini_api_key??''))!=='' && function_exists('tvs_gemini_generate_text')){ $r=tvs_gemini_generate_text($gemini_api_key,$prompt,['temperature'=>0.25,'maxOutputTokens'=>900],24); if(!empty($r['ok'])) $script=$r['text']??''; }
-  $script=rpia_clean_script($script); if($script==='' || tvs_strlen($script)<120) $script=rpia_local_script($news); return $script;
+  global $openai_api_key, $gemini_api_key, $anthropic_api_key, $anthropic_model;
+  $city = tvs_clean_text($news['city']??'Sumaré');
+  $cat = tvs_clean_text($news['category']??'Notícias');
+  $body = tvs_clean_text(($news['body']??'').' '.($news['summary']??''));
+
+  $prompt = "Você é redator-chefe e apresentador do telejornal de bancada da TV Sumaré.\n" .
+    "Sua missão é redigir o roteiro COMPLETO e FALADO para o apresentador virtual de telejornal regional (HeyGen), com duração de 60 a 90 segundos (aproximadamente 130 a 180 palavras faladas).\n\n" .
+    "ABERTURA OBRIGATÓRIA: Boa noite. A TV Sumaré acompanha os principais fatos de {$city} e região.\n\n" .
+    "ESTRUTURA DO ROTEIRO (sem colocar títulos ou marcadores, apenas texto contínuo falado):\n" .
+    "1. ABERTURA E MANCHETE: comece com a abertura e apresente a manchete principal com clareza e autoridade.\n" .
+    "2. DESENVOLVIMENTO DOS FATOS: detalhe a notícia (números, metragem, serviços oferecidos, capacidade de atendimento, etapas das obras, locais e impactos).\n" .
+    "3. IMPACTO PARA A POPULAÇÃO: explique o benefício real para o morador de Sumaré e região (redução de filas, desafogamento da rede, atendimento especializado nos bairros).\n" .
+    "4. SERVIÇO E ORIENTAÇÃO: informe prazos, funcionamento ou orientações para a comunidade.\n" .
+    "5. ENCERRAMENTO DE BANCADA OBRIGATÓRIO: 'A cobertura completa você acompanha no portal tvsumare.com.br. Eu sou Cristian Schibelsky, para a TV Sumaré.'\n\n" .
+    "REGRAS RIGOROSAS:\n" .
+    "- NÃO gere textos curtos de 2 frases. O roteiro precisa ter substância de telejornal (60 a 90 segundos).\n" .
+    "- Não invente dados não constantes da pauta; desenvolva as consequências e o contexto com base nas informações apuradas.\n" .
+    "- NÃO use termos de IA, não use 'telespectadores', não use 'é um prazer estar aqui'.\n" .
+    "- Não pronuncie http, www, ponto com ou ponto br no meio da fala.\n\n" .
+    "DADOS DA MATÉRIA:\n" .
+    "Título: " . ($news['title']??'') . "\n" .
+    "Cidade: " . $city . "\n" .
+    "Categoria: " . $cat . "\n" .
+    "Conteúdo apurado: {$body}";
+
+  $script = '';
+
+  // 1. Tenta OpenAI (gpt-5-mini ou configurado)
+  $openaiKey = trim((string)($openai_api_key ?? (getenv('OPENAI_API_KEY') ?: '')));
+  if($openaiKey !== '' && function_exists('tvs_openai_generate_text')){
+    $r = tvs_openai_generate_text($openaiKey, $prompt, ['temperature'=>0.25, 'max_output_tokens'=>1200], 30);
+    if(!empty($r['ok']) && !empty($r['text'])) $script = $r['text'];
+  }
+
+  // 2. Tenta Claude Opus 5 em cascata
+  if(trim($script)===''){
+    $geminiKey = trim((string)($gemini_api_key ?? (getenv('GEMINI_API_KEY') ?: '')));
+    if($geminiKey !== '' && function_exists('tvs_gemini_generate_text')){
+      $r = tvs_gemini_generate_text($geminiKey, $prompt, ['temperature'=>0.22, 'maxOutputTokens'=>1200], 30);
+      if(!empty($r['ok']) && !empty($r['text'])) $script = $r['text'];
+    }
+  }
+
+  // 3. Tenta Anthropic em cascata
+  if(trim($script)===''){
+    $anthropicKey = trim((string)($anthropic_api_key ?? (getenv('ANTHROPIC_API_KEY') ?: '')));
+    if($anthropicKey !== '' && function_exists('curl_init')){
+      $model = ($anthropic_model ?: 'claude-sonnet-4-20250514');
+      $payload = json_encode(['model'=>$model, 'max_tokens'=>1200, 'messages'=>[['role'=>'user','content'=>$prompt]]], JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+      $url = 'https://api.anthropic.com/v1/messages';
+      $outboundOptions = tvs_outbound_curl_options($url, 25);
+      if($outboundOptions !== null){
+        $ch = curl_init($url);
+        curl_setopt_array($ch, $outboundOptions + [CURLOPT_POST=>true, CURLOPT_POSTFIELDS=>$payload, CURLOPT_RETURNTRANSFER=>true, CURLOPT_HTTPHEADER=>['Content-Type: application/json', 'x-api-key: '.$anthropicKey, 'anthropic-version: 2023-06-01']]);
+        $res = curl_exec($ch);
+        $http = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        if(is_string($res) && strlen($res) <= 2097152 && $http < 400){
+          $j = json_decode($res, true);
+          $script = $j['content'][0]['text'] ?? '';
+        }
+      }
+    }
+  }
+
+  $script = rpia_clean_script($script);
+  if($script === '' || tvs_strlen($script) < 320){
+    $script = rpia_local_script($news);
+  }
+  return $script;
 }
 function rpia_job_orientation($job,$cfg){ $v=trim((string)($job['orientation']??'')); if(in_array($v,['landscape','portrait'],true)) return $v; $v=trim((string)($cfg['heygen_orientation']??'landscape')); return in_array($v,['landscape','portrait'],true)?$v:'landscape'; }
 function rpia_video_agent_prompt($job,$cfg){
