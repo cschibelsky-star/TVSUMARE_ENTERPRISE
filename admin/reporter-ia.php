@@ -52,25 +52,36 @@ function rpia_local_script($news){
   $details = array_slice($sentences, 1, 4);
   $detailText = !empty($details) ? implode(' ', $details) : $lead;
 
-  // Contexto e serviço calibrados por editoria (sem clichês)
-  $context = "A iniciativa representa um passo importante para a comunidade de {$city} e de toda a nossa região, mobilizando a atenção pública e acompanhamento institucional.";
-  $service = "A recomendação para os moradores é acompanhar as atualizações e os canais oficiais para conferir cronogramas, orientações e novas determinações.";
+  // Bloco de impacto e contexto regional estritamente calibrado por editoria
+  $catNorm = function_exists('mb_strtolower') ? mb_strtolower($cat, 'UTF-8') : strtolower($cat);
 
-  if(preg_match('~pol[ií]tica|justi[cç]a|r[eé]u|investiga[cç][aã]o|minist[eé]rio p[uú]blico|c[aâ]mara|prefeito|vereador|elei[cç]~iu', $cat.' '.$title.' '.$body)){
+  // 1. SAÚDE: exclusivo para saúde, policlínica, hospitais, exames e vacinação
+  if(strpos($catNorm, 'saúde') !== false || strpos($catNorm, 'saude') !== false || preg_match('~policl[ií]nica|hospital|ubs|posto de sa[uú]de|vacina|doen[cç]a|m[eé]dic|cirurgia~iu', $title)){
+    $context = "A ampliação dos serviços de saúde tem como objetivo agilizar o atendimento aos pacientes, desafogar as unidades de pronto atendimento e reduzir o tempo de espera por exames e consultas especializadas nos bairros de {$city}.";
+    $service = "A recomendação para os moradores é acompanhar as informações oficiais para conferir os horários de funcionamento, especialidades atendidas e documentos necessários para atendimento.";
+  }
+  // 2. POLÍTICA E JUDICIÁRIO: vereadores, câmara, denúncias, justiça e eleições
+  elseif(strpos($catNorm, 'política') !== false || strpos($catNorm, 'politica') !== false || preg_match('~vereador|c[aâ]mara|prefeito|r[eé]u|investiga[cç][aã]o|minist[eé]rio p[uú]blico|processo judicial~iu', $title)){
     $context = "O processo segue em tramitação no Poder Judiciário, e as decisões permanecem sob rigoroso acompanhamento das autoridades competentes e dos órgãos fiscalizadores.";
     $service = "O espaço segue aberto para a manifestação formal das defesas e das partes citadas, conforme determina o devido processo legal.";
-  } elseif(preg_match('~sa[uú]de|hospital|ubs|policl[ií]nica|exame|consulta~iu', $cat.' '.$title.' '.$body)){
-    $context = "A expansão dos serviços de saúde tem como objetivo agilizar o atendimento, desafogar as unidades de pronto atendimento e reduzir o tempo de espera por exames e consultas especializadas nos bairros.";
-    $service = "Os moradores devem acompanhar as orientações dos órgãos oficiais para conferir cronogramas, horários de funcionamento e documentos necessários para atendimento.";
-  } elseif(preg_match('~emprego|vaga|trabalho|concurso|processo seletivo~iu', $cat.' '.$title.' '.$body)){
-    $context = "A oferta de novas oportunidades movimenta a economia regional e representa um apoio essencial para quem busca colocação ou recolocação no mercado de trabalho.";
+  }
+  // 3. EMPREGOS E ECONOMIA
+  elseif(strpos($catNorm, 'emprego') !== false || strpos($catNorm, 'economia') !== false || preg_match('~vaga|trabalho|pat|processo seletivo|concurso~iu', $title)){
+    $context = "A oferta de novas vagas movimenta a economia local e representa uma oportunidade essencial para trabalhadores que buscam colocação ou recolocação no mercado de trabalho regional.";
     $service = "Os interessados devem consultar os canais de atendimento e os postos oficiais para verificar os pré-requisitos e prazos de candidatura.";
-  } elseif(preg_match('~seguran[cç]a|pol[ií]cia|guarda|defesa civil|tr[aá]fico|roubo|furto|crime~iu', $cat.' '.$title.' '.$body)){
+  }
+  // 4. SEGURANÇA E DEFESA CIVIL
+  elseif(strpos($catNorm, 'segurança') !== false || strpos($catNorm, 'seguranca') !== false || preg_match('~pol[ií]cia|preso|pris[aã]o|tr[aá]fico|assalto|homic[ií]dio|furto|acidente|bombeiro|defesa civil~iu', $title)){
     $context = "As equipes operacionais e as forças de segurança pública mantêm a vigilância permanente para garantir a ordem, a apuração dos fatos e a tranquilidade da comunidade.";
     $service = "Informações que possam auxiliar as investigações podem ser encaminhadas de forma anônima aos canais oficiais de denúncia.";
   }
+  // 5. PADRÃO REGIONAL / CIDADE / OBRAS
+  else {
+    $context = "A iniciativa representa um passo importante para a infraestrutura pública de {$city} e de toda a nossa região, trazendo melhorias diretas para a comunidade.";
+    $service = "Os moradores devem acompanhar as orientações dos órgãos oficiais para conferir cronogramas e determinações do município.";
+  }
 
-  $closure = "A cobertura completa desta e de outras notícias da nossa região você confere no portal tvsumare.com.br. Eu sou Cristian Schibelsky, para a TV Sumaré.";
+  $closure = "A cobertura completa desta e de outras notícias da nossa região você confere no portal da TV Sumaré, em tvsumare ponto com ponto br. Eu sou Cristian Schibelsky, para a TV Sumaré.";
 
   $script = "A TV Sumaré acompanha os principais acontecimentos de {$city} e de toda a Região Metropolitana de Campinas.\n\n" .
     "{$lead}\n\n" .
@@ -95,13 +106,13 @@ function rpia_generate_script($news){
     "2. DESENVOLVIMENTO DOS FATOS: detalhe a notícia (números, metragem, serviços oferecidos, capacidade de atendimento, etapas das obras, locais e impactos).\n" .
     "3. IMPACTO PARA A POPULAÇÃO OU CONTEXTO INSTITUCIONAL: explique o desdobramento do fato para a comunidade ou para a esfera pública regional.\n" .
     "4. SERVIÇO E ORIENTAÇÃO: informe prazos, funcionamento ou orientações para a comunidade.\n" .
-    "5. ENCERRAMENTO DE BANCADA OBRIGATÓRIO: 'A cobertura completa você acompanha no portal tvsumare.com.br. Eu sou Cristian Schibelsky, para a TV Sumaré.'\n\n" .
+    "5. ENCERRAMENTO DE BANCADA OBRIGATÓRIO: 'A cobertura completa você acompanha no portal da TV Sumaré, em tvsumare ponto com ponto br. Eu sou Cristian Schibelsky, para a TV Sumaré.'\n\n" .
     "REGRAS RIGOROSAS:\n" .
     "- ATEMPORAL: NUNCA use 'bom dia', 'boa tarde' ou 'boa noite', pois o vídeo será assistido em horários variados.\n" .
     "- NÃO gere textos curtos de 2 frases. O roteiro precisa ter substância de telejornal (60 a 90 segundos).\n" .
     "- Não invente dados não constantes da pauta; desenvolva as consequências e o contexto com base nas informações apuradas.\n" .
     "- NÃO use termos de IA, não use 'telespectadores', não use 'é um prazer estar aqui'.\n" .
-    "- Não pronuncie http, www, ponto com ou ponto br no meio da fala.\n\n" .
+    "- Pronuncie o portal exatamente como: 'no portal da TV Sumaré, em tvsumare ponto com ponto br'.\n\n" .
     "DADOS DA MATÉRIA:\n" .
     "Título: " . ($news['title']??'') . "\n" .
     "Cidade: " . $city . "\n" .
