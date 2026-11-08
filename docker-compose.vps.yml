@@ -10,21 +10,22 @@ services:
     init: true
     read_only: true
     env_file:
-      - .env.runtime
+      # Dedicated HML-only environment file, required and never committed.
+      - .env.hml.runtime
     environment:
       TVSUMARE_ENV: homologation
       TVSUMARE_SITE_NAME: TV Sumare
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_API_KEY: ''
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5-mini}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.0-flash}
-      GEMINI_FALLBACK_MODELS: ${GEMINI_FALLBACK_MODELS:-}
-      HEYGEN_API_KEY: ${HEYGEN_API_KEY:-}
-      YOUTUBE_CLIENT_ID: ${YOUTUBE_CLIENT_ID:-}
-      YOUTUBE_CLIENT_SECRET: ${YOUTUBE_CLIENT_SECRET:-}
-      YOUTUBE_PRIVACY_STATUS: ${YOUTUBE_PRIVACY_STATUS:-public}
-      SITE_FACTORY_TOKEN: ${SITE_FACTORY_TOKEN:-}
-      TVSUMARE_OUTBOUND_HOSTS: ${TVSUMARE_OUTBOUND_HOSTS:-}
-      TVSUMARE_WHATSAPP_WEBHOOK_URL: ${TVSUMARE_WHATSAPP_WEBHOOK_URL:-}
+      GEMINI_FALLBACK_MODELS: ''
+      HEYGEN_API_KEY: ''
+      YOUTUBE_CLIENT_ID: ''
+      YOUTUBE_CLIENT_SECRET: ''
+      YOUTUBE_PRIVACY_STATUS: private
+      SITE_FACTORY_TOKEN: ''
+      TVSUMARE_OUTBOUND_HOSTS: ''
+      TVSUMARE_WHATSAPP_WEBHOOK_URL: ''
     volumes:
       - type: bind
         source: /srv/tvsumare/hml-isolated/data
@@ -101,17 +102,18 @@ services:
     init: true
     read_only: true
     env_file:
-      - .env.runtime
+      # Dedicated HML-only environment file, required and never committed.
+      - .env.hml.runtime
     command: ["/bin/sh", "-c", "exec su -s /bin/sh www-data -c 'while true; do php /var/www/html/admin/cron_radar.php; sleep 3600; done'"]
     environment:
       TVSUMARE_ENV: homologation
       TVSUMARE_SITE_NAME: TV Sumare
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_API_KEY: ''
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5-mini}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.0-flash}
-      GEMINI_FALLBACK_MODELS: ${GEMINI_FALLBACK_MODELS:-}
-      TVSUMARE_OUTBOUND_HOSTS: ${TVSUMARE_OUTBOUND_HOSTS:-}
-      TVSUMARE_WHATSAPP_WEBHOOK_URL: ${TVSUMARE_WHATSAPP_WEBHOOK_URL:-}
+      GEMINI_FALLBACK_MODELS: ''
+      TVSUMARE_OUTBOUND_HOSTS: ''
+      TVSUMARE_WHATSAPP_WEBHOOK_URL: ''
     volumes:
       - type: bind
         source: /srv/tvsumare/hml-isolated/data
