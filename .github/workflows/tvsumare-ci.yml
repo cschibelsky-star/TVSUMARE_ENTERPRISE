@@ -35,6 +35,18 @@ jobs:
       - name: Teste da politica editorial V3
         run: php tests/editorial_policy_v3_test.php
 
+      - name: Testar armazenamento JSON atomico
+        run: php tests/json_atomic_storage_test.php
+
+      - name: Testar concorrencia JSON multiprocesso
+        run: php tests/json_atomic_concurrency_test.php
+
+      - name: Testar deduplicacao concorrente de pautas
+        run: php tests/json_atomic_dedupe_test.php
+
+      - name: Testar persistencia atomica das pautas descartadas
+        run: php tests/radar_discard_atomic_test.php
+
       - name: Validar regras editoriais criticas
         shell: bash
         run: |
