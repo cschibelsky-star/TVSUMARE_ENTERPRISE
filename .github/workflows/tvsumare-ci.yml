@@ -35,6 +35,9 @@ jobs:
       - name: Teste da politica editorial V3
         run: php tests/editorial_policy_v3_test.php
 
+      - name: Verificar gate de isolamento HML PROD com Docker simulado
+        run: sh tests/tvsumare_mount_gate_test.sh
+
       - name: Validar regras editoriais criticas
         shell: bash
         run: |
