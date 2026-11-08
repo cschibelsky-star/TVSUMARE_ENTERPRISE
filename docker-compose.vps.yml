@@ -26,10 +26,26 @@ services:
       TVSUMARE_OUTBOUND_HOSTS: ${TVSUMARE_OUTBOUND_HOSTS:-}
       TVSUMARE_WHATSAPP_WEBHOOK_URL: ${TVSUMARE_WHATSAPP_WEBHOOK_URL:-}
     volumes:
-      - /srv/tvsumare/shared/data:/var/www/html/data:rw,z
-      - /srv/tvsumare/shared/uploads:/var/www/html/uploads:rw,z
-      - /srv/tvsumare/shared/videos:/var/www/html/videos:rw,z
-      - /srv/tvsumare/shared/logs:/var/www/html/logs:rw,z
+      - type: bind
+        source: /srv/tvsumare/hml-isolated/data
+        target: /var/www/html/data
+        bind:
+          create_host_path: false
+      - type: bind
+        source: /srv/tvsumare/hml-isolated/uploads
+        target: /var/www/html/uploads
+        bind:
+          create_host_path: false
+      - type: bind
+        source: /srv/tvsumare/hml-isolated/videos
+        target: /var/www/html/videos
+        bind:
+          create_host_path: false
+      - type: bind
+        source: /srv/tvsumare/hml-isolated/logs
+        target: /var/www/html/logs
+        bind:
+          create_host_path: false
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777
       - /var/run/apache2:rw,nosuid,nodev,size=8m,mode=0755
@@ -75,6 +91,8 @@ services:
     stop_grace_period: 20s
 
   radar_scheduler:
+    # Opt-in: never start polling, writing or using provider quotas during HML isolation.
+    profiles: [hml-radar-opt-in]
     build:
       context: .
       dockerfile: Dockerfile
@@ -95,9 +113,21 @@ services:
       TVSUMARE_OUTBOUND_HOSTS: ${TVSUMARE_OUTBOUND_HOSTS:-}
       TVSUMARE_WHATSAPP_WEBHOOK_URL: ${TVSUMARE_WHATSAPP_WEBHOOK_URL:-}
     volumes:
-      - /srv/tvsumare/shared/data:/var/www/html/data:rw,z
-      - /srv/tvsumare/shared/uploads:/var/www/html/uploads:rw,z
-      - /srv/tvsumare/shared/logs:/var/www/html/logs:rw,z
+      - type: bind
+        source: /srv/tvsumare/hml-isolated/data
+        target: /var/www/html/data
+        bind:
+          create_host_path: false
+      - type: bind
+        source: /srv/tvsumare/hml-isolated/uploads
+        target: /var/www/html/uploads
+        bind:
+          create_host_path: false
+      - type: bind
+        source: /srv/tvsumare/hml-isolated/logs
+        target: /var/www/html/logs
+        bind:
+          create_host_path: false
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777
     networks:
