@@ -59,3 +59,18 @@ Consulta técnica realizada após CI da branch aprovado (run 42532405979). **Nã
 - **Comprovado por inventário V5:** backup geral VPS está habilitado e inclui `/srv/tvsumare`, snapshot `2026-11-07T171312Z`, 2.254.843.540 bytes; `project_backup_status(tvsumare)=backup_not_configured` para backup específico.
 - **Ainda NÃO comprovado:** verificação de checksum recalculado, restauração efetiva, permissões/estrutura do futuro HML, isolamento de rede, ausência de credenciais em outras fontes, compatibilidade das rotas e isolamento real após cutover.
 - **Operação proibida nesta fase:** deploy, merge, restart, criação ou cópia de dados ativos, `docker compose down`, testes com escrita em HML ou ativação do scheduler. O próximo passo é um pré-flight auditado, seguido de aprovação específica antes de qualquer cutover.
+
+
+## Verificação amostral de backup — sem modificar dados ativos
+
+Novo utilitário `tools/tvsumare_backup_sample_restore.py` valida o checksum SHA-256 informado, abre o backup em modo **somente leitura** e restaura até três **arquivos JSON estritamente permitidos** de `srv/tvsumare/shared/data/` em um diretório temporário privado sob `/var/tmp`. O diretório é automaticamente descartado. Nenhum caminho de origem é sobrescrito e o conteúdo dos JSONs não é exibido. O utilitário rejeita membros que não sejam arquivos regulares, dados inválidos e arquivos grandes; não usa `extractall`. Testes sintéticos são executados por `tests/tvsumare_backup_sample_restore_test.py` no CI.
+
+Execução no host autorizada somente após conferir espaço livre em `/var/tmp`, que o backup está estável, e que a leitura do arquivo não prejudicará I/O dos serviços:
+
+```bash
+python3 /srv/tvsumare/repository/tools/tvsumare_backup_sample_restore.py \
+  --archive /srv/vitrine/backups/vps/vps-filesystem-20261107T171312Z.tar.gz \
+  --expected-sha256 1a6e502d3ccdfe9b46c9a4d5d51381baf639004f0f04bcb33ec6f9890f88a558
+```
+
+**Atenção:** o script só estará disponível nesse caminho depois de uma entrega isolada e autorizada. Não fazer `git pull` na árvore suja para obtê-lo. Mesmo o resultado `PASS_SAMPLED_ONLY` **não comprova recuperação completa** do ambiente e não autoriza a troca dos mounts. `INCONCLUSIVE` deve manter Gate 0 bloqueado. Verificar que o formato do backup realmente contém os caminhos permitidos; caso contrário adaptar allowlist em PR revisado, sem ampliar extração.
