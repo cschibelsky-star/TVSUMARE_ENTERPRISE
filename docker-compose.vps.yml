@@ -10,26 +10,44 @@ services:
     init: true
     read_only: true
     env_file:
-      - .env.runtime
+      # Dedicated HML-only environment file, required and never committed.
+      - .env.hml.runtime
     environment:
       TVSUMARE_ENV: homologation
       TVSUMARE_SITE_NAME: TV Sumare
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_API_KEY: ''
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5-mini}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.0-flash}
-      GEMINI_FALLBACK_MODELS: ${GEMINI_FALLBACK_MODELS:-}
-      HEYGEN_API_KEY: ${HEYGEN_API_KEY:-}
-      YOUTUBE_CLIENT_ID: ${YOUTUBE_CLIENT_ID:-}
-      YOUTUBE_CLIENT_SECRET: ${YOUTUBE_CLIENT_SECRET:-}
-      YOUTUBE_PRIVACY_STATUS: ${YOUTUBE_PRIVACY_STATUS:-public}
-      SITE_FACTORY_TOKEN: ${SITE_FACTORY_TOKEN:-}
-      TVSUMARE_OUTBOUND_HOSTS: ${TVSUMARE_OUTBOUND_HOSTS:-}
-      TVSUMARE_WHATSAPP_WEBHOOK_URL: ${TVSUMARE_WHATSAPP_WEBHOOK_URL:-}
+      GEMINI_API_KEY: ''
+      GEMINI_FALLBACK_MODELS: ''
+      HEYGEN_API_KEY: ''
+      YOUTUBE_CLIENT_ID: ''
+      YOUTUBE_CLIENT_SECRET: ''
+      YOUTUBE_PRIVACY_STATUS: private
+      SITE_FACTORY_TOKEN: ''
+      TVSUMARE_OUTBOUND_HOSTS: ''
+      TVSUMARE_WHATSAPP_WEBHOOK_URL: ''
     volumes:
-      - /srv/tvsumare/shared/data:/var/www/html/data:rw,z
-      - /srv/tvsumare/shared/uploads:/var/www/html/uploads:rw,z
-      - /srv/tvsumare/shared/videos:/var/www/html/videos:rw,z
-      - /srv/tvsumare/shared/logs:/var/www/html/logs:rw,z
+      - type: bind
+        source: /srv/tvsumare/hml-isolated/data
+        target: /var/www/html/data
+        bind:
+          create_host_path: false
+      - type: bind
+        source: /srv/tvsumare/hml-isolated/uploads
+        target: /var/www/html/uploads
+        bind:
+          create_host_path: false
+      - type: bind
+        source: /srv/tvsumare/hml-isolated/videos
+        target: /var/www/html/videos
+        bind:
+          create_host_path: false
+      - type: bind
+        source: /srv/tvsumare/hml-isolated/logs
+        target: /var/www/html/logs
+        bind:
+          create_host_path: false
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777
       - /var/run/apache2:rw,nosuid,nodev,size=8m,mode=0755
@@ -75,6 +93,8 @@ services:
     stop_grace_period: 20s
 
   radar_scheduler:
+    # Opt-in: never start polling, writing or using provider quotas during HML isolation.
+    profiles: [hml-radar-opt-in]
     build:
       context: .
       dockerfile: Dockerfile
@@ -83,21 +103,35 @@ services:
     init: true
     read_only: true
     env_file:
-      - .env.runtime
+      # Dedicated HML-only environment file, required and never committed.
+      - .env.hml.runtime
     command: ["/bin/sh", "-c", "exec su -s /bin/sh www-data -c 'while true; do php /var/www/html/admin/cron_radar.php; sleep 3600; done'"]
     environment:
       TVSUMARE_ENV: homologation
       TVSUMARE_SITE_NAME: TV Sumare
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_API_KEY: ''
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5-mini}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.0-flash}
-      GEMINI_FALLBACK_MODELS: ${GEMINI_FALLBACK_MODELS:-}
-      TVSUMARE_OUTBOUND_HOSTS: ${TVSUMARE_OUTBOUND_HOSTS:-}
-      TVSUMARE_WHATSAPP_WEBHOOK_URL: ${TVSUMARE_WHATSAPP_WEBHOOK_URL:-}
+      GEMINI_API_KEY: ''
+      GEMINI_FALLBACK_MODELS: ''
+      TVSUMARE_OUTBOUND_HOSTS: ''
+      TVSUMARE_WHATSAPP_WEBHOOK_URL: ''
     volumes:
-      - /srv/tvsumare/shared/data:/var/www/html/data:rw,z
-      - /srv/tvsumare/shared/uploads:/var/www/html/uploads:rw,z
-      - /srv/tvsumare/shared/logs:/var/www/html/logs:rw,z
+      - type: bind
+        source: /srv/tvsumare/hml-isolated/data
+        target: /var/www/html/data
+        bind:
+          create_host_path: false
+      - type: bind
+        source: /srv/tvsumare/hml-isolated/uploads
+        target: /var/www/html/uploads
+        bind:
+          create_host_path: false
+      - type: bind
+        source: /srv/tvsumare/hml-isolated/logs
+        target: /var/www/html/logs
+        bind:
+          create_host_path: false
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777
     networks:

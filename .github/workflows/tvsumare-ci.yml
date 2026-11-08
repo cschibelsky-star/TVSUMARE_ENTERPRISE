@@ -52,5 +52,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Testar restauração amostral descartável (fixtures sintéticas)
+        run: python3 tests/tvsumare_backup_sample_restore_test.py
+
+      - name: Validar isolamento HML (Compose resolvido, sem secrets)
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -e .env.hml.runtime
+          trap 'rm -f .env.hml.runtime' EXIT
+          : > .env.hml.runtime
+          docker compose -f docker-compose.vps.yml config --format json | python3 -c 'import json,sys; s=json.load(sys.stdin)["services"]; assert "web" in s and "radar_scheduler" not in s, "Radar must be opt-in"; print("HML_RADAR_DEFAULT_OFF=PASS")'
+          docker compose --profile hml-radar-opt-in -f docker-compose.vps.yml config --format json | python3 tests/hml_isolation_compose_test.py
+
       - name: Build + aplicadores + smoke de homologacao
         run: docker build -t tvsumare-ci .
