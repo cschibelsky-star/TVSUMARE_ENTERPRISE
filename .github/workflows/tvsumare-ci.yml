@@ -52,5 +52,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Validar isolamento HML (Compose resolvido, sem secrets)
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -e .env.hml.runtime
+          trap 'rm -f .env.hml.runtime' EXIT
+          : > .env.hml.runtime
+          docker compose -f docker-compose.vps.yml config --format json | python3 tests/hml_isolation_compose_test.py
+
       - name: Build + aplicadores + smoke de homologacao
         run: docker build -t tvsumare-ci .
