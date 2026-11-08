@@ -3,15 +3,18 @@ require_once __DIR__.'/outbound_guard.php';
 require_once __DIR__.'/video_branding.php';
 
 if (!function_exists('tvs_youtube_oauth_config')) {
+  function tvs_youtube_oauth_path(){ return dirname(__DIR__).'/data/youtube_oauth.json'; }
+  function tvs_youtube_oauth_read(){ $p=tvs_youtube_oauth_path(); if(!is_file($p)) return []; $d=json_decode((string)file_get_contents($p),true); return is_array($d)?$d:[]; }
   function tvs_youtube_oauth_config(){
+    $saved = tvs_youtube_oauth_read();
+    $cid = trim((string)(getenv('YOUTUBE_CLIENT_ID') ?: ($saved['client_id'] ?? '')));
+    $sec = trim((string)(getenv('YOUTUBE_CLIENT_SECRET') ?: ($saved['client_secret'] ?? '')));
     return [
-      'client_id'=>trim((string)(getenv('YOUTUBE_CLIENT_ID')?:'')),
-      'client_secret'=>trim((string)(getenv('YOUTUBE_CLIENT_SECRET')?:'')),
+      'client_id'=>$cid,
+      'client_secret'=>$sec,
       'privacy'=>in_array((string)(getenv('YOUTUBE_PRIVACY_STATUS')?:'public'),['public','unlisted','private'],true)?(string)(getenv('YOUTUBE_PRIVACY_STATUS')?:'public'):'public',
     ];
   }
-  function tvs_youtube_oauth_path(){ return dirname(__DIR__).'/data/youtube_oauth.json'; }
-  function tvs_youtube_oauth_read(){ $p=tvs_youtube_oauth_path(); if(!is_file($p)) return []; $d=json_decode((string)file_get_contents($p),true); return is_array($d)?$d:[]; }
   function tvs_youtube_oauth_write($data){ $p=tvs_youtube_oauth_path(); if(!is_dir(dirname($p))) @mkdir(dirname($p),0775,true); $ok=file_put_contents($p,json_encode($data,JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES),LOCK_EX)!==false; if($ok) @chmod($p,0600); return $ok; }
   function tvs_youtube_redirect_uri(){ $base=rtrim((string)($GLOBALS['site_url']??getenv('TVSUMARE_SITE_URL')?:''),'/'); return $base.'/admin/youtube-oauth-callback.php'; }
   function tvs_youtube_oauth_ready(){ $c=tvs_youtube_oauth_config(); return $c['client_id']!=='' && $c['client_secret']!==''; }
