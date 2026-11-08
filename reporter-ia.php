@@ -103,6 +103,9 @@ function rpia_video_agent_prompt($job,$cfg){
     "Regras editoriais: não cite que o conteúdo foi gerado por IA; não acrescente números, datas, nomes ou acusações que não estejam no roteiro; preserve o tom jornalístico; finalize reforçando que o público acompanhe a TV Sumaré.";
 }
 function rpia_heygen_create($job,$cfg){
+  require_once __DIR__.'/includes/heygen_editorial_gate.php';
+  $gate=tvs_heygen_editorial_gate($job['script']??'');
+  if(!$gate['ok']) return ['ok'=>false,'error'=>'Revisão editorial obrigatória: '.implode(' ', $gate['errors']),'editorial_blocked'=>true];
   $key=rpia_heygen_key($cfg); if($key==='') return ['ok'=>false,'error'=>'Configure a chave da HeyGen.'];
   $payload=['prompt'=>rpia_video_agent_prompt($job,$cfg),'mode'=>'generate','incognito_mode'=>rpia_bool($cfg['heygen_incognito_mode']??'0')];
   foreach(['avatar_id'=>'heygen_avatar_id','voice_id'=>'heygen_voice_id','style_id'=>'heygen_style_id','brand_kit_id'=>'heygen_brand_kit_id'] as $api=>$local){ $v=trim((string)($cfg[$local]??'')); if($v!=='') $payload[$api]=$v; }
