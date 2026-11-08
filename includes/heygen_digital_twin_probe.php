@@ -8,14 +8,15 @@ if (!function_exists('tvs_heygen_digital_twin_probe')) {
     $id=trim((string)$avatarId);
     if (!preg_match('/^[a-f0-9]{32}$/i',$id)) return ['ok'=>false,'reason'=>'invalid_avatar_id'];
     if (!is_callable($get)) return ['ok'=>false,'reason'=>'missing_readonly_adapter'];
-    $r=call_user_func($get,'/v2/avatars');
+    $r=call_user_func($get,'/v3/avatars/looks');
     if (!is_array($r) || empty($r['ok'])) return ['ok'=>false,'reason'=>'avatar_catalog_unavailable','http'=>is_array($r)?(int)($r['http']??0):0];
     $data=$r['data']['data']??[];
     $items=[];
-    foreach (['avatars','talking_photos','instant_avatars','avatar_list'] as $k) {
+    foreach (['looks','avatars','items','results'] as $k) {
       if (isset($data[$k]) && is_array($data[$k])) $items=array_merge($items,$data[$k]);
     }
     if (isset($data[0])) $items=array_merge($items,$data);
+    if (isset($r['data']['next_token']) || !empty($r['data']['has_more']) || isset($data['next_token']) || !empty($data['has_more'])) return ['ok'=>false,'reason'=>'catalog_pagination_incomplete'];
     $found=false;
     foreach ($items as $item) {
       if (!is_array($item)) continue;
