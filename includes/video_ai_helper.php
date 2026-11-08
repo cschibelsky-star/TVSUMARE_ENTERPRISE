@@ -163,27 +163,26 @@ if (!function_exists('tvp_generate_script')) {
     $title=tvp_clean($job['title']??'Atualização regional');
     $city=tvp_clean($job['city']??'região');
     $cat=tvp_clean($job['category']??'notícias');
-    $source=tvp_clean($job['source']??'fonte consultada');
+    $body=tvp_clean($job['body']??($job['summary']??''));
     $profile=$job['presenter_profile']??tvp_avatar_profile_for_category($cat);
-    $txt=tvp_text_lc($title.' '.$cat.' '.($job['body']??'').' '.($job['summary']??''));
+    $txt=tvp_text_lc($title.' '.$cat.' '.$body);
+    // O roteiro fala apenas o fato apurado. A fonte fica nos créditos da matéria, nunca narrada.
+    $lead=$body!==''?$body:$title.'.';
     if($profile==='negocios_empregos'){
-      $script="Boa noite. A TV Sumaré traz uma notícia importante para quem procura uma oportunidade no mercado de trabalho.\n\n".
-        "{$title}.\n\n".
-        "A informação envolve {$city} e reforça o movimento de geração de emprego, renda e desenvolvimento regional.\n\n".
-        "Segundo informações de {$source}, os interessados devem acompanhar os canais oficiais para confirmar prazos, requisitos, documentos e formas de atendimento.\n\n".
-        "A TV Sumaré segue acompanhando as oportunidades de emprego e negócios em toda a região.\n\n".
+      $script="Boa noite. A TV Sumaré traz uma atualização do mercado de trabalho.\n\n".
+        "{$lead}\n\n".
+        "Os interessados devem acompanhar os canais oficiais para confirmar prazos, requisitos, documentos e formas de atendimento.\n\n".
         "Eu sou Cristian Schibelsky. Até o próximo boletim.";
       return tvp_clean($script);
     }
     if($profile==='servicos_publicos'){
       $script="Boa noite. A TV Sumaré traz uma atualização de serviço público para moradores de {$city}.\n\n".
-        "{$title}.\n\n".
-        "O assunto está ligado à área de {$cat} e pode impactar diretamente a rotina da população.\n\n".
-        "Segundo informações de {$source}, moradores devem acompanhar os canais oficiais para novas orientações, datas, locais de atendimento e demais detalhes.\n\n".
+        "{$lead}\n\n".
+        "Moradores devem acompanhar os canais oficiais para novas orientações, datas, locais de atendimento e demais detalhes.\n\n".
         "Eu sou Cristian Schibelsky. Até o próximo boletim.";
       return tvp_clean($script);
     }
-    return tvp_clean("Boa noite. A TV Sumaré acompanha os principais fatos de {$city} e região.\n\n{$title}.\n\nSegundo informações de {$source}, o tema integra a cobertura regional da TV Sumaré e deve ser acompanhado pelos moradores.\n\nEu sou Cristian Schibelsky. Até o próximo boletim.");
+    return tvp_clean("Boa noite. A TV Sumaré acompanha os principais fatos de {$city} e região.\n\n{$lead}\n\nEu sou Cristian Schibelsky. Até o próximo boletim.");
   }
   function tvp_generate_script($job){
     $profile=$job['presenter_profile']??tvp_avatar_profile_for_category($job['category']??'');
