@@ -39,3 +39,23 @@ Se HML não iniciar ou sua saúde regredir, parar apenas a transição de HML. *
 - Prova por inspeção dos mounts efetivos (diretórios de HML diferentes dos de PROD).
 - Testes funcionais e publicação continuam **bloqueados** até esses critérios passarem.
 - PR draft, sem merge/deploy sem autorização separada.
+
+
+## Revisão independente Claude Opus 5 — 08/11/2026 (Avello)
+
+Consulta técnica realizada após CI da branch aprovado (run 42532405979). **Não substitui homologação real.** Principais bloqueios e decisões:
+
+1. **Namespace Docker / colisão de projetos:** `name: tvsumare` ainda coincide com o projeto Compose existente. Antes do cutover, identificar os labels `com.docker.compose.project` e `com.docker.compose.service` em HML e PROD, sem ler `.Config.Env`; provar que a atualização direcionada a `web` não gerenciará `web_prod`. Uma migração de namespace para `tvsumare_hml` pode ser alternativa, mas exige plano próprio para nomes, Traefik, serviços, redes e rollback; **não modificar o nome cegamente**.
+2. **Credenciais:** campos explícitos `environment: OPENAI_API_KEY: ''`, `HEYGEN_API_KEY: ''`, `GEMINI_API_KEY: ''`, `SITE_FACTORY_TOKEN: ''` foram mantidos vazios de propósito; **não remover** esses overrides sem revisão, pois `env_file` pode carregar credenciais. Confirmar que `.env.hml.runtime` não herda segredos nem configurações mutáveis de produção e que os helpers PHP não consultam configurações legadas ou globais persistidas.
+3. **Diretórios HML vazios:** verificar quais arquivos JSON/estrutura mínima são necessários ao bootstrap, sem semear cópias operacionais de produção; usar fixtures sintéticas e validar PHP health/admin com identidade distinta.
+4. **Permissões e bind mounts:** confirmar owner UID/GID e permissão necessária a `www-data`, sem `chmod 777`, sem `chown -R` em `shared/*`. O entrypoint aplica `chown -R` a diretórios montados; só é admissível após comprovar origem HML exclusiva.
+5. **Redes Docker:** `vitrine_net` e `n8n-traefik_app_network` podem permitir reachability à produção. Auditar dependências e regras de egress; separação do filesystem **não comprova isolamento L3**.
+6. **Scheduler e concorrência:** `profiles: [hml-radar-opt-in]` impede ativação padrão, porém ativação explícita/wildcard continua possível. Não iniciar o scheduler até proteger todas as gravações JSON concorrentes e provar ausência de chamadas de API/publicação.
+
+### Verificações já comprovadas × ainda pendentes
+
+- **Comprovado no CI** do commit `865274a982960d23315840b0d99c5ee314ab498f`: workflow `TV Sumare CI` run `42532405979` `completed/success`; etapas `php-quality`, validação Compose HML incluindo scheduler desativado por padrão, e build/smoke Docker `success`.
+- **Comprovado em ambiente operacional anterior:** HML e PROD compartilham quatro bind mounts RW; falha P0 reproduzida com leitura de metadados Docker fornecida pelo responsável.
+- **Comprovado por inventário V5:** backup geral VPS está habilitado e inclui `/srv/tvsumare`, snapshot `2026-11-07T171312Z`, 2.254.843.540 bytes; `project_backup_status(tvsumare)=backup_not_configured` para backup específico.
+- **Ainda NÃO comprovado:** verificação de checksum recalculado, restauração efetiva, permissões/estrutura do futuro HML, isolamento de rede, ausência de credenciais em outras fontes, compatibilidade das rotas e isolamento real após cutover.
+- **Operação proibida nesta fase:** deploy, merge, restart, criação ou cópia de dados ativos, `docker compose down`, testes com escrita em HML ou ativação do scheduler. O próximo passo é um pré-flight auditado, seguido de aprovação específica antes de qualquer cutover.
