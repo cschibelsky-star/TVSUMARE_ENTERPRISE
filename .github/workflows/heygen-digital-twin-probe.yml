@@ -1,0 +1,30 @@
+name: HeyGen Digital Twin Probe Tests
+on:
+  pull_request:
+    paths:
+      - 'includes/heygen_digital_twin_probe.php'
+      - 'tests/heygen_digital_twin_probe_test.php'
+      - '.github/workflows/heygen-digital-twin-probe.yml'
+      - 'scripts/heygen_digital_twin_diagnostic.php'
+  workflow_dispatch:
+jobs:
+  probe-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: PHP lint
+        run: |
+          php -l includes/heygen_digital_twin_probe.php
+          php -l tests/heygen_digital_twin_probe_test.php
+          php -l scripts/heygen_digital_twin_diagnostic.php
+      - name: Run isolated mock tests (no HeyGen API or credits)
+        run: php tests/heygen_digital_twin_probe_test.php
+
+      - name: Verify diagnostic fails closed without configured credential
+        run: |
+          set +e
+          output=$(env -u HEYGEN_API_KEY php scripts/heygen_digital_twin_diagnostic.php 2>&1)
+          status=$?
+          set -e
+          test "$status" -eq 2
+          echo "$output" | grep -q 'HeyGen credential unavailable; no request made'
