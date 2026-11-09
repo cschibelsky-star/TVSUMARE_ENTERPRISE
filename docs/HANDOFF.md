@@ -51,3 +51,9 @@ Validar acesso ao Digital Twin da HeyGen pelo runtime da TV Sumaré antes de int
 - Commit `61ac7bf`: adicionados testes mock de esquema desconhecido e catálogo reconhecido vazio.
 - Confirmado no commit `c36fb85`: HeyGen Digital Twin Probe Tests #9 e TV Sumare CI #494 concluídos com sucesso. CI dos commits novos ainda requer verificação.
 - Gate permanece `can_advance=false` até evidência autenticada na HML.
+
+## Verificação adicional
+- CI do commit `79b3f67`: HeyGen Digital Twin Probe Tests #11 concluído com sucesso; TV Sumare CI #496 ainda estava em andamento na consulta.
+- Commit `5b64c36`: itens do catálogo sem `id` ou `avatar_id` agora falham com `catalog_item_schema_unrecognized`, em vez de serem ignorados.
+- Commit `2e733c7`: teste mock do item malformado adicionado.
+- Não houve consulta autenticada, deploy ou merge. Validar CI desses commits antes de avançar.
