@@ -35,3 +35,7 @@ Validar acesso ao Digital Twin da HeyGen pelo runtime da TV Sumaré antes de int
 - Commit `2a5dd4f`: diagnóstico CLI passa a usar o carregador canônico de credenciais HeyGen.
 - Commit `28ec72c`: teste de falha segura alinhado ao novo carregamento.
 - CI dos commits acima: pendente de confirmação; não houve execução real da API.
+
+## Atualização: política de saída
+- Commit `c36fb85`: o diagnóstico passa a usar `includes/outbound_guard.php` e `tvs_outbound_curl_options()`; redirecionamentos são desabilitados para não encaminhar a credencial a outros hosts.
+- O diagnóstico continua sem execução autenticada e sem deploy. CI da alteração deve ser verificado antes do avanço.
