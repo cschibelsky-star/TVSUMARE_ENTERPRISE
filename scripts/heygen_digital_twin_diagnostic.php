@@ -7,6 +7,7 @@
 if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
 require_once dirname(__DIR__).'/includes/heygen_digital_twin_probe.php';
 require_once dirname(__DIR__).'/includes/heygen_helper.php';
+require_once dirname(__DIR__).'/includes/outbound_guard.php';
 // Use the same configuration resolution as the Repórter IA; never print the key.
 $cfg=tvs_heygen_load_config([]);
 $key=$cfg['heygen_api_key']??'';
@@ -18,12 +19,16 @@ if (!function_exists('curl_init')) {
 }
 $get=static function($path)use($key) {
  if (!in_array($path,['/v3/api_keys/self','/v3/avatars/looks'],true)) return ['ok'=>false,'http'=>0];
- $ch=curl_init('https://api.heygen.com'.$path);
- curl_setopt_array($ch,[
-   CURLOPT_RETURNTRANSFER=>true,CURLOPT_CONNECTTIMEOUT=>5,CURLOPT_TIMEOUT=>15,
-   CURLOPT_FOLLOWLOCATION=>false,CURLOPT_HTTPHEADER=>['X-Api-Key: '.$key,'Accept: application/json'],
-   CURLOPT_PROTOCOLS=>CURLPROTO_HTTPS
+ $url='https://api.heygen.com'.$path;
+ $outboundOptions=tvs_outbound_curl_options($url,15);
+ if ($outboundOptions===null) return ['ok'=>false,'http'=>0];
+ $ch=curl_init($url);
+ // Do not follow redirects with the API credential attached.
+ curl_setopt_array($ch,$outboundOptions+[
+   CURLOPT_RETURNTRANSFER=>true,CURLOPT_FOLLOWLOCATION=>false,
+   CURLOPT_HTTPHEADER=>['X-Api-Key: '.$key,'Accept: application/json']
  ]);
+ curl_setopt($ch,CURLOPT_FOLLOWLOCATION,false);
  $raw=curl_exec($ch); $status=(int)curl_getinfo($ch,CURLINFO_HTTP_CODE);
  curl_close($ch);
  $decoded=is_string($raw)?json_decode($raw,true):null;
