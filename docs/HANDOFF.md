@@ -17,13 +17,13 @@ Validar acesso ao Digital Twin da HeyGen pelo runtime da TV Sumaré antes de int
 - PR: https://github.com/cschibelsky-star/TVSUMARE_ENTERPRISE/pull/64
 - CI do commit e84c074: workflows HeyGen Digital Twin Probe Tests e TV Sumare CI concluídos com sucesso.
 - Runtime config status: HEYGEN_API_KEY configurada; **não prova** que esteja exportada para o script CLI.
-- O diagnóstico agora usa `tvs_heygen_load_config([])` para resolver a credencial como o Repórter IA. **Ainda não** reutiliza `tvs_outbound_curl_options`; a política de saída precisa ser reconciliada e validada antes da execução autenticada.
+- O diagnóstico usa `tvs_heygen_load_config([])` e, desde o commit `c36fb85`, `tvs_outbound_curl_options()` por meio de `includes/outbound_guard.php`. A execução autenticada no runtime ainda não ocorreu.
 - O look foi encontrado em conta HeyGen conectada ao ChatGPT; não comprovado no workspace da credencial da TV Sumaré.
 - `AGENTS.md`, `CLAUDE.md`, `docs/OPERACAO-CHATGPT.md` não encontrados nos caminhos convencionais da branch na auditoria.
 
 ## Próximo executor
 1. Confirmar a rota operacional **real** de execução read-only na HML, sem exposição da chave e sem mexer em árvore Git suja.
-2. Reconciliar o adaptador com a política de saída do helper canônico, mantendo os endpoints GET allowlisted.
+2. Verificar no runtime que a política de saída funciona para ambos os endpoints GET allowlisted.
 3. Validar respostas reais e paginação; atualizar testes com fixtures sanitizadas.
 4. Obter evidência HML e solicitar supervisão da VIA; **não avançar** sem comprovação.
 5. Não gerar vídeo pago, fazer merge, deploy ou alterar produção sem autorização específica.
@@ -39,3 +39,9 @@ Validar acesso ao Digital Twin da HeyGen pelo runtime da TV Sumaré antes de int
 ## Atualização: política de saída
 - Commit `c36fb85`: o diagnóstico passa a usar `includes/outbound_guard.php` e `tvs_outbound_curl_options()`; redirecionamentos são desabilitados para não encaminhar a credencial a outros hosts.
 - O diagnóstico continua sem execução autenticada e sem deploy. CI da alteração deve ser verificado antes do avanço.
+
+## Verificação posterior — 09/11/2026
+- Commit `c36fb85`: HeyGen Digital Twin Probe Tests #9 concluído com `success`; TV Sumare CI #494 estava `in_progress` na consulta. Não afirmar sucesso total.
+- Git na VPS: `main...origin/main` com seis arquivos não rastreados. Preservar todos; não fazer checkout/reset/clean/sincronização para executar o diagnóstico.
+- O script atualizado não está implantado na VPS; consulta autenticada ao Digital Twin continua **não executada**.
+- Próximo gate: ambiente isolado e autorizado com a credencial do serviço, ou conector operacional com comando de diagnóstico explicitamente permitido; registrar apenas HTTP/status/visibilidade, nunca credenciais ou payload bruto.
