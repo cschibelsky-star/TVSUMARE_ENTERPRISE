@@ -22,7 +22,7 @@ if (!function_exists('tvs_heygen_digital_twin_probe')) {
     if (!$recognized) return ['ok'=>false,'reason'=>'catalog_schema_unrecognized'];
     $found=false;
     foreach ($items as $item) {
-      if (!is_array($item)) continue;
+      if (!is_array($item) || (!array_key_exists('id',$item) && !array_key_exists('avatar_id',$item))) return ['ok'=>false,'reason'=>'catalog_item_schema_unrecognized'];
       if (strcasecmp((string)($item['avatar_id']??$item['id']??''),$id)===0) { $found=true; break; }
     }
     return ['ok'=>true,'avatar_visible'=>$found,'catalog_items_checked'=>count($items),
