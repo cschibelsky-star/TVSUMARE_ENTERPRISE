@@ -16,4 +16,6 @@ $unknown=tvs_heygen_digital_twin_probe(function($p){return ['ok'=>true,'data'=>[
 if($unknown['ok']||$unknown['reason']!=='catalog_schema_unrecognized')exit(5);
 $empty=tvs_heygen_digital_twin_probe(function($p){return ['ok'=>true,'data'=>['data'=>['looks'=>[]]]];},$id);
 if(!$empty['ok']||$empty['avatar_visible']!==false)exit(6);
+$malformed=tvs_heygen_digital_twin_probe(function($p){return ['ok'=>true,'data'=>['data'=>['looks'=>[['unexpected'=>'value']]]]];},$id);
+if($malformed['ok']||$malformed['reason']!=='catalog_item_schema_unrecognized')exit(7);
 echo "Digital Twin probe mock tests passed\n";
