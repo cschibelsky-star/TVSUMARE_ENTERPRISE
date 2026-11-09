@@ -45,3 +45,9 @@ Validar acesso ao Digital Twin da HeyGen pelo runtime da TV Sumaré antes de int
 - Git na VPS: `main...origin/main` com seis arquivos não rastreados. Preservar todos; não fazer checkout/reset/clean/sincronização para executar o diagnóstico.
 - O script atualizado não está implantado na VPS; consulta autenticada ao Digital Twin continua **não executada**.
 - Próximo gate: ambiente isolado e autorizado com a credencial do serviço, ou conector operacional com comando de diagnóstico explicitamente permitido; registrar apenas HTTP/status/visibilidade, nunca credenciais ou payload bruto.
+
+## Correção de esquema — 09/11/2026
+- Commit `4977922`: formato de catálogo desconhecido retorna `catalog_schema_unrecognized` (fail-closed), sem confundir com lista vazia.
+- Commit `61ac7bf`: adicionados testes mock de esquema desconhecido e catálogo reconhecido vazio.
+- Confirmado no commit `c36fb85`: HeyGen Digital Twin Probe Tests #9 e TV Sumare CI #494 concluídos com sucesso. CI dos commits novos ainda requer verificação.
+- Gate permanece `can_advance=false` até evidência autenticada na HML.
