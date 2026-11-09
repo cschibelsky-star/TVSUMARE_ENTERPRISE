@@ -1,14 +1,17 @@
 <?php
 /**
  * CLI-only, read-only diagnostic. No secret or raw provider payload is printed.
- * Usage: HEYGEN_API_KEY=<from secure runtime> php scripts/heygen_digital_twin_diagnostic.php
+ * Usage: php scripts/heygen_digital_twin_diagnostic.php (authorized runtime only)
  * Never run through the web server or commit credentials.
  */
 if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
 require_once dirname(__DIR__).'/includes/heygen_digital_twin_probe.php';
-$key=getenv('HEYGEN_API_KEY');
+require_once dirname(__DIR__).'/includes/heygen_helper.php';
+// Use the same configuration resolution as the Repórter IA; never print the key.
+$cfg=tvs_heygen_load_config([]);
+$key=$cfg['heygen_api_key']??'';
 if (!is_string($key) || trim($key)==='') {
- fwrite(STDERR,"HEYGEN_API_KEY missing; no request made\n"); exit(2);
+ fwrite(STDERR,"HeyGen credential unavailable; no request made\n"); exit(2);
 }
 if (!function_exists('curl_init')) {
  fwrite(STDERR,"PHP cURL unavailable\n"); exit(2);
