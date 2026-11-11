@@ -240,6 +240,7 @@ function gemini_reporter_article($apiKey, $material, $options=[]){
     foreach(['title','subtitle','body'] as $field){ if(empty($data[$field])){ tvs_ai_log('Reporter sem campo: '.$field); return null; } }
     if(empty($data['category'])) $data['category']=$category ?: 'Cidade';
     if(empty($data['tags']) || !is_array($data['tags'])) $data['tags']=[$city,$category,'TV Sumaré'];
+    $data['generation_mode']='gemini';
     return $data;
 }
 ?>

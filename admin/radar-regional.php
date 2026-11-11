@@ -1959,11 +1959,9 @@ function tvs_generate_ready_article($city,$cand){
   $facts=tvs_extract_facts_block($mat['title']??($cand['title']??''),$city,$category,$mat['text']??'',($cand['source']??'Fonte consultada'),($cand['url']??''));
   $material="CIDADE: {$city}\nCATEGORIA: {$category}\nFONTE: ".($cand['source']??'Fonte consultada')."\nURL: ".($cand['url']??'')."\nTÍTULO ORIGINAL: ".($mat['title']??'')."\n\n".$facts."\n\nCONTEÚDO COMPLETO COLETADO:\n".tvs_substr($mat['text']??'',0,10000);
 
-  // Modo produtivo: itens do Google News com texto curto entram como nota revisável,
-  // Toda matéria aprovável passa OBRIGATORIAMENTE pela redação da IA (Claude Opus 5 / Editor IA)
-  // para garantir texto jornalístico robusto, lead completo e roteirização pronta para vídeo.
-  $result = gemini_reporter_article($gemini_api_key ?? '', $material, ['city'=>$city, 'theme'=>$category, 'category'=>$category]);
-  if(!$result){
+  // Toda matéria aprovável passa obrigatoriamente pela redação da IA para garantir texto jornalístico robusto.
+  $result = gemini_reporter_article($gemini_api_key ?? '', $material, ['city'=>$city, 'theme'=>$mat['title']??($cand['title']??$category), 'category'=>$category]);
+if(!$result){
     // Fallback de contingência: se a IA estiver sem resposta, só aceita se houver texto apurado longo (>= 450 chars)
     if(tvs_strlen($sourceText) >= 450){
       $result = tvs_build_reviewable_article_without_ai($city, $category, $cand, $mat);
