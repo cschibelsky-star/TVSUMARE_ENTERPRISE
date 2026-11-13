@@ -9,9 +9,8 @@ if(!$monitorLockFp || !@flock($monitorLockFp,LOCK_EX|LOCK_NB)){
   echo "Monitor já está em execução por outro processo. Encerrando pacificamente.".PHP_EOL;
   exit(0);
 }
-register_shutdown_function(function() use($monitorLockFp,$monitorLockFile){
+register_shutdown_function(function() use($monitorLockFp){
   if($monitorLockFp){ @flock($monitorLockFp,LOCK_UN); @fclose($monitorLockFp); }
-  if(is_file($monitorLockFile)) @unlink($monitorLockFile);
 });
 require_once dirname(__DIR__) . '/config.php'; require_once __DIR__ . '/gemini.php'; require_once __DIR__ . '/monitor_lib.php';
 $sources=tvs_get_sources(); $draftFile=dirname(__DIR__) . '/data/rascunhos.json'; $drafts=tvs_read_json_file($draftFile); $news=tvs_read_json_file(dirname(__DIR__) . '/data/noticias.json');

@@ -3,5 +3,5 @@
 // O cron canônico oficial do Radar é sempre admin/cron_radar.php.
 // Este arquivo redireciona para a versão canônica e evita split-brain de regras.
 
-define('TVS_RADAR_CRON', true);
+if(!defined('TVS_RADAR_CRON')) define('TVS_RADAR_CRON', true);
 require_once __DIR__ . '/admin/cron_radar.php';

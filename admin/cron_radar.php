@@ -35,7 +35,8 @@ register_shutdown_function(function() use ($cronLogFile,$cronLockFile,$cronLockF
     @flock($cronLockFp, LOCK_UN);
     @fclose($cronLockFp);
   }
-  if(is_file($cronLockFile)) @unlink($cronLockFile);
+  // Não remover o arquivo: manter o inode estável evita que uma terceira
+  // execução crie outro lock enquanto um processo ainda libera o lock atual.
 });
 
 $_SERVER['REQUEST_METHOD']='CRON';
