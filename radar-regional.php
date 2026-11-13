@@ -1,12 +1,12 @@
 <?php
-require_once __DIR__.'/auth.php';
-require_login();
-require_once dirname(__DIR__).'/config.php';
-require_once __DIR__.'/gemini.php';
-require_once __DIR__.'/monitor_lib.php';
-$activeAdmin='radar';
-$notice=''; $error='';
-$TVS_RADAR_MODE='normal';
+// TV Sumaré Enterprise — Wrapper de compatibilidade.
+// O Radar canônico oficial é sempre /admin/radar-regional.php.
+if(PHP_SAPI !== 'cli'){
+  header('Location: admin/radar-regional.php', true, 301);
+  exit;
+}
+require_once __DIR__ . '/admin/radar-regional.php';
+exit;
 
 $queueFile=dirname(__DIR__).'/data/materias_aprovacao.json';
 $newsFile=dirname(__DIR__).'/data/noticias.json';

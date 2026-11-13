@@ -13,13 +13,29 @@ $appLogDir=dirname(__DIR__).'/logs';
 $cronLogDir=(is_dir($homeLogDir) && is_writable($homeLogDir)) ? $homeLogDir : $appLogDir;
 if(!is_dir($cronLogDir)) @mkdir($cronLogDir,0775,true);
 $cronLogFile=$cronLogDir.'/tvsumare-cron-radar.log';
-@file_put_contents($cronLogFile,date('c')." START mode=cron_hostgator pid=".getmypid()."\n",FILE_APPEND|LOCK_EX);
-register_shutdown_function(function() use ($cronLogFile,$cronStarted){
+$cronLockFile=$cronLogDir.'/tvsumare-cron-radar.lock';
+
+// 1. Trava de processo exclusivo (flock não-bloqueante)
+$cronLockFp=@fopen($cronLockFile,'c+');
+if(!$cronLockFp || !@flock($cronLockFp, LOCK_EX | LOCK_NB)){
+  @file_put_contents($cronLogFile,date('c')." SKIP reason=locked pid=".getmypid()."\n",FILE_APPEND|LOCK_EX);
+  if($cronLockFp) @fclose($cronLockFp);
+  echo "Radar já em execução por outro processo (lock ativo). Encerrando pacificamente.\n";
+  exit(0);
+}
+
+@file_put_contents($cronLogFile,date('c')." START mode=cron_radar pid=".getmypid()."\n",FILE_APPEND|LOCK_EX);
+register_shutdown_function(function() use ($cronLogFile,$cronLockFile,$cronLockFp,$cronStarted){
   $err=error_get_last();
   if($err && in_array($err['type']??0,[E_ERROR,E_PARSE,E_CORE_ERROR,E_COMPILE_ERROR],true)){
     $duration=(int)round((microtime(true)-$cronStarted)*1000);
     @file_put_contents($cronLogFile,date('c')." FATAL duration_ms={$duration} message=".str_replace(["\r","\n"],' ',(string)($err['message']??''))."\n",FILE_APPEND|LOCK_EX);
   }
+  if($cronLockFp){
+    @flock($cronLockFp, LOCK_UN);
+    @fclose($cronLockFp);
+  }
+  if(is_file($cronLockFile)) @unlink($cronLockFile);
 });
 
 $_SERVER['REQUEST_METHOD']='CRON';

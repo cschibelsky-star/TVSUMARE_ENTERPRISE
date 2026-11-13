@@ -1,12 +1,12 @@
 <?php
-require_once (is_file(__DIR__.'/includes/outbound_guard.php') ? __DIR__.'/includes/outbound_guard.php' : dirname(__DIR__).'/includes/outbound_guard.php');
-require_once __DIR__.'/auth.php';
-require_login();
-require_once dirname(__DIR__).'/config.php';
-require_once __DIR__.'/gemini.php';
-require_once __DIR__.'/monitor_lib.php';
-require_once dirname(__DIR__).'/includes/heygen_helper.php';
-$activeAdmin='reporter_ia';
+// TV Sumaré Enterprise — Wrapper de compatibilidade.
+// O Repórter IA canônico oficial é sempre /admin/reporter-ia.php.
+if(PHP_SAPI !== 'cli'){
+  header('Location: admin/reporter-ia.php', true, 301);
+  exit;
+}
+require_once __DIR__ . '/admin/reporter-ia.php';
+exit;
 
 function rpia_h($s){ return htmlspecialchars((string)$s,ENT_QUOTES,'UTF-8'); }
 function rpia_path($name){ return dirname(__DIR__).'/data/'.$name; }

@@ -1,5 +1,18 @@
 <?php
 // Cron opcional: capta RSS/sites, atualiza Última Hora e gera rascunhos. Nunca publica automaticamente.
+$monitorLockFile=dirname(__DIR__).'/logs/tvsumare-cron-monitor.lock';
+$monitorLockDir=dirname($monitorLockFile);
+if(!is_dir($monitorLockDir)) @mkdir($monitorLockDir,0775,true);
+$monitorLockFp=@fopen($monitorLockFile,'c+');
+if(!$monitorLockFp || !@flock($monitorLockFp,LOCK_EX|LOCK_NB)){
+  if($monitorLockFp) @fclose($monitorLockFp);
+  echo "Monitor já está em execução por outro processo. Encerrando pacificamente.".PHP_EOL;
+  exit(0);
+}
+register_shutdown_function(function() use($monitorLockFp,$monitorLockFile){
+  if($monitorLockFp){ @flock($monitorLockFp,LOCK_UN); @fclose($monitorLockFp); }
+  if(is_file($monitorLockFile)) @unlink($monitorLockFile);
+});
 require_once dirname(__DIR__) . '/config.php'; require_once __DIR__ . '/gemini.php'; require_once __DIR__ . '/monitor_lib.php';
 $sources=tvs_get_sources(); $draftFile=dirname(__DIR__) . '/data/rascunhos.json'; $drafts=tvs_read_json_file($draftFile); $news=tvs_read_json_file(dirname(__DIR__) . '/data/noticias.json');
 $seen=tvs_monitor_seen_keys($drafts,$news); $count=0; $breaking=[];
