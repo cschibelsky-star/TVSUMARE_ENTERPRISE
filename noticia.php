@@ -10,7 +10,18 @@ foreach($news as $k=>$item){ if((string)($item['id']??'')===(string)$id){ $n=$it
 if(!$n){ http_response_code(404); echo 'Notícia não encontrada'; exit; }
 $n=tvs_normalize_news_item($n);
 $views=(int)($n['views']??0)+1;
-if($idx!==null){ $news[$idx]['views']=$views; @file_put_contents($newsFile,json_encode($news,JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)); }
+if($idx!==null){
+  tvs_with_json_lock($newsFile, function($currentNews) use ($id, $views){
+    if(!is_array($currentNews)) return [];
+    foreach($currentNews as $k=>$item){
+      if((string)($item['id']??'')===(string)$id){
+        $currentNews[$k]['views']=max((int)($item['views']??0)+1, $views);
+        break;
+      }
+    }
+    return $currentNews;
+  });
+}
 $url=rtrim($site_url??'', '/').'/noticia.php?id='.urlencode($id);
 $title=tvs_clean_source_suffix($n['title']??'TV Sumaré');
 $body=tvs_expand_article_display($n,400);

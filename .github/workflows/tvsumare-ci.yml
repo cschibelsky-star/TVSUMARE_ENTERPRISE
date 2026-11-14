@@ -35,6 +35,9 @@ jobs:
       - name: Teste da politica editorial V3
         run: php tests/editorial_policy_v3_test.php
 
+      - name: Teste de persistencia atomica JSON
+        run: php tests/json_atomic_persistence_test.php
+
       - name: Validar regras editoriais criticas
         shell: bash
         run: |
