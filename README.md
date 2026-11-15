@@ -1,23 +1,41 @@
 # TVSUMARE_ENTERPRISE 3.0
 
-Enterprise News OS — Powered by Vitrine IA Pro.
+Enterprise News OS da TV Sumaré, mantido pela Vitrine IA Pro.
 
-Este repositório será a base oficial da TV Sumaré Enterprise 3.0, produto referência para venda, homologação e replicação da TV Digital Enterprise.
+## Estado atual
 
-## Estado técnico atual
+Esta é uma aplicação PHP 8.3/Apache operacional, com persistência em arquivos JSON e execução containerizada. O ambiente de homologação e o runtime de produção estão descritos em `AUDIT_STATUS.md`, `OPERATIONS.md` e `RELEASE.md`.
 
-**Classificação: scaffold.** O repositório ainda não contém uma aplicação funcional, runtime, banco, Docker, painel ou health check versionados. Consulte `AUDIT_STATUS.md` e `product.json`.
+O arquivo `product.json` é o manifesto do produto; ele não substitui a documentação operacional.
 
-## Foco da Build 3.0
+## Estrutura canônica
 
-- Motor Editorial 3.0
-- Image Engine
-- Home Enterprise refinada
-- TV Sumaré Play 2.0
-- Dashboard Enterprise
-- Content Hub
-- Integração futura com Centro Operacional Vitrine IA Pro
+- `index.php`, `noticia.php`, `noticias.php`, `videos.php` e demais arquivos públicos: superfície editorial pública.
+- `admin/`: painel autenticado, cron jobs e módulos administrativos. Não duplicar módulos administrativos na raiz.
+- `includes/`: bibliotecas compartilhadas de domínio, segurança e integrações.
+- `api/` e `routes/`: entradas de integração HTTP protegidas.
+- `config/`: configurações de integrações; segredos vêm do ambiente.
+- `app/`: ponte preparada para a futura integração Site → Factory; não é o bootstrap do runtime PHP atual.
+- `docker/`: Dockerfile auxiliar, scripts de build-time e smoke tests da imagem.
+- `tests/`: testes executáveis do domínio editorial.
+- `tools/`: utilitários operacionais portáveis, executados sob demanda.
+- `assets/`: recursos estáticos públicos.
 
-## Regra operacional
+Detalhes, regras de movimentação e dívida técnica estão em `docs/STRUCTURE.md`.
 
-Menos discussão. Mais build, teste e homologação.
+## Execução local
+
+```bash
+docker compose -f docker-compose.vps.yml up --build
+```
+
+O serviço web expõe `/health.php`. Dados, uploads, vídeos e logs devem ser montados externamente; não versionar esses diretórios.
+
+## Validação
+
+1. executar lint PHP em todos os arquivos;
+2. executar `php tests/editorial_policy_v3_test.php`;
+3. construir a imagem Docker, que aplica hardening e executa os smoke tests;
+4. validar homologação antes de qualquer deploy seletivo em produção.
+
+Consulte `OPERATIONS.md` e `RELEASE.md` antes de operar cron, dados ou produção.
