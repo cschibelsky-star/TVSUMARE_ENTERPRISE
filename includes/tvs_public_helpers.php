@@ -1,7 +1,40 @@
 <?php
 if(!function_exists('tvs_h')){
 function tvs_h($s){ return htmlspecialchars((string)$s,ENT_QUOTES,'UTF-8'); }
-function tvs_json($file){ if(!file_exists($file)) return []; $d=json_decode(file_get_contents($file),true); return is_array($d)?$d:[]; }
+function tvs_json($file){ if(!file_exists($file)) return []; $raw=@file_get_contents($file); if($raw===false||$raw==='') return []; $d=json_decode($raw,true); return is_array($d)?$d:[]; }
+function tvs_save_json_file($path,$data,$preserveKeys=false){
+  $dir=dirname($path); if(!is_dir($dir)) @mkdir($dir,0775,true);
+  $payload=$preserveKeys ? $data : (is_array($data) && array_keys($data)===range(0,count($data)-1)?array_values($data):$data);
+  $json=json_encode($payload, JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+  if($json===false) return false;
+  $tmp=$path.'.tmp.'.getmypid().'.'.bin2hex(random_bytes(4));
+  $fp=@fopen($tmp,'wb'); if(!$fp) return false;
+  @flock($fp,LOCK_EX);
+  $written=@fwrite($fp,$json."\n");
+  @fflush($fp); @flock($fp,LOCK_UN); @fclose($fp);
+  if($written===false || $written<strlen($json)){ @unlink($tmp); return false; }
+  if(!@rename($tmp,$path)){ @unlink($tmp); return file_put_contents($path,$json."\n",LOCK_EX)!==false; }
+  @chmod($path,0664);
+  return true;
+}
+function tvs_with_json_lock($path, callable $callback, $preserveKeys=false){
+  $lockFile=$path.'.lock';
+  $dir=dirname($path); if(!is_dir($dir)) @mkdir($dir,0775,true);
+  $lockFp=@fopen($lockFile,'c+');
+  if(!$lockFp){
+    $data=tvs_json($path);
+    $newData=$callback($data);
+    return tvs_save_json_file($path,$newData,$preserveKeys);
+  }
+  @flock($lockFp,LOCK_EX);
+  try {
+    $data=tvs_json($path);
+    $newData=$callback($data);
+    return tvs_save_json_file($path,$newData,$preserveKeys);
+  } finally {
+    @flock($lockFp,LOCK_UN); @fclose($lockFp);
+  }
+}
 function tvs_lc($s){ return function_exists('mb_strtolower')?mb_strtolower((string)$s,'UTF-8'):strtolower((string)$s); }
 function tvs_date_ts($n){ return strtotime($n['published_at']??$n['created_at']??$n['date']??'now') ?: time(); }
 function tvs_sort_recent($a,$b){ return tvs_date_ts($b)<=>tvs_date_ts($a); }

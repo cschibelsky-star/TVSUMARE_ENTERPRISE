@@ -386,12 +386,72 @@ function tvs_local_fallback_article($src, $article){
 
 function tvs_read_json_file($path){
   if(!file_exists($path)) return [];
-  $d=json_decode(file_get_contents($path),true);
+  $raw=@file_get_contents($path);
+  if($raw===false || $raw==='') return [];
+  $d=json_decode($raw,true);
   return is_array($d)?$d:[];
 }
-function tvs_save_json_file($path,$data){
-  $dir=dirname($path); if(!is_dir($dir)) @mkdir($dir,0775,true);
-  return file_put_contents($path,json_encode(array_values($data), JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)) !== false;
+
+/**
+ * Escrita atômica segura via arquivo temporário + rename atômico.
+ * Elimina race conditions de leitura parcial ou corrupção durante a escrita.
+ */
+function tvs_save_json_file($path,$data,$preserveKeys=false){
+  $dir=dirname($path);
+  if(!is_dir($dir)) @mkdir($dir,0775,true);
+  $payload=$preserveKeys ? $data : (is_array($data) && array_keys($data)===range(0,count($data)-1)?array_values($data):$data);
+  $json=json_encode($payload, JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+  if($json===false) return false;
+
+  $tmp=$path.'.tmp.'.getmypid().'.'.bin2hex(random_bytes(4));
+  $fp=@fopen($tmp,'wb');
+  if(!$fp) return false;
+
+  @flock($fp,LOCK_EX);
+  $written=@fwrite($fp,$json."\n");
+  @fflush($fp);
+  @flock($fp,LOCK_UN);
+  @fclose($fp);
+
+  if($written===false || $written<strlen($json)){
+    @unlink($tmp);
+    return false;
+  }
+
+  // No Linux, rename é uma operação atômica de troca de ponteiro de inode
+  if(!@rename($tmp,$path)){
+    @unlink($tmp);
+    return file_put_contents($path,$json."\n",LOCK_EX) !== false;
+  }
+  @chmod($path,0664);
+  return true;
+}
+
+/**
+ * Executa uma mutação atômica completa (leitura -> modificação -> gravação)
+ * sob lock exclusivo de arquivo. Impede que dois processos leiam o estado antigo.
+ */
+function tvs_with_json_lock($path, callable $callback, $preserveKeys=false){
+  $lockFile=$path.'.lock';
+  $dir=dirname($path);
+  if(!is_dir($dir)) @mkdir($dir,0775,true);
+
+  $lockFp=@fopen($lockFile,'c+');
+  if(!$lockFp){
+    $data=tvs_read_json_file($path);
+    $newData=$callback($data);
+    return tvs_save_json_file($path,$newData,$preserveKeys);
+  }
+
+  @flock($lockFp,LOCK_EX);
+  try {
+    $data=tvs_read_json_file($path);
+    $newData=$callback($data);
+    return tvs_save_json_file($path,$newData,$preserveKeys);
+  } finally {
+    @flock($lockFp,LOCK_UN);
+    @fclose($lockFp);
+  }
 }
 function tvs_get_sources(){
   $file=dirname(__DIR__).'/data/fontes.json';
