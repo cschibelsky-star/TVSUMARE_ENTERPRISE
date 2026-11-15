@@ -30,6 +30,9 @@ function tvs_gemini_extract_json($txt){
 }
 
 function tvs_gemini_generate_text($apiKey,$prompt,$generationConfig=[],$timeout=22){
+    if(defined('TVSUMARE_TEST_MODE') && TVSUMARE_TEST_MODE && isset($GLOBALS['tvs_gemini_test_handler']) && is_callable($GLOBALS['tvs_gemini_test_handler'])){
+        return call_user_func($GLOBALS['tvs_gemini_test_handler'],$apiKey,$prompt,$generationConfig,$timeout);
+    }
     $apiKey=trim((string)$apiKey);
     if($apiKey==='') return ['ok'=>false,'error'=>'Chave Gemini ausente.'];
     if(!function_exists('curl_init')) return ['ok'=>false,'error'=>'cURL não está habilitado no servidor.'];
