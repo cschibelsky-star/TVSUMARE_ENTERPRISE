@@ -8,6 +8,7 @@ if(!$TVS_RADAR_IS_CLI_CRON){
 require_once dirname(__DIR__).'/config.php';
 require_once __DIR__.'/gemini.php';
 require_once __DIR__.'/monitor_lib.php';
+require_once __DIR__.'/radar_queue_rules.php';
 $activeAdmin='radar';
 if($TVS_RADAR_IS_CLI_CRON){
   $notice='';
@@ -359,29 +360,11 @@ function tvs_radar_can_direct_approve($m){
     && ($m['editorial_status']??'')!=='Descartar';
 }
 function tvs_radar_enforce_queue_rules($save=true){
-  $queue=tvs_queue_read(); $new=[]; $removed=0; $changed=0;
-  foreach($queue as $q){
-    $reason='';
-    $cand=['title'=>$q['title']??'','description'=>($q['subtitle']??'').' '.($q['summary']??'').' '.($q['body']??''),'url'=>$q['source_url']??'','source'=>$q['source']??'','source_type'=>$q['source']??'','city'=>$q['city']??''];
-    $city=$q['city']??'';
-    if(!in_array($city,tvs_radar_allowed_cities(),true)){ $removed++; tvs_radar_log_event($q['title']??'', $q['source']??'', $city, 'DESCARTADA', 'Cidade fora da lista monitorada', $q['source_url']??''); continue; }
-    if(!tvs_radar_candidate_region_ok($cand,$city,$reason)){ $removed++; tvs_radar_log_event($q['title']??'', $q['source']??'', $city, 'DESCARTADA', $reason, $q['source_url']??''); continue; }
-    $age=$q['age_days']??null;
-    $score=tvs_radar_editorial_score($q['title']??'', $city, $q['category']??'', $q['source']??'', ($q['subtitle']??'').' '.($q['summary']??'').' '.($q['body']??''), $q['source_url']??'', is_numeric($age)?(int)$age:null);
-    $sensitive=tvs_radar_sensitive_topic($q['title']??'', ($q['subtitle']??'').' '.($q['summary']??'').' '.($q['body']??''));
-    $st=tvs_radar_status_from_score($score,$sensitive);
-    if($st['review_level']==='descartar'){ $removed++; tvs_radar_log_event($q['title']??'', $q['source']??'', $city, 'DESCARTADA', 'Score editorial insuficiente: '.$score, $q['source_url']??''); continue; }
-    if(($q['editorial_score']??null)!==$score || ($q['editorial_status']??'')!==$st['editorial_status']) $changed++;
-    $q['editorial_score']=$score; $q['review_level']=$st['review_level']; $q['editorial_status']=$st['editorial_status'];
-    $q['sensitive_review_required']=!empty($st['sensitive']) ? 1 : 0;
-    if(!empty($st['sensitive'])) $q['sensitive_review_reason']='Pauta sensível ou de alto impacto: revisão humana obrigatória antes da publicação.';
-    elseif(isset($q['sensitive_review_reason'])) $q['sensitive_review_reason']='';
-    $new[]=$q;
-  }
-  if($save) tvs_queue_save($new);
-  return ['removed'=>$removed,'changed'=>$changed,'total'=>count($new)];
+  // V4: preserve captured pautas and route uncertain regionality to review.
+  $queue=tvs_radar_normalize_queue_by_rules(tvs_queue_read());
+  if($save) tvs_queue_save($queue);
+  return ['removed'=>0,'changed'=>0,'total'=>count($queue)];
 }
-
 function tvs_radar_is_google_news_url($url){
   return preg_match(
     '~^https?://(?:news\.)?google\.com/(?:rss/)?articles/~i',
