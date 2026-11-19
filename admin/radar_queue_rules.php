@@ -87,8 +87,8 @@ function tvs_radar_normalize_queue_by_rules(array $items): array
         $topicKey = trim(preg_replace('~\\s+~u', ' ', preg_replace('~[^\\p{L}\\p{N}]+~u', ' ', $title)));
         $url = trim((string)($item['source_url'] ?? $item['url'] ?? ''));
         $dedupKey = $url !== '' ? 'url:'.hash('sha256', $url) : 'title:'.$topicKey;
-        if ($topicKey !== '' && isset($seenTopics[$dedupKey])) continue;
-        if ($topicKey !== '') $seenTopics[$dedupKey] = true;
+        if (isset($seenTopics[$dedupKey])) continue;
+        $seenTopics[$dedupKey] = true;
         if (!in_array(trim((string)($item['city'] ?? '')), $cities, true)) {
             $item['regional_review_required'] = true;
             $item['queue_pending_reasons'] = array_values(array_unique(array_merge(
@@ -104,7 +104,12 @@ function tvs_radar_normalize_queue_by_rules(array $items): array
 if (!function_exists('tvs_radar_queue_item_readiness')) {
     function tvs_radar_queue_item_readiness(array $item): array
     {
-        $reasons = [];
+        $reasons = (array)($item['queue_pending_reasons'] ?? []);
+
+        // Regional uncertainty is a hard editorial gate, not a display quota.
+        if (!empty($item['regional_review_required'])) {
+            $reasons[] = 'Localidade exige revisão regional';
+        }
 
         $title = trim((string)($item['title'] ?? ''));
         $body = trim((string)($item['body'] ?? ''));
