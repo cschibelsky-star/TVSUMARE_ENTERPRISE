@@ -349,6 +349,9 @@ function tvs_radar_status_from_score($score,$sensitive=false){
   return ['review_level'=>'normal','editorial_status'=>$status,'sensitive'=>false];
 }
 function tvs_radar_can_direct_approve($m){
+  // Regional review must never be bypassed by direct approval.
+  if(!empty($m['regional_review_required'])) return false;
+
   // v3.1: imagem ilustrativa da categoria não impede aprovação direta se a pauta for relevante
   if(!empty($m['image_review_required']) && ($m['image_source_type']??'') !== 'category:fallback') return false;
   if(!empty($m['sensitive_review_required'])) return false;
