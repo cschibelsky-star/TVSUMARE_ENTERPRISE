@@ -84,7 +84,7 @@ PHP;
     echo "Reporter supersede helpers: já aplicados.\n";
 }
 
-if(strpos($code,'$dedupeChanged')===false && strpos($code,'$history=!empty($_GET')===false){
+if(strpos($code,'$dedupeChanged')===false){
     $old=<<<'OLD'
 $jobs=rpia_read('videos_ia.json'); $activeJobs=array_values(array_filter($jobs,function($j){ return empty($j['archived']) && !in_array(rpia_job_state($j),['cancelled','failed','published'],true); })); $historyJobs=array_values(array_filter($jobs,function($j){ return !empty($j['archived']) || in_array(rpia_job_state($j),['cancelled','failed','published'],true); })); $callbackUrl=
 OLD;
@@ -102,7 +102,7 @@ NEW;
     echo "Reporter persistent queue dedupe: já aplicado.\n";
 }
 
-if(strpos($code,"b.textContent='Enviando...'")===false){
+if(strpos($code,"b.textContent='Enviando...'")===false && strpos($code,'Fila operacional de vídeos IA')===false && strpos($code,'$history=!empty($_GET')===false){
     $old=<<<'OLD'
 <form method="post"><?=tvs_csrf_field()?><input type="hidden" name="action" value="send_heygen"><input type="hidden" name="job_id" value="<?=rpia_h($j['id']??'')?>"><button class="btn orange">Enviar para geração</button></form>
 OLD;
