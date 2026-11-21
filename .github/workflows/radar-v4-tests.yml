@@ -1,0 +1,31 @@
+name: Radar V4 regression checks
+on:
+  push:
+    branches:
+      - fix/radar-editorial-queue-v4
+  pull_request:
+    paths:
+      - 'admin/radar_queue_rules.php'
+      - 'admin/radar-regional.php'
+      - 'tests/radar_queue_v4_test.php'
+      - '.github/workflows/radar-v4-tests.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  php-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PHP with mbstring
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y php-cli php-mbstring
+      - name: PHP syntax validation
+        run: |
+          php -l admin/radar_queue_rules.php
+          php -l admin/radar-regional.php
+          php -l tests/radar_queue_v4_test.php
+      - name: Radar queue regression test
+        run: php tests/radar_queue_v4_test.php

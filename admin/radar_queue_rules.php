@@ -70,154 +70,51 @@ if (!function_exists('tvs_radar_editorial_category')) {
     }
 }
 
+/** V4: do not discard captured news because of presentation quotas. */
 function tvs_radar_normalize_queue_by_rules(array $items): array
 {
-    $cities = [
-        'Sumaré',
-        'Hortolândia',
-        'Paulínia',
-        'Nova Odessa',
-        'Americana',
-        'Campinas',
-    ];
-
-    $caps = [
-        'Cidade'    => 5,
-        'Cultura'   => 2,
-        'Esportes'  => 2,
-        'Empregos'  => 2,
-        'Educação'  => 2,
-        'Saúde'     => 2,
-        'Segurança' => 2,
-        'Economia'  => 2,
-        'Política'  => 1,
-    ];
-
-    $globalCaps = [
-        'Brasil'    => 3,
-        'São Paulo' => 3,
-        'RMC'       => 3,
-    ];
-
+    $cities = ['Sumaré','Hortolândia','Paulínia','Nova Odessa','Americana','Campinas'];
     usort($items, static function ($a, $b) {
-        $scoreA = (int)($a['editorial_score'] ?? 0);
-        $scoreB = (int)($b['editorial_score'] ?? 0);
-
-        if ($scoreA !== $scoreB) {
-            return $scoreB <=> $scoreA;
-        }
-
-        $dateA = strtotime(
-            $a['published_at']
-            ?? $a['created_at']
-            ?? '1970-01-01'
-        ) ?: 0;
-
-        $dateB = strtotime(
-            $b['published_at']
-            ?? $b['created_at']
-            ?? '1970-01-01'
-        ) ?: 0;
-
+        $dateA = strtotime($a['published_at'] ?? $a['created_at'] ?? '') ?: 0;
+        $dateB = strtotime($b['published_at'] ?? $b['created_at'] ?? '') ?: 0;
         return $dateB <=> $dateA;
     });
-
     $selected = [];
-    $counts = [];
     $seenTopics = [];
-
     foreach ($items as $item) {
-        $city = trim((string)($item['city'] ?? ''));
-        $category = trim((string)(
-            $item['category']
-            ?? $item['radar_pre_category']
-            ?? 'Cidade'
-        ));
-
-        if ($category === '' || !isset($caps[$category])) {
-            $category = 'Cidade';
+        $item['category'] = tvs_radar_editorial_category($item);
+        $title = mb_strtolower(trim((string)($item['title'] ?? '')), 'UTF-8');
+        $topicKey = trim(preg_replace('~\\s+~u', ' ', preg_replace('~[^\\p{L}\\p{N}]+~u', ' ', $title)));
+        $url = trim((string)($item['source_url'] ?? $item['url'] ?? ''));
+        $dedupKey = $url !== '' ? 'url:'.hash('sha256', $url) : 'title:'.$topicKey;
+        if (isset($seenTopics[$dedupKey])) continue;
+        $seenTopics[$dedupKey] = true;
+        if (!in_array(trim((string)($item['city'] ?? '')), $cities, true)) {
+            $item['regional_review_required'] = true;
+            $item['queue_pending_reasons'] = array_values(array_unique(array_merge(
+                (array)($item['queue_pending_reasons'] ?? []),
+                ['Localidade fora da cobertura regional ou não confirmada']
+            )));
         }
-
-        $item['category'] = $category;
-
-        $category = tvs_radar_editorial_category($item);
-
-        if (!isset($caps[$category])) {
-            $category = 'Cidade';
-        }
-
-        $item['category'] = $category;
-
-        $category = tvs_radar_editorial_category($item);
-
-        if (!isset($caps[$category])) {
-            $category = 'Cidade';
-        }
-
-        $title = mb_strtolower(
-            trim((string)($item['title'] ?? '')),
-            'UTF-8'
-        );
-
-        $topicKey = preg_replace(
-            '~[^\p{L}\p{N}]+~u',
-            ' ',
-            $title
-        );
-
-        $topicKey = trim(preg_replace('~\s+~u', ' ', $topicKey));
-
-        if ($topicKey !== '' && isset($seenTopics[$topicKey])) {
-            continue;
-        }
-
-        if (in_array($city, $cities, true)) {
-            $key = $city . '|' . $category;
-            $current = $counts[$key] ?? 0;
-
-            if ($current >= $caps[$category]) {
-                continue;
-            }
-
-            $counts[$key] = $current + 1;
-        } else {
-            $scope = trim((string)(
-                $item['global_scope']
-                ?? $item['city']
-                ?? 'Brasil'
-            ));
-
-            if (!isset($globalCaps[$scope])) {
-                $scope = 'Brasil';
-            }
-
-            $key = 'GLOBAL|' . $scope;
-            $current = $counts[$key] ?? 0;
-
-            if ($current >= $globalCaps[$scope]) {
-                continue;
-            }
-
-            $counts[$key] = $current + 1;
-            $item['global_scope'] = $scope;
-        }
-
-        $item['category'] = $category;
-
-        if ($topicKey !== '') {
-            $seenTopics[$topicKey] = true;
-        }
-
         $selected[] = $item;
     }
-
     return array_values($selected);
 }
 
 if (!function_exists('tvs_radar_queue_item_readiness')) {
     function tvs_radar_queue_item_readiness(array $item): array
     {
+        // Recompute readiness on each pass: resolved transient reasons must clear.
         $reasons = [];
+
+        // Regional uncertainty is a hard editorial gate, not a display quota.
+        if (!empty($item['regional_review_required'])) {
+            $reasons[] = 'Localidade exige revisão regional';
+            $reasons = array_merge($reasons, array_filter(
+                (array)($item['queue_pending_reasons'] ?? []),
+                static fn($reason) => str_contains((string)$reason, 'Localidade')
+            ));
+        }
 
         $title = trim((string)($item['title'] ?? ''));
         $body = trim((string)($item['body'] ?? ''));
