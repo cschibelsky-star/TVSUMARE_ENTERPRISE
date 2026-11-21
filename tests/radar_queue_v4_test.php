@@ -19,7 +19,6 @@ $outside = tvs_radar_normalize_queue_by_rules([[
 check_v4(!empty($outside[0]['regional_review_required']), 'Fora da regiao sinalizado para revisao');
 $duplicate = tvs_radar_normalize_queue_by_rules([$items[0],$items[0]]);
 check_v4(count($duplicate)===1, 'URL repetida deduplicada');
-echo "RADAR_QUEUE_V4_TEST=PASS\n";
 
 // An otherwise publishable item must not bypass regional review.
 $regional = $items[0];
@@ -36,3 +35,14 @@ $noTitle = $items[0];
 $noTitle['title'] = '';
 $noTitle['source_url'] = 'https://example.org/duplicada';
 check_v4(count(tvs_radar_normalize_queue_by_rules([$noTitle, $noTitle])) === 1, 'URL duplicada sem título deduplicada');
+
+// A corrected item must leave processing after transient issues are resolved.
+$fixed = $regional;
+$fixed['city'] = 'Sumaré';
+$fixed['regional_review_required'] = false;
+$fixed['queue_pending_reasons'] = ['Imagem jornalística não resolvida'];
+$fixed['title'] = 'Sumaré confirma serviço municipal com atendimento ampliado';
+$fixed['source_url'] = 'https://example.org/noticias/servico/confirmado';
+$splitFixed = tvs_radar_split_queue_by_readiness([$fixed]);
+check_v4(count($splitFixed['ready']) === 1, 'Pendências resolvidas não bloqueiam matéria pronta');
+echo "RADAR_QUEUE_V4_TEST=PASS\\n";
