@@ -208,9 +208,16 @@ function rpia_heygen_list_videos($cfg,$limit=20,$pageToken=''){
   $key=rpia_heygen_key($cfg); if($key==='') return ['ok'=>false,'error'=>'Configure a chave da HeyGen.'];
   $limit=max(1,min(100,(int)$limit)); $query='?limit='.$limit; if(trim($pageToken)!=='') $query.='&page_token='.rawurlencode($pageToken);
   $r=rpia_heygen_request('GET','/v3/videos'.$query,$key,null,25); if(!$r['ok']) return ['ok'=>false,'error'=>$r['error']??'Falha ao listar vídeos HeyGen.','raw'=>$r];
-  $data=$r['data']['data']??($r['data']??[]); $items=$data['videos']??($data['items']??(is_array($data)?$data:[]));
-  $next=''; if(is_array($data) && !array_is_list($data)) $next=(string)($data['next_page_token']??''); if($next==='' && is_array($r['data']??null)) $next=(string)($r['data']['next_page_token']??'');
-  return ['ok'=>true,'items'=>is_array($items)?$items:[],'next_page_token'=>$next,'raw'=>$r['data']];
+  $data=$r['data']['data']??($r['data']??[]); $items=[];
+  if(is_array($data)){
+    if(isset($data['videos']) && is_array($data['videos'])) $items=$data['videos'];
+    elseif(isset($data['items']) && is_array($data['items'])) $items=$data['items'];
+    elseif(array_is_list($data)) $items=$data;
+  }
+  $next='';
+  if(is_array($data) && !array_is_list($data)) $next=(string)($data['next_page_token']??'');
+  if($next==='' && is_array($r['data']??null) && !array_is_list($r['data'])) $next=(string)($r['data']['next_page_token']??'');
+  return ['ok'=>true,'items'=>$items,'next_page_token'=>$next,'raw'=>$r['data']];
 }
 function rpia_publish_video($job){ $videos=rpia_read('videos.json'); foreach($videos as $v){ if(($v['ia_job_id']??'')===($job['id']??'')) return false; } $url=$job['captioned_video_url']??($job['video_url']??''); array_unshift($videos,['id'=>'vid_ia_'.date('YmdHis'),'title'=>$job['title']??'TV Sumaré News','category'=>$job['category']??'Giro da Região','description'=>tvs_substr(tvs_clean_text($job['script']??''),0,180),'url'=>$url,'thumb'=>$job['thumb']??($job['image']??'assets/cat-cidade.svg'),'status'=>'active','featured'=>1,'news_id'=>$job['news_id']??'','heygen_video_id'=>$job['heygen_video_id']??'','ia_job_id'=>$job['id']??'','created_at'=>date('c')]); rpia_write('videos.json',$videos); return true; }
 function rpia_is_credit_error($detail){ $d=strtolower((string)$detail); return strpos($d,'insufficient credit')!==false || strpos($d,'api credits')!==false || strpos($d,"requires 'api' credits")!==false || strpos($d,'credit balance')!==false; }
