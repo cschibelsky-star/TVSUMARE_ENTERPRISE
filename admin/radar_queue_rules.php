@@ -104,11 +104,16 @@ function tvs_radar_normalize_queue_by_rules(array $items): array
 if (!function_exists('tvs_radar_queue_item_readiness')) {
     function tvs_radar_queue_item_readiness(array $item): array
     {
-        $reasons = (array)($item['queue_pending_reasons'] ?? []);
+        // Recompute readiness on each pass: resolved transient reasons must clear.
+        $reasons = [];
 
         // Regional uncertainty is a hard editorial gate, not a display quota.
         if (!empty($item['regional_review_required'])) {
             $reasons[] = 'Localidade exige revisão regional';
+            $reasons = array_merge($reasons, array_filter(
+                (array)($item['queue_pending_reasons'] ?? []),
+                static fn($reason) => str_contains((string)$reason, 'Localidade')
+            ));
         }
 
         $title = trim((string)($item['title'] ?? ''));
