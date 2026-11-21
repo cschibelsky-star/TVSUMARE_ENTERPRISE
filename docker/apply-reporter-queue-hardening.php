@@ -84,7 +84,7 @@ PHP;
     echo "Reporter history actions: já aplicadas.\n";
 }
 
-if(strpos($code,'$activeJobs=array_values(array_filter($jobs')===false){
+if(strpos($code,'$activeJobs=array_values(array_filter($jobs')===false && strpos($code,'Fila operacional de vídeos IA')===false){
     $old=<<<'TXT'
 $jobs=rpia_read('videos_ia.json'); $callbackUrl=
 TXT;
