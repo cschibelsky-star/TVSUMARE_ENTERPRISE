@@ -29,10 +29,29 @@ function tvs_reporter_fetch_feed($url,$limit=6){
   }
   return $items;
 }
+function tvs_reporter_relevance_terms($value){
+  $parts=preg_split('/[^\p{L}\p{N}]+/u',tvs_lower(tvs_clean_text((string)$value)));
+  $stop=['a','as','ao','aos','com','da','das','de','do','dos','e','em','na','nas','no','nos','para','por','que','um','uma'];
+  $terms=[];
+  foreach($parts as $part){ $part=trim($part); if(tvs_strlen($part)>=4 && !in_array($part,$stop,true) && !in_array($part,$terms,true)) $terms[]=$part; }
+  return $terms;
+}
+function tvs_reporter_relevance_score($item,$city,$theme,$category){
+  $title=tvs_lower(tvs_clean_text(($item['title']??'').' '.($item['description']??'')));
+  $hay=$title.' '.tvs_lower((string)($item['url']??''));
+  $score=(int)($item['score']??0);
+  foreach(tvs_reporter_relevance_terms($theme) as $term){ if(strpos($title,$term)!==false) $score+=5; elseif(strpos($hay,$term)!==false) $score+=2; }
+  foreach(tvs_reporter_relevance_terms($category) as $term){ if(strpos($title,$term)!==false) $score+=2; elseif(strpos($hay,$term)!==false) $score+=1; }
+  foreach(tvs_reporter_relevance_terms($city) as $term){ if(strpos($title,$term)!==false) $score+=3; elseif(strpos($hay,$term)!==false) $score+=1; }
+  return $score;
+}
 function tvs_reporter_google_news($city,$theme,$category){
-  $q=trim($theme.' '.$city.' '.$category.' Sumaré Hortolândia Paulínia Americana Campinas');
+  $q=trim($theme.' '.$city.' '.$category);
   $url='https://news.google.com/rss/search?q='.urlencode($q).'&hl=pt-BR&gl=BR&ceid=BR:pt-419';
-  return tvs_reporter_fetch_feed($url,8);
+  $items=tvs_reporter_fetch_feed($url,8);
+  foreach($items as &$item) $item['score']=tvs_reporter_relevance_score($item,$city,$theme,$category);
+  unset($item);
+  return $items;
 }
 function tvs_reporter_source_candidates($fontes,$city,$theme,$category){
   $out=[];
@@ -41,15 +60,15 @@ function tvs_reporter_source_candidates($fontes,$city,$theme,$category){
     $fcity=$f['city']??'';
     if($city && $city!=='Região' && $fcity && tvs_lower($fcity)!==tvs_lower($city) && !preg_match('/São Paulo|Região/i',$fcity)) continue;
     if(!empty($f['rss'])){
-      foreach(tvs_reporter_fetch_feed($f['rss'],5) as $it){ $it['source']=$f['name']??'Fonte cadastrada'; $out[]=$it; }
+      foreach(tvs_reporter_fetch_feed($f['rss'],5) as $it){ $it['source']=$f['name']??'Fonte cadastrada'; $it['score']=tvs_reporter_relevance_score($it,$city,$theme,$category); $out[]=$it; }
     }
     if(!empty($f['url'])){
       $html=tvs_fetch_url($f['url']);
       foreach(tvs_extract_links($f['url'],$html) as $link){
-        $hay=tvs_lower(($link['title']??'').' '.$theme.' '.$category);
-        $score=$link['score']??0;
-        foreach(preg_split('/\s+/u',tvs_lower($theme.' '.$category)) as $term){ if(tvs_strlen($term)>3 && strpos($hay,$term)!==false) $score+=2; }
-        $out[]=['title'=>$link['title'],'url'=>$link['url'],'description'=>'','source'=>$f['name']??'Fonte cadastrada','score'=>$score];
+        $link['source']=$f['name']??'Fonte cadastrada';
+        $link['description']='';
+        $link['score']=tvs_reporter_relevance_score($link,$city,$theme,$category);
+        $out[]=$link;
       }
     }
   }
@@ -102,7 +121,7 @@ function tvs_reporter_fallback($city,$theme,$category,$articles){
   }
   if(!$paras) $paras[]='O tema informado pelo editor foi localizado em fontes públicas da região, mas o sistema não conseguiu extrair detalhes suficientes para uma reportagem completa. Revise a fonte antes de publicar.';
   $body=implode("\n\n",array_slice($paras,0,7));
-  return ['title'=>$title,'subtitle'=>$subtitle,'summary'=>tvs_substr($paras[0]??$subtitle,0,180),'body'=>$body,'category'=>$category?:'Cidade','tags'=>[$city,$category,'TV Sumaré'],'seo_title'=>$title,'meta_description'=>tvs_substr($paras[0]??$subtitle,0,155),'slug'=>tvs_slug($title),'instagram_caption'=>$title."\n\nConfira a matéria no portal da TV Sumaré.",'whatsapp_text'=>$title."\n\nLeia no portal da TV Sumaré."];
+  return ['title'=>$title,'subtitle'=>$subtitle,'summary'=>tvs_substr($paras[0]??$subtitle,0,180),'body'=>$body,'category'=>$category?:'Cidade','tags'=>[$city,$category,'TV Sumaré'],'seo_title'=>$title,'meta_description'=>tvs_substr($paras[0]??$subtitle,0,155),'slug'=>tvs_slug($title),'instagram_caption'=>$title."\n\nConfira a matéria no portal da TV Sumaré.",'whatsapp_text'=>$title."\n\nLeia no portal da TV Sumaré.",'generation_mode'=>'fallback'];
 }
 function tvs_reporter_publish($data){
   $nf=dirname(__DIR__).'/data/noticias.json'; $news=tvs_read_json_file($nf);
@@ -124,6 +143,7 @@ if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'){
     if($theme==='') $error='Informe um tema para o Repórter IA pesquisar e produzir a reportagem.';
     else {
       $candidates=array_merge(tvs_reporter_source_candidates($fontes,$city,$theme,$category), tvs_reporter_google_news($city,$theme,$category));
+      usort($candidates,function($a,$b){ return ($b['score']??0)<=>($a['score']??0); });
       $seen=[]; $merged=[];
       foreach($candidates as $c){ if(empty($c['url'])||isset($seen[$c['url']])) continue; $seen[$c['url']]=1; $merged[]=$c; if(count($merged)>=10) break; }
       $sourcesFound=$merged;
@@ -132,12 +152,13 @@ if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'){
       else {
         $material=tvs_reporter_material($city,$theme,$category,$articles);
         $result=gemini_reporter_article($gemini_api_key??'', $material, ['city'=>$city,'theme'=>$theme,'category'=>$category]);
-        if(!$result) $result=tvs_reporter_fallback($city,$theme,$category,$articles);
+        $generationMode='gemini';
+        if(!$result){ $generationMode='fallback'; $result=tvs_reporter_fallback($city,$theme,$category,$articles); }
         $result=tvs_sanitize_ai_article($result,['city'=>$city,'name'=>'Fontes consultadas'],['title'=>$theme,'description'=>$material,'body'=>$material,'url'=>$articles[0]['url']??'']);
         $result['city']=$city; $result['category']=$result['category'] ?: $category; $result['image']=$articles[0]['image']??'';
         $result['source']='Fontes consultadas'; $result['source_url']=$articles[0]['url']??'';
         $result['sources_json']=json_encode(array_map(function($a){return ['title'=>$a['title']??'', 'source'=>$a['source']??'', 'url'=>$a['url']??''];},$articles),JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
-        $notice='Reportagem profissional gerada. Revise, edite se necessário e publique.';
+        $notice=$generationMode==='fallback' ? 'A IA não retornou uma reportagem válida. Foi criado um rascunho de contingência com as fontes; revise e reescreva antes de publicar.' : 'Reportagem profissional gerada pela IA. Revise, edite se necessário e publique.';
       }
     }
   }
