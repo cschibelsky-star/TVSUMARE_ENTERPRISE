@@ -25,7 +25,7 @@ function tvs_radar_category_from_text(string $text): string
     if (preg_match('~\b(esporte|esportes|campeonato|campeonatos|amador|oitavas|quartas|semifinal|final|jogo|jogos|partida|torneio|atleta|corrida|futebol|v[oô]lei|basquete)\b~iu', $text)) {
         return 'Esportes';
     }
-    if (preg_match('~\b(evento|eventos|agenda|festival|show|shows|feira|teatro|cinema|exposi[cç][aã]o|m[uú]sica|turismo|lazer|programa[cç][aã]o|rota cervejeira|desfile)\b~iu', $text)) {
+    if (preg_match('~\b(evento|eventos|agenda|festival|show|shows|feira|teatro|cinema|document[aá]rio|mostra|exposi[cç][aã]o|m[uú]sica|turismo|lazer|programa[cç][aã]o|rota cervejeira|desfile)\b~iu', $text)) {
         return 'Cultura';
     }
     if (preg_match('~\b(pra[cç]a|revitaliza[cç][aã]o|obra|obras|pavimenta[cç][aã]o|recape|ilumina[cç][aã]o|servi[cç]os? p[uú]blicos?|cad[uú]nico|atendimento itinerante)\b~iu', $text)) {
