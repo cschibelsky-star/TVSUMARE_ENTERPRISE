@@ -9,6 +9,7 @@ require_once dirname(__DIR__).'/config.php';
 require_once __DIR__.'/gemini.php';
 require_once __DIR__.'/monitor_lib.php';
 require_once dirname(__DIR__).'/includes/radar_queue_state.php';
+require_once dirname(__DIR__).'/includes/radar_category_rules.php';
 $activeAdmin='radar';
 if($TVS_RADAR_IS_CLI_CRON){
   $notice='';
@@ -1350,80 +1351,8 @@ function tvs_radar_deduplicate_topics($items){
 }
 
 function tvs_radar_candidate_category($item){
-  $text=trim(
-    (string)($item['title']??'').' '.
-    (string)($item['description']??'')
-  );
-
-  // Segurança tem prioridade imediata sobre pautas policiais, prisões, acidentes e ocorrências
-  if(preg_match(
-    '~\b(pol[ií]cia|policial|militares?|civis|guarda\s+municipal|gcm|'
-    .'pris[aã]o|preso|presos|roubo|furto|assalto|homic[ií]dio|assassinato|'
-    .'tr[aá]fico|drogas?|opera[cç][aã]o\s+policial|investiga[cç][aã]o|'
-    .'acidente|colis[aã]o|capotamento|morte|morre|morreu|v[ií]tima|'
-    .'temporal|alagamento|alagamentos|enchente|chuva|defesa\s+civil|desabamento)\b~iu',
-    $text
-  )){
-    return 'Segurança';
-  }
-
-  // Contextos compostos têm prioridade sobre palavras isoladas.
-  if(preg_match(
-    '~\b(empreendedorismo|emprego|empregos|vagas?|pat|'
-    .'mercado de trabalho|gera[cç][aã]o de empregos?|'
-    .'oportunidades? de trabalho)\b~iu',
-    $text
-  )){
-    return 'Empregos';
-  }
-
-  if(preg_match(
-    '~\b(economia|econ[oô]mico|com[eé]rcio|ind[uú]stria|'
-    .'empresas?|investimento|desenvolvimento econ[oô]mico|'
-    .'crescimento econ[oô]mico)\b~iu',
-    $text
-  )){
-    return 'Economia';
-  }
-
-  // Esporte precisa ser classificado antes de Cultura,
-  // pois campeonatos e jogos também podem conter a palavra evento.
-  if(preg_match(
-    '~\b(esporte|esportes|campeonato|campeonatos|amador|'
-    .'oitavas|quartas|semifinal|final|jogo|jogos|partida|'
-    .'torneio|atleta|corrida|futebol|v[oô]lei|basquete)\b~iu',
-    $text
-  )){
-    return 'Esportes';
-  }
-
-  if(preg_match(
-    '~\b(evento|eventos|agenda|festival|show|shows|feira|'
-    .'teatro|cinema|exposi[cç][aã]o|m[uú]sica|turismo|'
-    .'lazer|programa[cç][aã]o|rota cervejeira|desfile)\b~iu',
-    $text
-  )){
-    return 'Cultura';
-  }
-
-  if(preg_match(
-    '~\b(sa[uú]de|hospital|ubs|upa|vacina[cç][aã]o|'
-    .'dengue|consulta|m[eé]dico|paciente)\b~iu',
-    $text
-  )){
-    return 'Saúde';
-  }
-
-  if(preg_match(
-    '~\b(pra[cç]a|revitaliza[cç][aã]o|obra|obras|'
-    .'pavimenta[cç][aã]o|recape|ilumina[cç][aã]o|'
-    .'servi[cç]os? p[uú]blicos?|cad[uú]nico|atendimento itinerante)\b~iu',
-    $text
-  )){
-    return 'Cidade';
-  }
-
-  return tvs_category_from_text($text) ?: 'Cidade';
+  $text=trim((string)($item['title']??'').' '.(string)($item['description']??''));
+  return tvs_radar_category_from_text($text);
 }
 
 function tvs_radar_diversify_candidates($items,$limit=72){

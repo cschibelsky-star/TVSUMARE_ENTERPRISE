@@ -305,7 +305,7 @@ function tvs_first_sentence($text, $fallback=''){
 }
 
 
-function tvs_normalize_article_body($text){
+function tvs_normalize_article_body($text, $title=''){
   $text = html_entity_decode((string)$text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
   $text = preg_replace('~</p>\s*<p[^>]*>~i', "\n\n", $text);
   $text = preg_replace('~<br\s*/?>~i', "\n", $text);
@@ -318,6 +318,17 @@ function tvs_normalize_article_body($text){
     $line = trim(preg_replace('/\s+/u',' ', $line));
     if($line==='' || tvs_is_boilerplate($line)) continue;
     $out[]=$line;
+  }
+  // Alguns portais repetem o título como cabeçalho antes do primeiro parágrafo.
+  // Remove apenas a ocorrência inicial exata, preservando menções legítimas no corpo.
+  $title = trim(tvs_clean_text($title));
+  if($title !== '' && !empty($out)){
+    $first = trim((string)$out[0]);
+    if(tvs_lower($first) === tvs_lower($title)) array_shift($out);
+    elseif(stripos(tvs_lower($first), tvs_lower($title).' ') === 0){
+      $rest = trim(tvs_substr($first, tvs_strlen($title)));
+      if($rest !== '') $out[0] = $rest; else array_shift($out);
+    }
   }
   $text = implode("\n\n", $out);
   $text = preg_replace('/\n{3,}/', "\n\n", trim($text));
@@ -333,7 +344,7 @@ function tvs_sanitize_ai_article($data, $src=null, $article=null){
   foreach(['title','subtitle','summary','category','seo_title','meta_description'] as $field){
     if(isset($data[$field])) $data[$field] = tvs_clean_article_field($data[$field]);
   }
-  if(isset($data['body'])) $data['body'] = tvs_normalize_article_body($data['body']);
+  if(isset($data['body'])) $data['body'] = tvs_normalize_article_body($data['body'], $data['title']??'');
   if(isset($data['instagram_caption'])) $data['instagram_caption'] = tvs_clean_article_field($data['instagram_caption']);
   if(isset($data['whatsapp_text'])) $data['whatsapp_text'] = tvs_clean_article_field($data['whatsapp_text']);
   if(empty($data['subtitle']) && $article){

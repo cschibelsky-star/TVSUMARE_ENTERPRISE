@@ -41,6 +41,9 @@ jobs:
       - name: Teste de estados da fila do Radar
         run: php tests/radar_queue_state_test.php
 
+      - name: Teste de categorias e limpeza do Radar
+        run: php tests/radar_category_cleanup_test.php
+
       - name: Validar regras editoriais criticas
         shell: bash
         run: |
