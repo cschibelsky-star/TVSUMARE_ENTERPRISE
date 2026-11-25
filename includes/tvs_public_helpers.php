@@ -151,7 +151,20 @@ function tvs_youtube_embed($url){
   return $id!==''?'https://www.youtube.com/embed/'.$id:'';
 }
 function tvs_find_related_video($news){
-  $nid=(string)($news['id']??''); $title=tvs_norm_key($news['title']??''); $videos=tvs_load_real_videos(0);
+  $nid=(string)($news['id']??'');
+  $videoId=trim((string)($news['video_id']??$news['heygen_video_id']??''));
+  $videoUrl=trim((string)($news['video_url']??''));
+  $title=tvs_norm_key($news['title']??'');
+  $videos=tvs_load_real_videos(0);
+  if($videoId!==''){
+    foreach($videos as $v){
+      $providerId=(string)($v['heygen_video_id']??$v['video_id']??$v['provider_video_id']??'');
+      if($providerId===$videoId) return $v;
+    }
+  }
+  if($videoUrl!==''){
+    foreach($videos as $v){ if(tvs_video_url($v)===$videoUrl) return $v; }
+  }
   foreach($videos as $v){ if($nid!=='' && (string)($v['news_id']??$v['noticia_id']??'')===$nid) return $v; }
   foreach($videos as $v){ $vt=tvs_norm_key($v['title']??''); if($title && $vt){ similar_text(substr($title,0,120),substr($vt,0,120),$pct); if($pct>=58) return $v; } }
   return null;

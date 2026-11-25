@@ -84,7 +84,7 @@ PHP;
     echo "Reporter history actions: já aplicadas.\n";
 }
 
-if(strpos($code,'$activeJobs=array_values(array_filter($jobs')===false){
+if(strpos($code,'$activeJobs=array_values(array_filter($jobs')===false && strpos($code,'Fila operacional de vídeos IA')===false && strpos($code,'$history=!empty($_GET')===false){
     $old=<<<'TXT'
 $jobs=rpia_read('videos_ia.json'); $callbackUrl=
 TXT;
@@ -102,7 +102,7 @@ TXT;
     echo "Reporter queue split: já aplicado.\n";
 }
 
-if(strpos($code,'Fila operacional de vídeos IA')===false){
+if(strpos($code,'Fila operacional de vídeos IA')===false && strpos($code,'$history=!empty($_GET')===false){
     $start='<section class="box"><h2>Fila de vídeos IA</h2><?php foreach($jobs as $j):';
     $pos=strpos($code,$start);
     if($pos===false){
